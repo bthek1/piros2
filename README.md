@@ -9,8 +9,11 @@ parameters, TF, and image pipelines — using real hardware rather than simulati
 
 | Role | Host | What it is |
 | --- | --- | --- |
-| Robot / sensor node | `pi` → `192.168.2.17` | Raspberry Pi 5 (8 GB), Raspberry Pi OS 64-bit (Debian 12 bookworm), Logitech C922 on `/dev/video0` |
+| Robot / sensor node | `pi` → `192.168.2.17` | Raspberry Pi 5 (8 GB), Logitech C922 on `/dev/video0`. Currently Raspberry Pi OS; **to be reflashed to Ubuntu Server 24.04 arm64** |
 | Dev / visualisation | `test` → `192.168.2.106` | Ubuntu 24.04 LTS, x86_64 — runs `rviz2`, `rqt`, and the editor |
+
+Both machines run ROS 2 natively from `apt`, provisioned by a shared set of
+Ansible roles.
 
 Both machines sit on the same `192.168.2.0/24` LAN, so ROS 2 nodes discover each
 other over DDS without a central master.
@@ -28,9 +31,10 @@ See [docs/roadmap.md](docs/roadmap.md) for what is planned and in what order.
 ## Quick start
 
 1. Install ROS 2 Jazzy on the dev box — [docs/setup-dev.md](docs/setup-dev.md)
-2. Install Docker + the ROS 2 container on the Pi — [docs/setup-pi.md](docs/setup-pi.md)
-3. Make the two talk to each other — [docs/networking.md](docs/networking.md)
-4. Publish camera frames — [docs/camera.md](docs/camera.md)
+2. Reflash the Pi to Ubuntu 24.04 and install ROS natively — [docs/setup-pi.md](docs/setup-pi.md)
+3. Capture both as Ansible roles — [docs/ansible.md](docs/ansible.md)
+4. Make the two talk to each other — [docs/networking.md](docs/networking.md)
+5. Publish camera frames — [docs/camera.md](docs/camera.md)
 
 ## Documentation
 
@@ -38,7 +42,8 @@ See [docs/roadmap.md](docs/roadmap.md) for what is planned and in what order.
 | --- | --- |
 | [hardware.md](docs/hardware.md) | Verified specs of the Pi, the dev box, and the C922's capture modes |
 | [setup-dev.md](docs/setup-dev.md) | ROS 2 Jazzy on the Ubuntu 24.04 dev box (native apt install) |
-| [setup-pi.md](docs/setup-pi.md) | ROS 2 Jazzy on the Pi via Docker, and why native apt is not an option |
+| [setup-pi.md](docs/setup-pi.md) | Reflashing the Pi to Ubuntu 24.04 for a native ROS 2 install, and why |
+| [ansible.md](docs/ansible.md) | Provisioning both machines from one playbook |
 | [networking.md](docs/networking.md) | DDS discovery across the LAN, domain IDs, and the Docker-bridge gotcha |
 | [camera.md](docs/camera.md) | Driver choice, capture modes, image transport, calibration |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptoms → causes for the failures you are most likely to hit |
@@ -46,12 +51,16 @@ See [docs/roadmap.md](docs/roadmap.md) for what is planned and in what order.
 
 ## Why this shape
 
-The Pi runs Raspberry Pi OS rather than Ubuntu, which rules out a native `apt`
-install of ROS 2 — there are no `ros-jazzy-*` binaries for Debian bookworm.
-Running ROS in a container on the Pi keeps the host OS untouched (its camera
-stack, GPIO tooling, and vendor kernel all stay stock) while giving a stock ROS 2
-environment. The dev box, being Ubuntu 24.04, gets ROS natively so that GUI tools
-like `rviz2` run without X-forwarding gymnastics.
+ROS 2 Jazzy publishes binaries for **Ubuntu 24.04 noble** on both `amd64` and
+`arm64` — 3373 and 3361 `ros-jazzy-*` packages respectively. For Debian 12
+bookworm, which Raspberry Pi OS is built on, it publishes **zero**.
 
-See [setup-pi.md](docs/setup-pi.md) for the full reasoning and the alternatives
-that were considered.
+So the Pi is reflashed to Ubuntu Server 24.04 rather than worked around. Both
+machines then run the same native `apt` install, share one set of Ansible roles,
+and match every tutorial and error message you will search for. The container and
+build-from-source alternatives were considered and rejected — the reasoning is in
+[setup-pi.md](docs/setup-pi.md).
+
+The dev box gets `ros-jazzy-desktop` so GUI tools like `rviz2` run without
+X-forwarding gymnastics; the Pi gets the much smaller `ros-jazzy-ros-base`, since
+it is a sensor head with no reason to carry the Qt stack.

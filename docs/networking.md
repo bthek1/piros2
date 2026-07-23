@@ -9,9 +9,13 @@ covers what needs to be true for the Pi and the dev box to see each other.
 ```
   dev box "test"                        Raspberry Pi 5
   192.168.2.106/24  ──── eth2 ──── LAN ──── 192.168.2.17
-  Ubuntu 24.04                          Debian 12 + Docker (host network)
+  Ubuntu 24.04                          Ubuntu 24.04 (planned — see setup-pi.md)
+  ROS 2 Jazzy, native apt               ROS 2 Jazzy, native apt
   rviz2, rqt, editor                    camera nodes
 ```
+
+Both ends run ROS directly on the host, so there is no container boundary to
+reason about — a node on the Pi is an ordinary process binding ordinary sockets.
 
 Both are on the same `/24` subnet with no router in between, so multicast
 discovery works. Latency is ~3.6 ms.
@@ -36,6 +40,12 @@ export ROS_DOMAIN_ID=42
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
+
+**Keeping these three in agreement by hand is the single biggest source of wasted
+time in this setup**, and it is why the project provisions both machines from one
+Ansible variable file rather than two `.bashrc` files — [ansible.md](ansible.md).
+Most of [troubleshooting.md](troubleshooting.md) is a catalogue of what happens
+when they drift.
 
 ## The Docker-bridge problem on the dev box
 
@@ -77,7 +87,10 @@ export CYCLONEDDS_URI=file:///home/bthek1/piros2/config/cyclonedds.xml
 ```
 
 The Pi does not need this — it has a single relevant interface — but pinning it
-there too is harmless and makes the two configs symmetrical.
+there too is harmless and makes the two configs symmetrical. That symmetry is
+exactly what the Ansible `ros2_env` role produces: one `cyclonedds.xml.j2` template
+rendered per host from a `dds_interface` variable, so the two files cannot drift
+apart in structure while differing in the one field that should differ.
 
 ## Static peers, if multicast is unreliable
 

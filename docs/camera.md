@@ -2,8 +2,14 @@
 
 The camera is a Logitech C922 Pro Stream on `/dev/video0`. Its capture modes are
 listed in [hardware.md](hardware.md#capture-modes); the short version is **MJPG
-1280×720 @ 30 fps** as the default, with 60 fps available at 720p and 1080p capped
-at 30 fps.
+1280×720 @ 30 fps** as the default. 30 fps is the working ceiling at every
+resolution — the advertised 720p60 mode negotiates but measures ~29.7 fps.
+
+**Confirmed working (2026-07-23):** a 1280×720 MJPG frame captured over SSH decodes
+to a correct, sharp, well-exposed image, and sustained capture holds exactly
+30.00 fps *with a fixed exposure*. On stock auto-exposure settings it runs at
+18–21 fps instead — read [the frame-rate note](hardware.md#frame-rate-and-auto-exposure)
+before benchmarking anything.
 
 ## Driver choice
 
@@ -13,8 +19,10 @@ at 30 fps.
 | `v4l2_camera` | Simpler and lighter. Fine for a first "is anything working" test, but weaker control exposure and less flexible about pixel formats. |
 | `libcamera` / `rpicam` | **Not applicable.** This is the Raspberry Pi CSI-ribbon path. There is no CSI camera attached, and the C922 is a plain UVC device. |
 
-Both `usb_cam` and `v4l2_camera` are installed in the container image defined in
-[setup-pi.md](setup-pi.md).
+Both `usb_cam` and `v4l2_camera` are installed on the Pi by the Ansible
+`ros2_install` role — [ansible.md](ansible.md). They exist as `ros-jazzy-usb-cam`
+and `ros-jazzy-v4l2-camera` in the `noble/arm64` suite, verified present alongside
+`ros-jazzy-image-transport-plugins` and `ros-jazzy-camera-calibration`.
 
 ## What gets published
 
@@ -33,7 +41,8 @@ attempting those.
 ## Running it
 
 ```bash
-# on the Pi, inside the container
+# on the Pi
+source /opt/ros/jazzy/setup.bash
 ros2 run usb_cam usb_cam_node_exe --ros-args \
   -p video_device:=/dev/video0 \
   -p pixel_format:=mjpeg2rgb \
@@ -68,8 +77,8 @@ If the decode becomes the bottleneck, the options in order of preference are:
 2. Drop to 640×480, where decode cost is roughly a fifth of 1080p.
 3. Lower the frame rate — 15 fps is plenty for most vision experiments.
 
-Measure before optimising: `top` inside the container while the node runs will tell
-you immediately whether decode is actually the problem.
+Measure before optimising: `ssh pi top` while the node runs will tell you
+immediately whether decode is actually the problem.
 
 ## Image transport
 
@@ -102,8 +111,14 @@ Webcam auto-exposure and autofocus will actively fight computer-vision algorithm
 brightness shifts frame to frame, and focus hunts whenever the scene changes. Lock
 them down for anything involving detection or calibration.
 
+There is a second, less obvious reason to do this: on stock settings **the C922
+drops to 18–21 fps in ordinary indoor light**, because `exposure_dynamic_framerate`
+lets it lengthen exposure past the frame interval. Fixing the exposure restores a
+measured 30.00 fps. Frame rate here is a function of room lighting until you pin
+it down.
+
 ```bash
-# inside the container, or on the Pi host
+# on the Pi
 v4l2-ctl -d /dev/video0 --list-ctrls
 
 v4l2-ctl -d /dev/video0 --set-ctrl=focus_automatic_continuous=0
@@ -122,7 +137,7 @@ tidier route once you have found the values you want.
 Needed before AprilTags, visual odometry, or anything that turns pixels into metres.
 
 ```bash
-sudo apt install ros-jazzy-camera-calibration    # or add it to the Dockerfile
+sudo apt install ros-jazzy-camera-calibration    # or add it to the Ansible role
 
 ros2 run camera_calibration cameracalibrator \
   --size 8x6 --square 0.025 \

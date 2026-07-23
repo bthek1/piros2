@@ -8,12 +8,24 @@ Nothing below is built yet — the repository is currently documentation only.
 
 ## 0. Environment — *not started*
 
-- [ ] ROS 2 Jazzy on the dev box — [setup-dev.md](setup-dev.md)
-- [ ] Docker on the Pi, ROS container built — [setup-pi.md](setup-pi.md)
+- [ ] ROS 2 Jazzy on the dev box, by hand — [setup-dev.md](setup-dev.md)
+- [ ] Reflash the Pi to Ubuntu Server 24.04 arm64 — [setup-pi.md](setup-pi.md)
+- [ ] `ros-jazzy-ros-base` on the Pi, native apt
+- [ ] Capture the whole thing as Ansible roles — [ansible.md](ansible.md)
 - [ ] `talker`/`listener` across the LAN — [networking.md](networking.md)
 
 **Done when:** a node on the Pi and a node on the dev box exchange messages.
 This is the milestone most likely to eat time; everything else depends on it.
+
+Do the dev box **by hand first**, then write the Ansible role from what you
+actually ran. A playbook that installs ROS while you watch teaches you nothing
+about what it installed, and you cannot tell a broken role from a working one if
+you have never done it manually. The reflash is the point where automation starts
+paying for itself — it is what makes the Pi cheap to rebuild.
+
+**Concepts:** platform tiers and why Ubuntu 24.04 is not an arbitrary choice, the
+ROS apt source, overlay vs underlay sourcing, and the environment variables DDS
+actually reads.
 
 ## 1. First node — *not started*
 
@@ -87,6 +99,13 @@ Pick whichever is more interesting at the time:
   user. Introduces actuators, control loops, and the visual-servoing feedback path.
 - **Web dashboard** — `rosbridge_suite` plus a browser client. Introduces the
   ROS-to-non-ROS boundary.
+
+## A note on tooling milestones
+
+Ansible is provisioning, not ROS. It earns a place in milestone 0 because the Pi is
+being wiped and because three environment variables have to match across two
+machines — not because the project needs a configuration-management layer for its
+own sake. Resist growing it beyond that; the milestones above are the point.
 
 ## Reference
 
