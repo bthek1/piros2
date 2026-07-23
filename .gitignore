@@ -1,0 +1,21 @@
+# colcon workspace artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# ROS bags
+*.db3
+*.mcap
+rosbag2_*/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
