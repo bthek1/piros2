@@ -9,3 +9,6 @@ ros_metapackage: ros-jazzy-desktop
 dds_interface: enp6s18
 
 # sudo prompts on this host, so playbook runs need --ask-become-pass.
+
+# Where the checkout lives on this machine. Differs from the Pi's ~/piros2.
+workspace_path: "{{ ansible_env.HOME }}/Documents/piros2"

@@ -23,14 +23,13 @@ Verified 2026-07-23, so the plan starts from fact rather than assumption:
 | DDS interface | `enp6s18` (Docker bridges + 2 VPNs compete) | **`wlan0`** — no Ethernet cable |
 | ROS | not installed | not installed |
 
-> **Blockers to clear first.** `ml5` cannot currently reach the Pi at all: its SSH
-> key is not in the Pi's `authorized_keys` (cloud-init installed only the old dev
-> box's key), and it holds a stale host key from before the reflash. Both are
-> covered in [ansible.md](ansible.md#prerequisites). Step 0 will fail until they
-> are fixed — which is exactly what step 0 is for.
+> **Blockers cleared (2026-07-23).** `ml5` now reaches the Pi over key-based SSH:
+> its key has been added to the Pi's `authorized_keys` and the stale pre-reflash
+> host key removed — details in [ansible.md](ansible.md#prerequisites). Verified:
+> `ssh -o BatchMode=yes bthek1@192.168.2.17 'hostname'` → `raspberrypi`.
 
-The repo does not live on `ml5` yet. Clone it there before starting; everything
-below assumes you are working from `~/piros2/ansible` on `ml5`.
+The repo now lives on `ml5` at `~/Documents/piros2` (since 2026-07-23); everything
+below assumes you are working from `~/Documents/piros2/ansible` on `ml5`.
 
 All eleven packages this plan installs exist for `noble/arm64` — checked against
 `packages.ros.org`, including `ros-jazzy-usb-cam`, `ros-jazzy-image-transport-plugins`

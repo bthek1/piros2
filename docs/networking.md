@@ -75,7 +75,7 @@ sits silent, or things work in one direction only.
 > `tailscale0` and `laptop` are *routable-looking* but lead somewhere the Pi is
 > not. Pin explicitly; do not rely on interface ordering.
 
-Fix it by pinning the interface. Create `~/piros2/config/cyclonedds.xml` on the dev box:
+Fix it by pinning the interface. Create `~/Documents/piros2/config/cyclonedds.xml` on the dev box:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -92,7 +92,7 @@ Fix it by pinning the interface. Create `~/piros2/config/cyclonedds.xml` on the 
 ```
 
 ```bash
-export CYCLONEDDS_URI=file:///home/proxmox-ml5/piros2/config/cyclonedds.xml
+export CYCLONEDDS_URI=file:///home/proxmox-ml5/Documents/piros2/config/cyclonedds.xml
 ```
 
 The Pi has only one relevant interface, so pinning is less urgent there — but note

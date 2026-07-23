@@ -8,3 +8,6 @@ dds_interface: wlan0
 # demo_nodes_cpp ships with `desktop` but not with `ros-base`. Installed here so
 # the talker/listener checkpoint works in both directions.
 install_demo_nodes: true
+
+# The Pi's copy of the repo, kept in sync by the workspace role.
+workspace_path: "{{ ansible_env.HOME }}/piros2"

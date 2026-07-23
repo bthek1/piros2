@@ -272,8 +272,8 @@ The dev box is the control node. Ansible is already installed on it (core 2.16.3
 so this is only:
 
 ```bash
-git clone git@github.com:bthek1/piros2.git ~/piros2
-cd ~/piros2/ansible
+git clone git@github.com:bthek1/piros2.git ~/Documents/piros2
+cd ~/Documents/piros2/ansible
 ansible all -m ping        # both hosts must answer before going further
 ```
 
@@ -374,7 +374,7 @@ interfaces are the usual culprit.
 The repository doubles as the colcon workspace:
 
 ```
-~/piros2/
+~/Documents/piros2/      # on the Pi: ~/piros2/
 ├── src/                 # ROS 2 packages live here
 ├── ansible/             # provisioning for both machines
 ├── config/              # cyclonedds.xml, camera calibration
@@ -386,7 +386,7 @@ The repository doubles as the colcon workspace:
 Build and source with:
 
 ```bash
-cd ~/piros2
+cd ~/Documents/piros2    # on the Pi: cd ~/piros2
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
@@ -404,7 +404,7 @@ have anything to build:
 
 ```bash
 rsync -av --delete --exclude build --exclude install --exclude log \
-      ~/piros2/ pi:~/piros2/
+      ~/Documents/piros2/ pi:~/piros2/
 ```
 
 The Ansible `workspace` role does the same as part of a run, so a full

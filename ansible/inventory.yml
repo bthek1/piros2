@@ -5,10 +5,10 @@ all:
         ml5:
           ansible_host: 192.168.2.109
           ansible_user: proxmox-ml5
-          # This is the control node. When the playbook is run *from* ml5 itself,
-          # uncomment the next line to skip a pointless SSH round-trip to
-          # ourselves (it needs a loopback key otherwise).
-          # ansible_connection: local
+          # This is the control node and the playbook runs from here, so skip
+          # the pointless SSH round-trip to ourselves (it would need a loopback
+          # key otherwise).
+          ansible_connection: local
     robot:
       hosts:
         pi:

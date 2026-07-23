@@ -6,4 +6,5 @@ ros_domain_id: 42
 ros_localhost_only: 0
 rmw_implementation: rmw_cyclonedds_cpp
 
-workspace_path: "{{ ansible_env.HOME }}/piros2"
+# workspace_path is per-host — the checkout lives at ~/Documents/piros2 on ml5
+# but ~/piros2 on the Pi — so it is set in dev.yml and robot.yml, not here.

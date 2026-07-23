@@ -168,7 +168,7 @@ subscribes to the uncompressed topic across the LAN.
 ## `colcon build` fails on a missing dependency
 
 ```bash
-cd ~/piros2
+cd ~/Documents/piros2    # on the Pi: cd ~/piros2
 rosdep install --from-paths src --ignore-src -r -y
 ```
 

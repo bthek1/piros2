@@ -140,12 +140,12 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
 
 ## Syncing to the Pi
 
-The repo lives on the dev box; the Pi keeps its own copy at `~/piros2` and builds
-there. Keep them in step with:
+The repo lives on the dev box at `~/Documents/piros2`; the Pi keeps its own copy
+at `~/piros2` and builds there. Keep them in step with:
 
 ```bash
 rsync -av --delete --exclude build --exclude install --exclude log \
-      ~/piros2/ pi:~/piros2/
+      ~/Documents/piros2/ pi:~/piros2/
 ```
 
 The Ansible `workspace` role does the same as part of a run. Remote is
