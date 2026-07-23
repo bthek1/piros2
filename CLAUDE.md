@@ -23,12 +23,14 @@ launch API, and QoS defaults differ between them.
 | | Dev box (here) | Raspberry Pi |
 | --- | --- | --- |
 | Reach it | local | `ssh pi` (→ `bthek1@192.168.2.17`, key auth, works with `BatchMode=yes`) |
-| OS **now** | Ubuntu 24.04 LTS, x86_64 | Raspberry Pi OS / Debian 12 bookworm, aarch64 |
-| OS **planned** | unchanged | **Ubuntu Server 24.04 LTS arm64** (reflash) |
+| OS | Ubuntu 24.04.4 LTS, x86_64 | Ubuntu 24.04.4 LTS, aarch64 (reflashed 2026-07-23) |
+| Kernel | — | `6.8.0-1047-raspi` |
 | ROS | `ros-jazzy-desktop`, native apt (planned) | `ros-jazzy-ros-base`, native apt (planned) |
 | Provisioning | Ansible control node (core 2.16.3, installed) | Ansible managed host |
 | Runs | `rviz2`, `rqt`, editing, builds | camera node, anything touching hardware |
-| Network | `192.168.2.106/24` on `eth2` | `192.168.2.17` |
+| Network | `192.168.2.109/24` on `enp6s18` | `192.168.2.17` on **`wlan0`** — no Ethernet cable |
+| Display | GNOME + Xwayland — the only host that can run `rviz2` | headless |
+| `sudo` | prompts for a password | passwordless |
 
 **Both machines run ROS natively.** Docker was considered for the Pi and rejected —
 do not reintroduce container instructions.
@@ -45,30 +47,48 @@ Full measured specs: [docs/hardware.md](docs/hardware.md).
 
 ## Current state
 
-The repository is **documentation only**. No ROS packages exist, and neither
-machine has ROS installed yet. `src/` and `ansible/` have not been created, and
-**the Pi has not been reflashed** — it is still on Raspberry Pi OS.
+The repository is **documentation only**. No ROS packages exist, neither machine
+has ROS installed yet, and `src/` and `ansible/` have not been created.
+
+**The Pi was reflashed to Ubuntu Server 24.04 on 2026-07-23** — that milestone is
+done, and `apt install ros-jazzy-*` now works there. Nothing else in
+[docs/roadmap.md](docs/roadmap.md) has started.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
-this convention and [docs/roadmap.md](docs/roadmap.md) tracks status. This applies
-to the Ubuntu reflash in particular: [docs/hardware.md](docs/hardware.md) records
-the Debian state as measured, with the Ubuntu column marked as pending.
+this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
 
 ## Constraints that are easy to get wrong
 
-- **Native ROS 2 on the Pi requires the Ubuntu reflash first.** Debian bookworm is
-  Tier 3 for Jazzy: `packages.ros.org` serves a `bookworm` suite containing **zero**
-  `ros-jazzy-*` binaries (only bootstrap tooling), while `noble/arm64` serves 3361.
-  So `apt install ros-jazzy-ros-base` works on Ubuntu and cannot work on the Pi's
-  current OS. Until the card is reflashed, **any `apt` ROS instruction aimed at the
-  Pi is wrong** — reasoning and rejected alternatives in
-  [docs/setup-pi.md](docs/setup-pi.md).
-- **The dev box has ~11 Docker bridge interfaces** (`172.17`–`172.26`). DDS will
-  happily bind to one of them instead of `eth2` and advertise an unroutable
-  address. Pin the interface via `CYCLONEDDS_URI` —
+- **Both machines are now Ubuntu 24.04 noble**, Jazzy's Tier 1 platform, so
+  `apt install ros-jazzy-ros-base` works on the Pi. `packages.ros.org` serves 3361
+  `ros-jazzy-*` binaries for `noble/arm64` against **zero** for `bookworm/arm64`,
+  which is why the reflash happened — reasoning and rejected alternatives in
+  [docs/setup.md](docs/setup.md).
+- **The Pi is on Wi-Fi, not Ethernet.** `eth0` has no carrier; it reaches the LAN
+  via `wlan0` on `THEKKEL_MESH`. Anything that assumes a wired link — a doc, an
+  Ansible fact, a bandwidth estimate — is wrong. It also means a bad network config
+  leaves the machine needing a keyboard and monitor, so treat network changes on
+  the Pi as higher-risk than they look.
+- **`v4l2-ctl` is not installed.** Ubuntu Server has no `v4l-utils`; Raspberry Pi
+  OS did. Every `v4l2-ctl` line in these docs needs it installed first. Don't
+  report a camera command as failing before checking this.
+- **Ubuntu silently downgrades the Pi's bootloader.** Its `rpi-eeprom` package
+  bundles only `pieeprom-2024-09-23.bin` and enables `rpi-eeprom-update.service`,
+  so any firmware update applied from Raspberry Pi OS is reverted the moment
+  `rpi-eeprom-config --apply` runs. Config keys survive; the version does not.
+  `rpi-eeprom-update` reports Ubuntu's bundle as both CURRENT and LATEST, so read
+  `/proc/device-tree/chosen/bootloader/build-timestamp` instead.
+- **The SD card is pinned by PARTUUID, not label** (`5ec0ffee-01`/`-02`, in both
+  `cmdline.txt` and `/etc/fstab`). Ubuntu's Pi image labels every copy
+  `system-boot`/`writable`, so a second copy of the image collides on label,
+  filesystem UUID *and* PARTUUID. Don't "simplify" these back to `LABEL=`.
+- **The dev box has interfaces DDS must not bind to**: three Docker bridges
+  (`172.17`–`172.19`), `tailscale0`, and a WireGuard interface named `laptop` at
+  `10.8.0.3`. DDS will happily pick one instead of `enp6s18` and advertise an
+  address the Pi cannot route to. The VPN interfaces are the nastier half — they
+  look routable and are not. Pin via `CYCLONEDDS_URI` —
   [docs/networking.md](docs/networking.md).
-  Dropping Docker from the Pi does **not** fix this — the bridges are on the dev box.
 - **`ROS_DOMAIN_ID=42`** on both machines. Non-default on purpose; `0` is shared
   with every other project on the LAN. It, `ROS_LOCALHOST_ONLY=0` and
   `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` must be identical on both hosts; they
@@ -79,9 +99,10 @@ the Debian state as measured, with the Ubuntu column marked as pending.
   silently runs on domain 0 with the default RMW. Set the vars inline or use a
   login shell when verifying over SSH — and don't report such a result as evidence
   of anything without checking this first.
-- **After the reflash the Pi's user is not in `video`.** Raspberry Pi OS put it
-  there; Ubuntu will not. `/dev/video0` will be permission-denied until fixed, and
-  a group change needs a fresh login to take effect.
+- **The Pi's user is in `video`** — set via cloud-init at reflash time, and
+  `/dev/video0` is readable without `sudo`. But **`gpio`, `i2c`, and `spi` no
+  longer exist** as groups; they were a Raspberry Pi OS vendor addition. Milestone
+  7's servo option needs them created plus a udev rule, not just a `usermod`.
 - **`/dev/video1` is not a capture device.** It is the C922's UVC metadata node.
   Capture is `/dev/video0` only.
 - **The camera is confirmed working** (verified 2026-07-23 by capturing a frame and
@@ -136,9 +157,9 @@ The Ansible `workspace` role does the same as part of a run. Remote is
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
 | [docs/hardware.md](docs/hardware.md) | Measured specs of both machines and the camera's capture modes |
-| [docs/setup-dev.md](docs/setup-dev.md) | ROS 2 Jazzy on Ubuntu 24.04 |
-| [docs/setup-pi.md](docs/setup-pi.md) | Reflashing the Pi to Ubuntu 24.04 for native ROS; rejected alternatives |
-| [docs/ansible.md](docs/ansible.md) | Provisioning both machines from one playbook |
+| [docs/setup.md](docs/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
+| [docs/ansible.md](docs/ansible.md) | The playbook: inventory, roles, gotchas |
+| [docs/ansible-plan.md](docs/ansible-plan.md) | Build order for the `ansible/` tree — working doc, delete once green |
 | [docs/networking.md](docs/networking.md) | DDS discovery, domain IDs, interface pinning |
 | [docs/camera.md](docs/camera.md) | Driver choice, transport, V4L2 controls, calibration |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |

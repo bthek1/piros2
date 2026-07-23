@@ -1,0 +1,10 @@
+---
+# Sensor head — no reason to carry the Qt stack.
+ros_metapackage: ros-jazzy-ros-base
+
+# The Pi has NO Ethernet cable attached; eth0 is NO-CARRIER. Wi-Fi only.
+dds_interface: wlan0
+
+# demo_nodes_cpp ships with `desktop` but not with `ros-base`. Installed here so
+# the talker/listener checkpoint works in both directions.
+install_demo_nodes: true

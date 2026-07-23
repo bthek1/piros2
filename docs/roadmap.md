@@ -4,24 +4,23 @@ The point of this project is learning ROS 2, so the milestones are ordered by
 concept rather than by feature. Each one should end with something that visibly
 works before moving on.
 
-Nothing below is built yet — the repository is currently documentation only.
+No ROS packages are written yet — the repository is still documentation only. The
+one thing that *is* done is the Pi's OS.
 
-## 0. Environment — *not started*
+## 0. Environment — *in progress*
 
-- [ ] ROS 2 Jazzy on the dev box, by hand — [setup-dev.md](setup-dev.md)
-- [ ] Reflash the Pi to Ubuntu Server 24.04 arm64 — [setup-pi.md](setup-pi.md)
-- [ ] `ros-jazzy-ros-base` on the Pi, native apt
-- [ ] Capture the whole thing as Ansible roles — [ansible.md](ansible.md)
+- [x] Reflash the Pi to Ubuntu Server 24.04 arm64 — done 2026-07-23, [setup.md](setup.md)
+- [ ] Write the Ansible roles — [ansible.md](ansible.md)
+- [ ] `ansible-playbook site.yml` green on both machines
 - [ ] `talker`/`listener` across the LAN — [networking.md](networking.md)
 
 **Done when:** a node on the Pi and a node on the dev box exchange messages.
 This is the milestone most likely to eat time; everything else depends on it.
 
-Do the dev box **by hand first**, then write the Ansible role from what you
-actually ran. A playbook that installs ROS while you watch teaches you nothing
-about what it installed, and you cannot tell a broken role from a working one if
-you have never done it manually. The reflash is the point where automation starts
-paying for itself — it is what makes the Pi cheap to rebuild.
+Read the plain-`apt` equivalent in [setup.md](setup.md#5-run-the-playbook) as you
+write the roles. The point is not to avoid learning what the install does — it is
+that three environment variables have to match across two machines, which is worth
+doing once properly rather than repeatedly by hand.
 
 **Concepts:** platform tiers and why Ubuntu 24.04 is not an arbitrary choice, the
 ROS apt source, overlay vs underlay sourcing, and the environment variables DDS
@@ -95,17 +94,19 @@ Pick whichever is more interesting at the time:
 
 - **AprilTag detection** — `apriltag_ros`, publishing tag poses into TF. Real 6-DOF
   pose estimation, and a good test of the calibration.
-- **Pan/tilt servo mount** — the Pi's GPIO/I²C is already available to the login
-  user. Introduces actuators, control loops, and the visual-servoing feedback path.
+- **Pan/tilt servo mount** — introduces actuators, control loops, and the
+  visual-servoing feedback path. Note the reflash removed the `gpio`/`i2c`/`spi`
+  groups Raspberry Pi OS provided, so this now needs the group and a udev rule
+  creating first — see [hardware.md](hardware.md#group-membership).
 - **Web dashboard** — `rosbridge_suite` plus a browser client. Introduces the
   ROS-to-non-ROS boundary.
 
 ## A note on tooling milestones
 
-Ansible is provisioning, not ROS. It earns a place in milestone 0 because the Pi is
-being wiped and because three environment variables have to match across two
-machines — not because the project needs a configuration-management layer for its
-own sake. Resist growing it beyond that; the milestones above are the point.
+Ansible is provisioning, not ROS. It earns a place in milestone 0 because three
+environment variables have to match across two machines — not because the project
+needs a configuration-management layer for its own sake. Resist growing it beyond
+that; the milestones above are the point.
 
 ## Reference
 

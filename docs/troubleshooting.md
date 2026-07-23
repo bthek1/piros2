@@ -20,6 +20,47 @@ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 Comparing against `ssh-keyscan` from the same machine proves nothing — a
 man-in-the-middle would serve the same forged key to both.
 
+Conversely, a host key that is **unchanged** after what should have been a fresh
+install is evidence the machine booted the *old* system — see the next entry.
+
+## The Pi booted the wrong OS after a reflash
+
+Symptom: everything looks flashed correctly, but the machine comes up on the
+previous install. Diagnose it rather than guessing — the firmware records which
+medium it used (`01` = SD card, `04` = USB, `06` = NVMe):
+
+```bash
+ssh pi 'od -An -tx1 /proc/device-tree/chosen/bootloader/boot-mode'
+ssh pi 'sudo rpi-eeprom-config | grep BOOT_ORDER'
+```
+
+`BOOT_ORDER` nibbles are read **right to left**, so `0xf14` is USB → SD → restart.
+If the mode does not match the first nibble, that medium was tried and rejected.
+
+- **USB target skipped after a warm reboot.** `reboot` restarts the SoC without
+  power-cycling the USB ports, so a hot-plugged stick is often not re-enumerated
+  inside the bootloader's discovery window. Cold power-cycle, or set
+  `USB_MSD_PWR_OFF_TIME=3000` — see [setup.md](setup.md#booting-from-usb).
+- **The image was not a Pi image.** A generic arm64 desktop or installer ISO has no
+  bootloader partition and will never boot; you need the `+raspi` preinstalled image.
+- **Falling through to the old system is by design** when the previous medium is
+  still present and later in `BOOT_ORDER` — which is why keeping it is a good
+  rollback, and why an unchanged host key is the tell.
+
+## Two Ubuntu Pi images present, root filesystem is a coin-flip
+
+Ubuntu's Pi image labels its partitions `system-boot` and `writable`, and
+`cmdline.txt` uses `root=LABEL=writable`. Two copies of the same image carry
+identical labels, filesystem UUIDs **and** PARTUUIDs, so the kernel roots into
+whichever enumerated first.
+
+```bash
+ssh pi 'sudo blkid | grep -E "writable|system-boot"'   # duplicates = this bug
+```
+
+Give one a unique disk identifier and pin `cmdline.txt` and `/etc/fstab` to
+PARTUUIDs — [setup.md](setup.md#the-duplicate-label-trap).
+
 ## The dev box cannot see topics published on the Pi
 
 The most common failure in this setup. Work through in order:
@@ -36,8 +77,8 @@ The most common failure in this setup. Work through in order:
    ```
    Empty output is the bug. Either use a login shell (`ssh pi -t 'bash -lc "..."'`)
    or set the values inline for that command.
-4. **Wrong interface picked on the dev box.** Eleven Docker bridges compete with
-   `eth2`; DDS may bind to `172.2x.0.1`. Pin the interface —
+4. **Wrong interface picked on the dev box.** Docker bridges and two VPN interfaces compete with
+   `enp6s18`; DDS may bind to `172.1x.0.1` or the VPN at `10.8.0.3`. Pin the interface —
    [networking.md](networking.md#the-docker-bridge-problem-on-the-dev-box).
 5. **RMW mismatch.** `echo $RMW_IMPLEMENTATION` on both. Fast DDS and Cyclone DDS
    do not interoperate for discovery in practice.
@@ -46,7 +87,7 @@ The most common failure in this setup. Work through in order:
 Confirm packets are actually crossing:
 
 ```bash
-sudo tcpdump -i eth2 -n 'udp and portrange 7400-7500'
+sudo tcpdump -i enp6s18 -n 'udp and portrange 7400-7500'
 ```
 
 ## Topics are visible but `ros2 topic echo` prints nothing
@@ -63,18 +104,28 @@ Discovery succeeded, data transport did not.
 
 ## `/dev/video0` not found, or permission denied
 
-- **Permission denied** means the login user is not in the `video` group. This is
-  the expected state on a freshly reflashed Ubuntu — Raspberry Pi OS put the user
-  there, Ubuntu does not. Fix it via the Ansible `camera` role, or by hand with
+- **`v4l2-ctl: command not found` — check this first.** Ubuntu Server does not ship
+  `v4l-utils`; Raspberry Pi OS did. `ssh pi 'sudo apt install -y v4l-utils'`.
+- **Permission denied** means the login user is not in the `video` group. It *was*
+  added by cloud-init at reflash time, so this should not happen — but if it does,
   `sudo usermod -aG video $USER`, then **log out and back in**; a group change does
   not affect the session that made it.
   ```bash
   ssh pi 'id -nG | tr " " "\n" | grep -x video'   # silence = not in the group
   ```
-- Did the camera enumerate at all? `ssh pi 'ls -l /dev/video0'`
-- Was the device re-enumerated after a replug? The node numbers can shift.
-  `ssh pi 'v4l2-ctl --list-devices'` and look for the `C922 Pro Stream Webcam`
-  block. For a stable path, use the `/dev/v4l/by-id/` symlink instead of `/dev/video0`.
+- **`/dev/video0` missing entirely** usually means the camera is unplugged rather
+  than broken. The Pi's own ISP and decoder blocks occupy `/dev/video19`–`/dev/video37`
+  and are always present, so "video nodes exist but no `video0`" is the signature of
+  a detached camera:
+  ```bash
+  ssh pi 'ls /dev/video*; lsusb | grep -i logitech'
+  ```
+- Was the device re-enumerated after a replug? The node numbers can shift, and they
+  shifted once already across the kernel change. Use the serial-keyed symlink in
+  configs rather than `/dev/video0`:
+  ```
+  /dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0
+  ```
 
 ## Camera opens but every frame is black or green
 

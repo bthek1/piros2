@@ -1,0 +1,11 @@
+---
+# rviz2, rqt, demo nodes. ml5 is the only machine with a real display
+# (GNOME Shell + Xwayland), which is what makes it the visualisation host.
+ros_metapackage: ros-jazzy-desktop
+
+# The LAN interface. NOT docker0/br-* (172.17-172.19), not tailscale0, and not
+# the WireGuard `laptop` interface (10.8.0.3) — DDS will bind to any of them and
+# advertise an unroutable address. See docs/networking.md.
+dds_interface: enp6s18
+
+# sudo prompts on this host, so playbook runs need --ask-become-pass.
