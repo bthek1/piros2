@@ -1,9 +1,11 @@
 # Ansible provisioning — build plan
 
-> **Working document.** [ansible.md](ansible.md) is the design — what the tree
-> looks like and why. This is the order to build it in, what each step must prove
-> before moving on, and the decisions still open. Delete this file once `ansible/`
-> exists and the playbook is green.
+> **Working document — its job is done.** [ansible.md](ansible.md) is the design;
+> this was the build order. As of 2026-07-24 the tree exists, the playbook is
+> green and idempotent on both machines, and every step below is annotated with
+> what actually happened. The original rule was to delete this file at that
+> point; it is kept for now as the build log, and deleting it loses nothing the
+> other docs don't already record.
 
 The plan is deliberately incremental: **every step ends with something you can run
 and check.** A provisioning tree written in one go and debugged afterwards is the
@@ -84,10 +86,10 @@ source being present and trusted, so it earns its own role.
 
 ### Step 2 — `ros2_install`
 
-**Done on both hosts 2026-07-24.** On `ml5` every package installed and
-configured, but the apt task reports failed until a pre-existing, unrelated
-kernel/DKMS problem is cleared —
-[troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box).
+**Done on both hosts 2026-07-24.** The first `ml5` run tripped over a
+pre-existing kernel/DKMS failure (resolved the same day —
+[troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box));
+since then the play is green and idempotent on both machines.
 
 Installs, per host, from `ros_metapackage`:
 

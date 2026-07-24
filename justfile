@@ -65,8 +65,16 @@ topics:
 camera:
     ssh pi 'v4l2-ctl --list-devices; ls -l /dev/v4l/by-id/; id -nG | tr " " "\n" | grep -x video'
 
-# Milestone 1 in one command: our talker here, our listener on the Pi (2>&1
-# because ROS logs go to stderr)
+# readlink -f because usb_cam mangles the by-id symlink; framerate 60 so the
+# poll timer outruns the real ~30 fps (docs/camera.md#running-it). View with:
+#   ros2 run rqt_image_view rqt_image_view /image_raw/compressed
+# Start the camera on the Pi (Ctrl-C to stop), then view from a second terminal
+[group('test')]
+cam:
+    ssh -t pi "bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:=\$(readlink -f /dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0) -p pixel_format:=mjpeg2rgb -p image_width:=1280 -p image_height:=720 -p framerate:=60.0 -p camera_frame_id:=camera_link'"
+
+# (2>&1 on the listener because ROS logs go to stderr)
+# Milestone 1 in one command: our talker here, our listener on the Pi
 [group('test')]
 hello:
     #!/usr/bin/env bash

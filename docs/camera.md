@@ -44,13 +44,26 @@ attempting those.
 # on the Pi
 source /opt/ros/jazzy/setup.bash
 ros2 run usb_cam usb_cam_node_exe --ros-args \
-  -p video_device:=/dev/video0 \
+  -p video_device:=$(readlink -f /dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0) \
   -p pixel_format:=mjpeg2rgb \
   -p image_width:=1280 \
   -p image_height:=720 \
-  -p framerate:=30.0 \
+  -p framerate:=60.0 \
   -p camera_frame_id:=camera_link
 ```
+
+Two lines there are load-bearing, both found the hard way (2026-07-24):
+
+- **`readlink -f` around the by-id symlink.** `usb_cam` naively splices the
+  symlink's relative target into `/dev/../../video0` and then rejects it as
+  invalid. Resolve the stable name to the real device before passing it.
+- **`framerate:=60.0`, deliberately above the camera's real 30.** `usb_cam`
+  polls on a ROS timer at the requested rate, and at 30 the two 33 ms clocks
+  (poll timer vs frame cadence) beat against each other: measured **24.0 fps**
+  steady, with the camera provably delivering 30 to a raw V4L2 capture at the
+  same moment. Polling at 60 (16 ms) catches every real frame: measured
+  **29.72 fps** at 720p MJPG, manual exposure 150. The camera still runs at
+  its ~30 fps ceiling — the parameter only changes how often the node looks.
 
 Check it from the dev box:
 
@@ -129,9 +142,15 @@ v4l2-ctl -d /dev/video0 --list-ctrls
 v4l2-ctl -d /dev/video0 --set-ctrl=focus_automatic_continuous=0
 v4l2-ctl -d /dev/video0 --set-ctrl=focus_absolute=0        # 0 = infinity on the C922
 v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=1         # 1 = manual, 3 = aperture priority
-v4l2-ctl -d /dev/video0 --set-ctrl=exposure_time_absolute=250
+v4l2-ctl -d /dev/video0 --set-ctrl=exposure_time_absolute=150
 v4l2-ctl -d /dev/video0 --set-ctrl=white_balance_automatic=0
 ```
+
+**One `--set-ctrl` per command, in this order.** A manual value is *inactive*
+while its auto mode holds it, and an inactive control in a batched
+`--set-ctrl=a,b` call fails the whole batch with a misleading
+`Permission denied` (observed 2026-07-24). Disable the auto mode first, then
+set the manual value in a separate call.
 
 Control names vary between kernel versions — always confirm with `--list-ctrls`
 rather than assuming. `usb_cam` exposes equivalents as ROS parameters, which is the

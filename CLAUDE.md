@@ -58,16 +58,18 @@ Machine state:
   (`ROS_DOMAIN_ID=42`, CycloneDDS pinned to `wlan0`), repo synced to `~/piros2`.
 - **Dev box: provisioned and verified** — `desktop`, env vars, CycloneDDS pinned
   to `enp6s18`. Sudo prompts here, so playbook runs need `--ask-become-pass`.
-  One wart: an **unrelated pre-existing kernel/DKMS failure** makes every apt
-  task (and so the playbook) report red on this host until fixed —
-  [docs/troubleshooting.md](docs/troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box).
+  The playbook is idempotent here too (`changed=0`); the kernel/DKMS apt
+  blocker was resolved 2026-07-24 by removing the unused `v4l2loopback-dkms`.
 - **Milestone 0 passed 2026-07-24**: `/chatter` published on the Pi arrived on
-  the dev box across the LAN. [docs/roadmap.md](docs/roadmap.md) tracks status;
-  next is milestone 1, the first hand-written package.
+  the dev box across the LAN. [docs/roadmap.md](docs/roadmap.md) tracks status.
 
 First package: `src/piros2_hello` (milestone 1, done 2026-07-24) — a
 hand-written `ament_python` talker/listener pair, built on both machines and
 verified across the LAN (`just hello`).
+
+Milestone 2 (camera) is nearly done (2026-07-24): `usb_cam` publishes from the
+Pi at a measured 29.72 fps (`just cam`), compressed transport verified across
+the LAN; only the `rqt_image_view` eyeball check remains.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -129,6 +131,11 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   without stating the exposure mode it was measured under.
 - **720p60 does not work**, despite being advertised and negotiating successfully.
   It measures ~29.7 fps. 30 fps is the ceiling at every resolution.
+- **`usb_cam` needs `framerate:=60` to deliver the camera's real 30 fps.** It
+  grabs frames on a ROS timer at the requested rate, and at 30 that timer beats
+  against the camera's 33 ms cadence — measured 24.0 fps steady while raw V4L2
+  capture delivered 30. It also mangles the by-id symlink; pass it through
+  `readlink -f` — [docs/camera.md](docs/camera.md#running-it).
 - **Never stream raw images across the LAN.** 1280×720 RGB8 @ 30 fps is ~83 MB/s.
   Use `image_transport` compressed topics — [docs/camera.md](docs/camera.md).
 - **No CSI camera is attached.** `libcamera`/`rpicam` guidance does not apply; the

@@ -145,10 +145,18 @@ Discovery succeeded, data transport did not.
   versus 30.00 fps with a fixed exposure. Confirm and fix:
   ```bash
   v4l2-ctl -d /dev/video0 --list-ctrls | grep -E 'auto_exposure|dynamic_framerate'
-  v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=1 --set-ctrl=exposure_time_absolute=150
+  v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=1
+  v4l2-ctl -d /dev/video0 --set-ctrl=exposure_time_absolute=150   # separate call — batched, it fails "Permission denied"
   ```
   A frame rate that *drifts downward* over the first few seconds rather than
   sitting at a wrong-but-stable value is this, essentially every time.
+- **A steady ~24 fps from `usb_cam` with exposure already fixed** is the node's
+  poll timer beating against the frame cadence, not the camera: `usb_cam` grabs
+  frames on a ROS timer at the requested `framerate`, and two 33 ms clocks drop
+  ~1 frame in 5. Measured 2026-07-24: 24.0 fps via `usb_cam` while raw V4L2
+  capture delivered 30 at the same settings. Fix: request `framerate:=60.0` so
+  the poll runs at 16 ms — measured 29.72 fps —
+  [camera.md](camera.md#running-it).
 - **60 fps was requested at 720p.** The mode is advertised and the driver reports
   it as negotiated, but it measures ~29.7 fps. Treat 30 as the ceiling —
   [hardware.md](hardware.md#capture-modes).
@@ -211,6 +219,12 @@ Run `ansible-playbook site.yml --check --diff` first when unsure; it shows exact
 what would change in `.bashrc` and the Cyclone DDS config without touching them.
 
 ## `apt` fails on `linux-*` kernel packages (dev box)
+
+> **Resolved 2026-07-24** by option 1: `v4l2loopback-dkms` was installed but
+> not in use (module not loaded, no virtual video devices, and noble offers no
+> newer version), so it was removed and the pending kernels configured cleanly.
+> Reinstate with `sudo apt install v4l2loopback-dkms` once Ubuntu ships a
+> build compatible with kernel 7.x. Kept for the diagnosis pattern:
 
 First seen 2026-07-24, when the first `site.yml` run on `ml5` reported the
 `ros2_install` apt task failed even though every ROS package ended up installed

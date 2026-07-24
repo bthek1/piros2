@@ -284,6 +284,12 @@ measuring a pipeline's real throughput — needs a fixed exposure, otherwise the
 frame rate silently follows the room lighting. The commands are in
 [camera.md](camera.md#v4l2-controls).
 
+Reconfirmed 2026-07-24: raw V4L2 capture at fixed exposure still delivers 30.
+Note that the *ROS pipeline* adds its own separate frame thief — `usb_cam`
+measures 24.0 fps at `framerate:=30` even with the camera provably delivering
+30, a poll-timer beat fixed by requesting `framerate:=60` (measured 29.72) —
+[camera.md](camera.md#running-it).
+
 The `usb_cam` node sets `auto_exposure` and friends as ROS parameters, so this
 belongs in `config/camera.yaml` rather than a manual `v4l2-ctl` step.
 

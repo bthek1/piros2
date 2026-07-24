@@ -4,10 +4,10 @@
 > the record, traps included) and both machines are now provisioned by the
 > playbook: `ros-base` + camera stack on the Pi, `desktop` on the dev box, one
 > shared environment. The step 6 verification passed — a talker on the Pi
-> reached a listener on the dev box across the LAN. One loose end on the dev
-> box: an unrelated kernel/DKMS failure keeps apt (and so the playbook) red
-> there —
-> [troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box).
+> reached a listener on the dev box across the LAN — and the playbook is
+> idempotent on both machines (the dev box's first-run kernel/DKMS stumble was
+> resolved the same day —
+> [troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box)).
 
 Both machines run ROS 2 Jazzy natively from `apt`, and one playbook provisions
 both. Only two things are done by hand: reflashing the Pi, and bootstrapping the

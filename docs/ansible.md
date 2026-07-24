@@ -1,12 +1,9 @@
 # Provisioning with Ansible
 
 > **Status: built and working (2026-07-24).** All five roles and `site.yml`
-> exist; the playbook is idempotent on the Pi (`changed=0` on a clean rerun) and
-> has provisioned both machines — milestone 0's cross-LAN talker/listener
-> passed. The dev box's apt task reports red until an unrelated kernel/DKMS
-> problem is cleared —
-> [troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box).
-> [ansible-plan.md](ansible-plan.md) records how this was built.
+> exist; the playbook has provisioned both machines and is idempotent on both
+> (`changed=0` on a clean rerun) — milestone 0's cross-LAN talker/listener
+> passed. [ansible-plan.md](ansible-plan.md) records how this was built.
 
 Both machines run the same native ROS 2 Jazzy install, so both are provisioned by
 the same playbook. The dev box is the control node; the Pi is a managed host.

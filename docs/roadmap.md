@@ -11,10 +11,9 @@ one thing that *is* done is the Pi's OS.
 
 - [x] Reflash the Pi to Ubuntu Server 24.04 arm64 — done 2026-07-23, [setup.md](setup.md)
 - [x] Write the Ansible roles — done 2026-07-24, all five in `ansible/roles/`
-- [x] `ansible-playbook site.yml` green on both machines — Pi idempotent
-      (`changed=0`); on the dev box every ROS package installed and configured,
-      but the play's apt task reports failed until a **pre-existing, unrelated**
-      kernel/DKMS problem is cleared —
+- [x] `ansible-playbook site.yml` green on both machines — idempotent
+      (`changed=0`) on both as of 2026-07-24. The dev box's first run tripped
+      over a pre-existing kernel/DKMS failure, resolved the same day —
       [troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box)
 - [x] `talker`/`listener` across the LAN — verified 2026-07-24: `/chatter`
       published on the Pi arrived on the dev box (domain 42, CycloneDDS pinned,
@@ -50,11 +49,20 @@ discovery failure.
 **Concepts:** package layout, `setup.py` entry points, `rclpy` node lifecycle,
 the build/source cycle, `ros2 run` vs `ros2 launch`.
 
-## 2. Camera up — *not started*
+## 2. Camera up — *nearly done (2026-07-24)*
 
-- [ ] `usb_cam` publishing `/image_raw` from the Pi
+- [x] `usb_cam` publishing `/image_raw` from the Pi — with two traps found and
+      documented in [camera.md](camera.md#running-it): `usb_cam` mangles the
+      by-id symlink (resolve with `readlink -f`), and its poll timer beats
+      against the frame cadence at `framerate:=30` (24.0 fps measured; request
+      60 to poll fast enough)
 - [ ] Viewed live in `rqt_image_view` on the dev box over compressed transport
-- [ ] Frame rate confirmed with `ros2 topic hz`
+      — topics verified flowing (`/image_raw/compressed`, ~0.14 MB/frame);
+      the eyeball check needs the GUI
+- [x] Frame rate confirmed with `ros2 topic hz` — **29.72 fps** at 720p MJPG,
+      manual exposure 150, `framerate:=60` polling; 24.0 fps at
+      `framerate:=30`; ~23 fps on stock auto-exposure. Raw V4L2 capture
+      confirmed the camera itself delivers 30.
 
 **Concepts:** sensor drivers, `sensor_msgs/Image`, image transport, QoS profiles
 for sensor data (`BEST_EFFORT` and why). See [camera.md](camera.md).
