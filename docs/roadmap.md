@@ -67,13 +67,19 @@ the build/source cycle, `ros2 run` vs `ros2 launch`.
 **Concepts:** sensor drivers, `sensor_msgs/Image`, image transport, QoS profiles
 for sensor data (`BEST_EFFORT` and why). See [camera.md](camera.md).
 
-## 3. Launch files & parameters — *not started*
+## 3. Launch files & parameters — *done 2026-07-24*
 
 Replace the long `--ros-args -p ...` command line with something declarative.
 
-- [ ] `launch/camera.launch.py` starting the camera node
-- [ ] Camera settings in `config/camera.yaml`
-- [ ] Launch arguments for resolution and frame rate
+- [x] `launch/camera.launch.py` starting the camera node — `src/piros2_camera/`,
+      runs at the verified 29.6 fps; `just cam` uses it
+- [x] Camera settings in `config/camera.yaml` — applied and checked with
+      `ros2 param get` rather than assumed, which caught a real bug: the
+      parameter is `frame_id`, and the `camera_frame_id` used until now was
+      silently ignored (headers said `default_cam`) —
+      [camera.md](camera.md#running-it)
+- [x] Launch arguments for resolution and frame rate — verified end to end:
+      `image_width:=640` arrived in the node and in the published frames
 
 **Concepts:** the Python launch system, parameter files, namespaces, remapping,
 `ros2 param` at runtime.

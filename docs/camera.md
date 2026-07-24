@@ -40,6 +40,18 @@ attempting those.
 
 ## Running it
 
+Since milestone 3 the camera runs from a launch file (`just cam` from the dev
+box, or on the Pi):
+
+```bash
+ros2 launch piros2_camera camera.launch.py
+ros2 launch piros2_camera camera.launch.py image_width:=640 image_height:=480
+```
+
+Stable parameters live in `src/piros2_camera/config/camera.yaml`; resolution,
+frame rate and device are launch arguments. The equivalent bare `ros2 run`,
+for understanding what the launch file abstracts:
+
 ```bash
 # on the Pi
 source /opt/ros/jazzy/setup.bash
@@ -49,10 +61,15 @@ ros2 run usb_cam usb_cam_node_exe --ros-args \
   -p image_width:=1280 \
   -p image_height:=720 \
   -p framerate:=60.0 \
-  -p camera_frame_id:=camera_link
+  -p frame_id:=camera_link
 ```
 
-Two lines there are load-bearing, both found the hard way (2026-07-24):
+Three things there are load-bearing, all found the hard way (2026-07-24):
+
+- **`frame_id`, not `camera_frame_id`.** The ROS 1-era name is silently
+  ignored — the node runs happily while stamping every header with
+  `default_cam`, which surfaces much later as TF lookups failing in
+  milestone 5. Check with `ros2 param get /usb_cam frame_id`.
 
 - **`readlink -f` around the by-id symlink.** `usb_cam` naively splices the
   symlink's relative target into `/dev/../../video0` and then rejects it as
@@ -73,8 +90,12 @@ ros2 topic bw /image_raw/compressed
 ros2 run rqt_image_view rqt_image_view
 ```
 
-A launch file is the better home for these parameters once they stop changing —
-that is milestone 3 in the [roadmap](roadmap.md).
+The launch file (`src/piros2_camera/launch/camera.launch.py`) is the home for
+all of this — milestone 3 in the [roadmap](roadmap.md), done 2026-07-24. The
+YAML/launch split: facts about the camera in `config/camera.yaml`, run-to-run
+knobs as launch arguments. Parameter files are keyed by node name — a mismatch
+between the YAML's top-level key and the node's launch `name=` applies nothing,
+silently.
 
 ## MJPG and the decode cost
 

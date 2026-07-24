@@ -71,6 +71,12 @@ Milestone 2 (camera) is nearly done (2026-07-24): `usb_cam` publishes from the
 Pi at a measured 29.72 fps (`just cam`), compressed transport verified across
 the LAN; only the `rqt_image_view` eyeball check remains.
 
+Milestone 3 (launch files, done 2026-07-24): `src/piros2_camera` —
+`launch/camera.launch.py` + `config/camera.yaml`, resolution/framerate as
+launch arguments. `just cam` runs it; args pass through
+(`just cam image_width:=640`). The usb_cam TF param is **`frame_id`** —
+`camera_frame_id` is a ROS 1 name it silently ignores.
+
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
 this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.

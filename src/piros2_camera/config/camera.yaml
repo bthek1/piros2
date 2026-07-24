@@ -1,0 +1,21 @@
+# Parameters for the usb_cam node driving the C922.
+#
+# The node name here must match the launch file's `name=` — ROS parameter
+# files are keyed by node name, and a mismatch silently applies nothing.
+#
+# video_device is NOT set here: it must be resolved from the serial-keyed
+# symlink at launch time (usb_cam mangles the symlink itself), which YAML
+# cannot do. The launch file owns it — docs/camera.md#running-it.
+usb_cam:
+  ros__parameters:
+    # MJPG off the wire, decoded to RGB on the Pi. The only route to 720p30 —
+    # uncompressed YUYV is USB-bandwidth-bound to well below that.
+    pixel_format: mjpeg2rgb
+    # TF frame stamped into every message header; milestone 5 gives it a
+    # transform. REP-103 name, not "webcam". NOTE: the parameter is frame_id —
+    # `camera_frame_id` is the ROS 1 name, and usb_cam silently ignores it.
+    frame_id: camera_link
+    camera_name: c922
+    # Calibration lands here in milestone 5 (camera.md#calibration); until
+    # then usb_cam warns that the file is missing, which is honest.
+    camera_info_url: ""
