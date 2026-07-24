@@ -25,7 +25,7 @@ launch API, and QoS defaults differ between them.
 | Reach it | local | `ssh pi` (→ `bthek1@192.168.2.17`, key auth, works with `BatchMode=yes`) |
 | OS | Ubuntu 24.04.4 LTS, x86_64 | Ubuntu 24.04.4 LTS, aarch64 (reflashed 2026-07-23) |
 | Kernel | — | `6.8.0-1047-raspi` |
-| ROS | `ros-jazzy-desktop`, native apt (planned) | `ros-jazzy-ros-base`, native apt (planned) |
+| ROS | `ros-jazzy-desktop`, native apt — **installed 2026-07-24** | `ros-jazzy-ros-base`, native apt — **installed 2026-07-24** |
 | Provisioning | Ansible control node (core 2.16.3, installed) | Ansible managed host |
 | Runs | `rviz2`, `rqt`, editing, builds | camera node, anything touching hardware |
 | Network | `192.168.2.109/24` on `enp6s18` | `192.168.2.17` on **`wlan0`** — no Ethernet cable |
@@ -47,12 +47,26 @@ Full measured specs: [docs/hardware.md](docs/hardware.md).
 
 ## Current state
 
-The repository is **documentation only**. No ROS packages exist, neither machine
-has ROS installed yet, and `src/` and `ansible/` have not been created.
+**The `ansible/` tree is built and working** (2026-07-24): `site.yml` plus five
+roles — `ros2_apt`, `ros2_install`, `ros2_env`, `camera`, `workspace` — and the
+playbook is idempotent (a clean rerun reports `changed=0` on the Pi).
 
-**The Pi was reflashed to Ubuntu Server 24.04 on 2026-07-23** — that milestone is
-done, and `apt install ros-jazzy-*` now works there. Nothing else in
-[docs/roadmap.md](docs/roadmap.md) has started.
+Machine state:
+
+- **Pi: fully provisioned and verified.** `ros-base` + `demo_nodes_cpp`, the
+  camera stack (`usb_cam`, `image-transport-plugins`, `v4l-utils`), env vars
+  (`ROS_DOMAIN_ID=42`, CycloneDDS pinned to `wlan0`), repo synced to `~/piros2`.
+- **Dev box: provisioned and verified** — `desktop`, env vars, CycloneDDS pinned
+  to `enp6s18`. Sudo prompts here, so playbook runs need `--ask-become-pass`.
+  One wart: an **unrelated pre-existing kernel/DKMS failure** makes every apt
+  task (and so the playbook) report red on this host until fixed —
+  [docs/troubleshooting.md](docs/troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box).
+- **Milestone 0 passed 2026-07-24**: `/chatter` published on the Pi arrived on
+  the dev box across the LAN. [docs/roadmap.md](docs/roadmap.md) tracks status;
+  next is milestone 1, the first hand-written package.
+
+No ROS packages exist yet; `src/` contains only a `.gitkeep` and both build
+tasks in the `workspace` role are guarded on packages existing.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -70,8 +84,9 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   Ansible fact, a bandwidth estimate — is wrong. It also means a bad network config
   leaves the machine needing a keyboard and monitor, so treat network changes on
   the Pi as higher-risk than they look.
-- **`v4l2-ctl` is not installed.** Ubuntu Server has no `v4l-utils`; Raspberry Pi
-  OS did. Every `v4l2-ctl` line in these docs needs it installed first. Don't
+- **`v4l2-ctl` comes from the `camera` role, not the OS.** Ubuntu Server has no
+  `v4l-utils`; Raspberry Pi OS did. It is installed on the Pi now (camera role,
+  2026-07-24), but a fresh reflash loses it until the playbook runs — don't
   report a camera command as failing before checking this.
 - **Ubuntu silently downgrades the Pi's bootloader.** Its `rpi-eeprom` package
   bundles only `pieeprom-2024-09-23.bin` and enables `rpi-eeprom-update.service`,

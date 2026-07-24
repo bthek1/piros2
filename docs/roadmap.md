@@ -7,17 +7,20 @@ works before moving on.
 No ROS packages are written yet — the repository is still documentation only. The
 one thing that *is* done is the Pi's OS.
 
-## 0. Environment — *in progress*
+## 0. Environment — *done 2026-07-24*
 
 - [x] Reflash the Pi to Ubuntu Server 24.04 arm64 — done 2026-07-23, [setup.md](setup.md)
 - [x] Write the Ansible roles — done 2026-07-24, all five in `ansible/roles/`
-- [ ] `ansible-playbook site.yml` green on both machines — **Pi done and
-      idempotent (`changed=0`) 2026-07-24**; the dev box needs an interactive
-      `ansible-playbook site.yml --ask-become-pass` because sudo prompts there
-- [ ] `talker`/`listener` across the LAN — [networking.md](networking.md)
+- [x] `ansible-playbook site.yml` green on both machines — Pi idempotent
+      (`changed=0`); on the dev box every ROS package installed and configured,
+      but the play's apt task reports failed until a **pre-existing, unrelated**
+      kernel/DKMS problem is cleared —
+      [troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box)
+- [x] `talker`/`listener` across the LAN — verified 2026-07-24: `/chatter`
+      published on the Pi arrived on the dev box (domain 42, CycloneDDS pinned,
+      Wi-Fi multicast worked without static peers)
 
-**Done when:** a node on the Pi and a node on the dev box exchange messages.
-This is the milestone most likely to eat time; everything else depends on it.
+**Done when:** a node on the Pi and a node on the dev box exchange messages. ✓
 
 Read the plain-`apt` equivalent in [setup.md](setup.md#5-run-the-playbook) as you
 write the roles. The point is not to avoid learning what the install does — it is

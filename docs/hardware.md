@@ -216,10 +216,10 @@ device driven by the in-tree `uvcvideo` module, which Ubuntu's Pi kernel carries
 just as the vendor kernel did. It re-enumerated as `/dev/video0` + `/dev/video1`
 under Ubuntu, same as before.
 
-> **`v4l2-ctl` is not installed on Ubuntu.** Raspberry Pi OS shipped it; Ubuntu
-> Server does not. Every `v4l2-ctl` command in these docs needs `v4l-utils` first:
-> `ssh pi 'sudo apt install -y v4l-utils'`. Worth adding to the Ansible `camera`
-> role rather than installing by hand.
+> **`v4l2-ctl` comes from the Ansible `camera` role** (installed 2026-07-24) —
+> Ubuntu Server does not ship `v4l-utils`, so after a reflash the `v4l2-ctl`
+> commands in these docs fail until `ansible-playbook site.yml --limit robot`
+> has run.
 
 ```bash
 ssh pi 'v4l2-ctl --list-devices; v4l2-ctl -d /dev/video0 --list-formats-ext'

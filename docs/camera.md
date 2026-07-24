@@ -117,11 +117,10 @@ lets it lengthen exposure past the frame interval. Fixing the exposure restores 
 measured 30.00 fps. Frame rate here is a function of room lighting until you pin
 it down.
 
-> **`v4l2-ctl` is not installed on the Pi.** Ubuntu Server does not ship
-> `v4l-utils` — Raspberry Pi OS did, so this is new since the reflash. Install it
-> before any of the commands below will run, and add it to the Ansible `camera`
-> role rather than doing it by hand:
-> `ssh pi 'sudo apt install -y v4l-utils'`
+> **`v4l2-ctl` is installed by the Ansible `camera` role** (done 2026-07-24).
+> Ubuntu Server does not ship `v4l-utils` — Raspberry Pi OS did — so after a
+> future reflash the commands below fail until
+> `ansible-playbook site.yml --limit robot` has run.
 
 ```bash
 # on the Pi

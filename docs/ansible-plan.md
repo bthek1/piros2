@@ -21,7 +21,7 @@ Verified 2026-07-23, so the plan starts from fact rather than assumption:
 | sudo | **prompts** → needs `--ask-become-pass` | passwordless |
 | Ansible | core 2.16.3 + `ansible.posix` 1.5.4, `community.general` 8.3.0 | not needed |
 | DDS interface | `enp6s18` (Docker bridges + 2 VPNs compete) | **`wlan0`** — no Ethernet cable |
-| ROS | not installed | not installed |
+| ROS | `desktop` installing 2026-07-24 | **`ros-base` installed 2026-07-24** |
 
 > **Blockers cleared (2026-07-23).** `ml5` now reaches the Pi over key-based SSH:
 > its key has been added to the Pi's `authorized_keys` and the stale pre-reflash
@@ -39,9 +39,10 @@ and `ros-jazzy-camera-calibration`.
 
 ### Step 0 — Skeleton and reachability
 
-**Partly done.** `ansible.cfg`, `inventory.yml` and the three `group_vars` files
-already exist in the repo. What remains: clear the two SSH blockers above, clone
-the repo onto `ml5`, and add an empty `site.yml`.
+**Done 2026-07-24** — both hosts answer `ansible all -m ping`; `ml5` uses
+`ansible_connection: local`, and `workspace_path` moved into the per-group files
+because the checkout lives at `~/Documents/piros2` on `ml5` but `~/piros2` on
+the Pi.
 
 `interpreter_python = auto_silent` in `ansible.cfg` suppresses a deprecation
 warning on every run; `pipelining = True` roughly halves the round-trips to the Pi,
@@ -56,6 +57,12 @@ applies to every host in the `robot` group, which is how one playbook serves two
 different machines without conditionals scattered through the roles.
 
 ### Step 1 — `ros2_apt`
+
+**Done 2026-07-24 on both hosts.** Built as planned, with one deviation: noble
+ships `universe` enabled and uses deb822 sources that `apt_repository` predates,
+so the role *asserts* universe rather than adding it. The bootstrap `.deb`
+version is pinned in role defaults (guarded on the package being absent) —
+`packages.ros.org` serves updates to `ros2-apt-source` itself afterwards.
 
 Enable `universe`, then install the `ros2-apt-source` `.deb`. That package carries
 the signing key and keeps it current, which is why it is preferred over a
@@ -76,6 +83,11 @@ Both hosts should show a candidate version rather than `(none)`.
 source being present and trusted, so it earns its own role.
 
 ### Step 2 — `ros2_install`
+
+**Done on both hosts 2026-07-24.** On `ml5` every package installed and
+configured, but the apt task reports failed until a pre-existing, unrelated
+kernel/DKMS problem is cleared —
+[troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box).
 
 Installs, per host, from `ros_metapackage`:
 
@@ -106,6 +118,12 @@ made concrete — the Pi has no reason to carry the Qt stack.
 
 ### Step 3 — `ros2_env`
 
+**Done on the Pi 2026-07-24**, after one real discovery: exports appended to
+`.bashrc` are invisible to every non-interactive shell (Ubuntu's interactivity
+guard returns first), so the env block lives in `.profile` and only the sourcing
+alias stays in `.bashrc` — [ansible.md](ansible.md#gotchas-specific-to-provisioning-ros).
+The role also generates the `en_US.UTF-8` locale that Ubuntu Server lacks.
+
 Two things: the `blockinfile` in `.bashrc`, and `~/.config/cyclonedds/cyclonedds.xml`
 rendered per host from `dds_interface` — outside the workspace, so the
 `workspace` role's `rsync --delete` can never remove it.
@@ -134,6 +152,13 @@ locally but not across the LAN" is nearly always one of these three.
 
 ### Step 4 — Prove the two machines talk
 
+**PASSED 2026-07-24** — `/chatter` from a talker on the Pi arrived at the dev
+box on the first try: domain 42, CycloneDDS pinned per host, and Wi-Fi
+multicast held up, so `ROS_STATIC_PEERS` stays unused (as the open-decisions
+table leans). One note: Jazzy warns that `ROS_LOCALHOST_ONLY` is deprecated in
+favour of `ROS_AUTOMATIC_DISCOVERY_RANGE` — ours is `0`/disabled, so the
+warning is cosmetic for now.
+
 Not a role. A checkpoint, and **the real milestone 0** —
 [roadmap.md](roadmap.md) step 0 is not done until this passes.
 
@@ -160,6 +185,10 @@ will keep reporting the pre-fix view.
 > variable rather than leaving an export in one shell.
 
 ### Step 5 — `camera` (robot only)
+
+**Done 2026-07-24** — camera stack installed, user in `video`, and the C922
+asserted present at its serial-keyed symlink. One Ansible wrinkle: `meta:
+reset_connection` ignores `when:` (core 2.16), so it runs unconditionally.
 
 | Task | Why |
 | --- | --- |
@@ -190,6 +219,10 @@ ssh pi 'v4l2-ctl --list-devices; id -nG | tr " " "\n" | grep -x video'
 a pipeline that survives a replug and one that breaks silently.
 
 ### Step 6 — `workspace`
+
+**Done 2026-07-24** — repo synced to `~/piros2` on the Pi, build tasks guarded
+and skipped (only `src/.gitkeep` exists), and the idempotence proof passed: a
+clean rerun of `site.yml` against the Pi reports `changed=0`.
 
 Sync the repo to the Pi, then `rosdep install` and `colcon build --symlink-install`
 as the **login user** — never under `become`, or `build/` ends up root-owned and

@@ -20,12 +20,14 @@ DDS without a central master.
 
 ## Status
 
-The repository is still **documentation only** — no ROS packages have been written,
-the `ansible/` tree does not exist yet, and neither machine has ROS installed.
+**Milestone 0 is done** (2026-07-24): both machines are provisioned by the
+Ansible playbook in `ansible/` — ROS 2 Jazzy `ros-base` + camera stack on the
+Pi, `desktop` on the dev box — and a `talker` on the Pi reached a listener on
+the dev box across the LAN on domain 42 with CycloneDDS pinned per host.
 
-The one milestone that *is* complete: the Pi was **reflashed to Ubuntu Server 24.04
-on 2026-07-23**, which is what makes the native `apt` install possible. The docs
-below describe the verified hardware and the path from here.
+Groundwork before that: the Pi was **reflashed to Ubuntu Server 24.04 on
+2026-07-23**, which is what makes the native `apt` install possible. No ROS
+packages have been written yet — `src/` is empty until milestone 1.
 
 See [docs/roadmap.md](docs/roadmap.md) for what is planned and in what order.
 

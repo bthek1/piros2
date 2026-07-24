@@ -1,9 +1,13 @@
 # Setup
 
-> **Status: partly done.** The Pi **was reflashed to Ubuntu Server 24.04 on
-> 2026-07-23** — step 1 and step 2 below are a record of what happened, traps
-> included. Everything from step 3 onward is still planned: neither machine has ROS
-> installed and the `ansible/` tree does not exist yet.
+> **Status: done (2026-07-24).** The Pi was reflashed 2026-07-23 (steps 1–2 are
+> the record, traps included) and both machines are now provisioned by the
+> playbook: `ros-base` + camera stack on the Pi, `desktop` on the dev box, one
+> shared environment. The step 6 verification passed — a talker on the Pi
+> reached a listener on the dev box across the LAN. One loose end on the dev
+> box: an unrelated kernel/DKMS failure keeps apt (and so the playbook) red
+> there —
+> [troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box).
 
 Both machines run ROS 2 Jazzy natively from `apt`, and one playbook provisions
 both. Only two things are done by hand: reflashing the Pi, and bootstrapping the

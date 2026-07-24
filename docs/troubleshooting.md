@@ -105,7 +105,8 @@ Discovery succeeded, data transport did not.
 ## `/dev/video0` not found, or permission denied
 
 - **`v4l2-ctl: command not found` — check this first.** Ubuntu Server does not ship
-  `v4l-utils`; Raspberry Pi OS did. `ssh pi 'sudo apt install -y v4l-utils'`.
+  `v4l-utils`; the Ansible `camera` role installs it. If it is missing, the
+  playbook has not run since the last reflash: `ansible-playbook site.yml --limit robot`.
 - **Permission denied** means the login user is not in the `video` group. It *was*
   added by cloud-init at reflash time, so this should not happen — but if it does,
   `sudo usermod -aG video $USER`, then **log out and back in**; a group change does
@@ -208,3 +209,30 @@ order matters, workspace overlay last.
 
 Run `ansible-playbook site.yml --check --diff` first when unsure; it shows exactly
 what would change in `.bashrc` and the Cyclone DDS config without touching them.
+
+## `apt` fails on `linux-*` kernel packages (dev box)
+
+First seen 2026-07-24, when the first `site.yml` run on `ml5` reported the
+`ros2_install` apt task failed even though every ROS package ended up installed
+and configured (`dpkg -l` shows `ii`).
+
+The failure is **not ROS**. `ml5` has a pending HWE kernel update
+(`linux-image-7.0.0-28-generic`) whose post-install runs DKMS, and
+`v4l2loopback/0.12.7` does not compile against kernel 7.0.0 — the
+`v4l2_fh_del()` signature changed. dpkg leaves three `linux-*` packages
+unconfigured, apt exits non-zero, and *every* subsequent apt operation
+(including playbook runs) repeats the failure.
+
+Fixes, in order of preference — this is a machine-owner decision because
+`v4l2loopback` (virtual webcams, e.g. OBS) may be in use:
+
+1. **If v4l2loopback is not needed:** `sudo apt remove v4l2loopback-dkms`,
+   then `sudo dpkg --configure -a`.
+2. **If it is:** install a newer v4l2loopback (0.13+) that supports the 7.0.0
+   kernel API, then `sudo dpkg --configure -a`.
+3. **Stopgap:** hold the new kernel (`sudo apt-mark hold linux-generic-hwe-24.04`)
+   until 1 or 2 is done — the machine keeps running its current 6.17 kernel
+   either way.
+
+Until one of these is done, expect `ansible-playbook site.yml` to report the
+dev box red on the apt task while actually changing nothing.
