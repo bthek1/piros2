@@ -91,14 +91,32 @@ Replace the long `--ros-args -p ...` command line with something declarative.
 **Concepts:** the Python launch system, parameter files, namespaces, remapping,
 `ros2 param` at runtime.
 
-## 4. An image-processing node — *not started*
+## 4. An image-processing node — *in progress (2026-07-24)*
 
 The first node that does something rather than plumbing data.
 
-- [ ] Subscribe to `/image_raw`, publish an annotated `/image_processed`
-- [ ] Start with something trivially verifiable — edge detection, or a colour blob
-      tracker publishing the centroid
-- [ ] `cv_bridge` for the ROS ↔ OpenCV conversion
+- [x] Subscribe to `/image_raw`, publish an annotated `/image_processed` —
+      `src/piros2_vision/edge_detector.py`: Canny edges drawn green over the
+      frame at ~16 fps (processing ~30–45 ms/frame, RELIABLE/KEEP_LAST-1 QoS),
+      plus a hand-rolled `/compressed` variant that crosses the Wi-Fi
+      (image_transport is C++-only, so Python publishers get no automatic one)
+- [x] Start with something trivially verifiable — edge detection
+- [x] `cv_bridge` for the ROS ↔ OpenCV conversion
+
+Two findings along the way: a freshness gate keyed on `header.stamp` dropped
+100% of frames, exposing the camera's **~0.73 s timestamping fault**
+([camera.md](camera.md#timestamps)) — per-frame cost is now measured against
+the node's own clock only; and **BEST_EFFORT delivered literally zero frames**
+while RELIABLE worked: a 2.7 MB raw frame fragments into ~1800 UDP datagrams
+even on loopback, at least one always drops with default socket buffers, and
+best-effort never retransmits, so no frame ever reassembles. The textbook
+"sensor data = BEST_EFFORT" assumes messages small enough to survive intact;
+megabyte frames invert it. Provable either way with
+`ros2 topic echo --qos-reliability {best_effort,reliable} /image_raw`.
+
+Remaining before calling it done: a launch file wiring camera + detector
+together, and a first real unit test (feed `on_frame` a synthetic image,
+assert edges come back).
 
 **Concepts:** `cv_bridge`, subscriber/publisher in one node, keeping per-frame work
 off the executor thread, measuring latency end to end.

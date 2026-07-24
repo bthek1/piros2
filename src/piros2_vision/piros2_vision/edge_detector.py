@@ -1,4 +1,5 @@
-"""Subscribe /image_raw, publish edges as an annotated /image_processed.
+"""
+Subscribe /image_raw, publish edges as an annotated /image_processed.
 
 The first node that transforms data rather than moving it. Three concepts:
 
@@ -6,36 +7,42 @@ The first node that transforms data rather than moving it. Three concepts:
   where it can, explicit about encodings where it cannot.
 - One node can hold subscriptions and publications at once; the executor
   fires the callback per frame, and everything this node does happens there.
-- Sensor streams want BEST_EFFORT QoS: a dropped frame is better than a
-  stale one arriving late. RELIABLE would make the camera re-send frames we
-  no longer want.
+- QoS theory says sensor streams want BEST_EFFORT (drop, don't retransmit).
+  Measured reality here says otherwise — see the note above the QoS profile.
 
 Runs on the Pi, next to the camera: /image_raw at 720p RGB is ~83 MB/s and
 must never cross the Wi-Fi. Only the JPEG streams leave this machine.
 """
 
 import cv2
-import rclpy
 from cv_bridge import CvBridge
+import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import CompressedImage, Image
 
-# Our processing (~47 ms measured at 720p) exceeds the 33 ms frame interval,
-# so the node cannot keep up with the camera and something must drop frames.
-# Two ways to do that:
-#   1. QoS depth 1 — let DDS keep only the latest. Tried; with CycloneDDS on
-#      this setup a BEST_EFFORT/KEEP_LAST-1 subscription starved (one frame
-#      at match time, then silence), so it is not used.
-#   2. The stock sensor profile (BEST_EFFORT, depth 5) plus an explicit
-#      freshness gate at callback entry — stale frames return immediately,
-#      the queue drains at near-zero cost, and only fresh frames pay for
-#      processing. This is what runs; measured latency in the node's log.
-# Without either, the depth-5 queue sits permanently full and every frame
-# waits in it: 380 ms end-to-end measured before the gate existed.
-STALE_FRAME_MS = 60.0
+# RELIABLE, deliberately against the "sensor data = BEST_EFFORT" doctrine.
+# A 720p rgb8 frame is a 2.7 MB message -> ~1800 UDP fragments even on
+# loopback, and with default socket buffers at least one fragment of every
+# frame drops. BEST_EFFORT never retransmits, so no frame EVER completes:
+# measured zero delivery from a best-effort subscription while a reliable one
+# received instantly (`ros2 topic echo --qos-reliability ...` proves it
+# either way). The doctrine assumes messages small enough to survive intact;
+# megabyte frames are not that. Depth 1 = always the freshest frame.
+BIG_FRAME_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1)
+
+# Do NOT measure latency (or gate freshness) against msg.header.stamp on this
+# camera: `ros2 topic delay /image_raw` shows the stamps lag wall clock by a
+# steady ~0.73 s even on a freshly started camera, while the frames themselves
+# are visibly live — a UVC/driver timestamping fault, not a queue
+# (docs/camera.md#timestamps). A first version of this node gated on stamp
+# age and silently dropped 100% of frames. Only spans between our *own* clock
+# reads are trustworthy here.
 
 
 class EdgeDetector(Node):
@@ -44,36 +51,23 @@ class EdgeDetector(Node):
         super().__init__('edge_detector')
         self.bridge = CvBridge()
 
-        # BEST_EFFORT is compatible with a RELIABLE publisher (the pair
-        # degrades to the weaker policy) — a BEST_EFFORT *publisher* with a
-        # RELIABLE subscriber would not be, which is the asymmetry that
-        # bites in RViz.
         self.sub = self.create_subscription(
-            Image, 'image_raw', self.on_frame, qos_profile_sensor_data)
-        self.dropped = 0
+            Image, 'image_raw', self.on_frame, BIG_FRAME_QOS)
 
+        # Publishers are RELIABLE too: a RELIABLE *subscriber* (RViz and
+        # rqt_image_view default to it) never matches a BEST_EFFORT
+        # publisher — that asymmetry would make our topics silently
+        # invisible in the standard viewers.
         self.pub_image = self.create_publisher(
-            Image, 'image_processed', qos_profile_sensor_data)
+            Image, 'image_processed', BIG_FRAME_QOS)
         # image_transport is C++-only, so a Python publisher gets no automatic
         # compressed variant. Publish it by hand on the conventional name —
         # rqt_image_view and RViz find <topic>/compressed by suffix.
         self.pub_jpeg = self.create_publisher(
-            CompressedImage, 'image_processed/compressed',
-            qos_profile_sensor_data)
+            CompressedImage, 'image_processed/compressed', BIG_FRAME_QOS)
 
     def on_frame(self, msg: Image):
-        # Two numbers tell different stories: queue age (stamp -> callback
-        # entry) is backlog/transport, processing is our own cost. Logging
-        # only their sum makes those indistinguishable.
         entry = self.get_clock().now()
-
-        # The freshness gate: work slower than the frame interval means the
-        # queue always holds stale frames — skip them cheaply here instead
-        # of paying 47 ms to process history nobody wants.
-        age_ms = (entry - Time.from_msg(msg.header.stamp)).nanoseconds / 1e6
-        if age_ms > STALE_FRAME_MS:
-            self.dropped += 1
-            return
 
         # 'bgr8' is what OpenCV expects; cv_bridge converts from the wire
         # encoding (rgb8 from usb_cam) and flags impossible requests loudly.
@@ -103,15 +97,18 @@ class EdgeDetector(Node):
             '.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
         self.pub_jpeg.publish(jpeg)
 
-        # End-to-end pipeline latency, split into its two components.
-        # Throttled so the log stays readable at 30 Hz.
+        # Per-frame processing cost, measured with one clock (ours). The
+        # stamp-based "age" is logged too but labelled for what it is —
+        # dominated by the camera's ~0.73 s timestamping fault, not by any
+        # queue in this process. Throttled so the log stays readable.
         done = self.get_clock().now()
-        queue_ms = (entry - Time.from_msg(msg.header.stamp)).nanoseconds / 1e6
         proc_ms = (done - entry).nanoseconds / 1e6
+        stamp_lag_ms = (entry - Time.from_msg(msg.header.stamp)
+                        ).nanoseconds / 1e6
         self.get_logger().info(
-            f'latency {queue_ms + proc_ms:.1f} ms '
-            f'(queue {queue_ms:.1f} + processing {proc_ms:.1f}), '
-            f'{self.dropped} stale frames dropped',
+            f'processing {proc_ms:.1f} ms/frame '
+            f'(stamp lag {stamp_lag_ms:.0f} ms — camera clock fault, '
+            f'not pipeline latency)',
             throttle_duration_sec=5.0)
 
 

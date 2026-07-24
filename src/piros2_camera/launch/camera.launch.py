@@ -1,4 +1,5 @@
-"""Launch the C922 via usb_cam: config/camera.yaml + arguments for the knobs.
+"""
+Launch the C922 via usb_cam: config/camera.yaml + arguments for the knobs.
 
 What a launch file actually is: a Python module that *describes* a process
 tree — it returns a LaunchDescription, and the launch service executes it.
@@ -34,7 +35,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'video_device',
             default_value=os.path.realpath(CAMERA_BY_ID),
-            description='V4L2 capture device (pre-resolved; usb_cam cannot take the by-id symlink)'),
+            description='V4L2 capture device, pre-resolved (usb_cam mangles by-id symlinks)'),
         DeclareLaunchArgument(
             'image_width', default_value='1280',
             description='Capture width; camera.md lists the real modes'),

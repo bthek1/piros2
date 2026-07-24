@@ -152,6 +152,30 @@ ros2 param set /usb_cam .image_raw.compressed.jpeg_quality 80
 `camera.yaml`'s top-level key.) None of this affects processing nodes on the
 Pi: they subscribe to `/image_raw` directly and never pay the re-encode tax.
 
+## Timestamps
+
+**Do not trust `header.stamp` on this camera.** Measured 2026-07-24:
+
+```bash
+ros2 topic delay /image_raw    # → steady ~0.73 s, even on a freshly started camera
+```
+
+The frames themselves are visibly live — this is a UVC/driver timestamping
+fault, not a queue anywhere in the pipeline. The lag is steady rather than
+growing, which is the tell: real backlog accumulates.
+
+Consequences, learned the expensive way in `piros2_vision`:
+
+- **Never gate frame freshness on stamp age.** The first edge-detector
+  version dropped 100% of frames "as stale" — silently, because a
+  freshness gate failing looks identical to no frames arriving.
+- **Never report stamp-to-now as pipeline latency.** It is dominated by the
+  camera's clock fault; only spans between one process's *own* clock reads
+  are trustworthy for measuring processing cost.
+- The stamp remains fine for frame ordering and for associating a frame with
+  other data stamped by the *same* fault — just not for comparison against
+  any other clock.
+
 ## V4L2 controls
 
 Webcam auto-exposure and autofocus will actively fight computer-vision algorithms:

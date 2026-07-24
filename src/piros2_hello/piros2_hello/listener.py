@@ -1,4 +1,5 @@
-"""A minimal subscriber: the receiving half of milestone 1.
+"""
+A minimal subscriber: the receiving half of milestone 1.
 
 Discovery does the matchmaking — this node never names a host or address. It
 declares interest in the topic 'hello' with a compatible QoS, and DDS connects

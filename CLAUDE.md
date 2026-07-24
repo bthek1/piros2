@@ -79,6 +79,19 @@ launch arguments. `just cam` runs it; args pass through
 (`just cam image_width:=640`). The usb_cam TF param is **`frame_id`** —
 `camera_frame_id` is a ROS 1 name it silently ignores.
 
+Milestone 4 (image processing, in progress 2026-07-24): `src/piros2_vision` —
+a hand-written Canny edge detector (`cv_bridge`, hand-rolled compressed
+variant), ~16 fps at ~30–45 ms/frame on the Pi. Its first version exposed the
+camera's timestamp fault, and its QoS exposed a second trap: **BEST_EFFORT
+receives zero large frames** — 2.7 MB messages fragment into ~1800 UDP
+datagrams, one always drops, and only RELIABLE reassembles; the node
+subscribes RELIABLE/KEEP_LAST-1 on purpose. Still to do: a combined launch
+file and a first real unit test.
+
+Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
+sidebar — both report identically. All packages are style-clean as of
+2026-07-24.
+
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
 this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
@@ -155,6 +168,12 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   crash with `No module named 'yaml'`. colcon-built nodes are immune (hardcoded
   shebang). Prefix `PATH="/usr/bin:$PATH"` for GUI tools —
   [docs/troubleshooting.md](docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml).
+- **`/image_raw` header stamps lag wall clock by a steady ~0.73 s** — a
+  UVC/driver timestamping fault (`ros2 topic delay /image_raw` shows it; the
+  frames are live). Never gate freshness or report latency against
+  `header.stamp` on this camera: a stamp-age gate silently dropped 100% of
+  frames. Measure processing cost against one process's own clock only —
+  [docs/camera.md](docs/camera.md#timestamps).
 - **Never stream raw images across the LAN.** 1280×720 RGB8 @ 30 fps is ~83 MB/s.
   Use `image_transport` compressed topics — [docs/camera.md](docs/camera.md).
 - **No CSI camera is attached.** `libcamera`/`rpicam` guidance does not apply; the
@@ -176,6 +195,14 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   `colcon build` must run as the login user, never under `become`/`sudo`.
 - Build with `colcon build --symlink-install` so Python and launch edits apply
   without a rebuild.
+- Tests run through colcon (`just test`) or the VSCode Testing sidebar; the
+  sidebar needs three accommodations that already exist — `.vscode/ros.env`
+  (the ROS python path; the sidebar's pytest has no login shell),
+  `pytest.ini` (importlib mode + launch_testing plugins off), and per-package
+  linter tests **anchored on `__file__`, not the CWD**. `ros2 pkg create`
+  generates the CWD-dependent form: when adding a package, copy the anchored
+  tests from an existing one and add the package to `.vscode/tasks.json`'s
+  picker.
 - Package naming: `piros2_<thing>` (e.g. `piros2_camera`).
 - Python packages use `ament_python`; C++ uses `ament_cmake`.
 - Parameters belong in `config/*.yaml` and launch files in `launch/*.launch.py` —

@@ -1,4 +1,5 @@
-"""A minimal publisher: the rclpy node lifecycle end to end.
+"""
+A minimal publisher: the rclpy node lifecycle end to end.
 
 The shape to internalise: init -> construct a Node -> spin -> destroy ->
 shutdown. Everything the node *does* happens inside callbacks fired by spin();

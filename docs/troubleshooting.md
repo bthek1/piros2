@@ -99,6 +99,19 @@ Discovery succeeded, data transport did not.
   incompatible pairs simply never connect. Force it:
   `ros2 topic echo /image_raw --qos-reliability best_effort`.
   `ros2 topic info /image_raw --verbose` shows both ends' QoS profiles.
+- **A BEST_EFFORT subscriber on a large-message topic receives nothing at
+  all — even on the same host.** Hit 2026-07-24: a 2.7 MB raw 720p frame
+  fragments into ~1800 UDP datagrams; with default socket buffers at least one
+  fragment of every frame drops, and best-effort never retransmits, so no
+  frame ever reassembles. A RELIABLE subscription on the identical topic works
+  instantly. Diagnose in one minute:
+  ```bash
+  ros2 topic echo /image_raw --qos-reliability best_effort --once   # nothing
+  ros2 topic echo /image_raw --qos-reliability reliable    --once   # frame
+  ```
+  For megabyte messages, subscribe RELIABLE (the "sensor data = BEST_EFFORT"
+  rule assumes small messages) — or raise `net.core.rmem_max` and Cyclone's
+  socket buffer if best-effort semantics are genuinely needed.
 - **MTU / fragmentation** — large messages (raw images) fragmented across UDP can
   be dropped wholesale by a switch. Subscribe to the compressed topic instead.
 
