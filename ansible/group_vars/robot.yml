@@ -11,3 +11,7 @@ install_demo_nodes: true
 
 # The Pi's copy of the repo, kept in sync by the workspace role.
 workspace_path: "{{ ansible_env.HOME }}/piros2"
+
+# The camera by its serial-keyed symlink — stable across replugs and reboots,
+# unlike /dev/video0. index0 is capture; index1 is UVC metadata, not video.
+camera_device: /dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0

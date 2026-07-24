@@ -1,0 +1,52 @@
+---
+# The project's actual risk lives here: ROS_DOMAIN_ID, ROS_LOCALHOST_ONLY and
+# RMW_IMPLEMENTATION must be byte-identical on both hosts — a mismatch produces
+# silence, not an error. They have exactly one definition (group_vars/all.yml)
+# and this role is the only thing that writes them onto a machine.
+
+# Ubuntu Server generates only C.UTF-8; every ssh session from ml5 forwards
+# LC_ALL=en_US.UTF-8 and warns. Harmless but noisy — fix it at the source.
+- name: Generate the en_US.UTF-8 locale
+  become: true
+  community.general.locale_gen:
+    name: en_US.UTF-8
+    state: present
+
+- name: Directory for the per-host Cyclone DDS config
+  ansible.builtin.file:
+    path: "{{ cyclonedds_config_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Render cyclonedds.xml pinned to {{ dds_interface }}
+  ansible.builtin.template:
+    src: cyclonedds.xml.j2
+    dest: "{{ cyclonedds_config_path }}"
+    mode: "0644"
+  notify: Remind about the ROS daemon
+
+# The exports go in .profile, NOT .bashrc: Ubuntu's .bashrc opens with an
+# interactivity guard (case $- in ... return), so anything appended to it is
+# invisible to every non-interactive shell — including the `bash -lc` login
+# shells used to verify over SSH. .profile is read by all login shells, and it
+# sources .bashrc, so interactive sessions get both halves.
+- name: ROS environment variables in .profile
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_env.HOME }}/.profile"
+    marker: "# {mark} ANSIBLE MANAGED — ROS 2 {{ ros_distro }} environment"
+    block: |
+      export ROS_DOMAIN_ID={{ ros_domain_id }}
+      export ROS_LOCALHOST_ONLY={{ ros_localhost_only }}
+      export RMW_IMPLEMENTATION={{ rmw_implementation }}
+      export CYCLONEDDS_URI=file://{{ cyclonedds_config_path }}
+  notify: Remind about the ROS daemon
+
+# ROS is deliberately NOT sourced globally (docs/setup.md#on-sourcing-ros) —
+# the alias makes sourcing a one-word habit instead. It lives in .bashrc
+# because aliases only mean anything in an interactive shell.
+- name: ROS sourcing alias in .bashrc
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED — ROS 2 {{ ros_distro }}"
+    block: |
+      alias ros{{ ros_distro }}='source /opt/ros/{{ ros_distro }}/setup.bash'

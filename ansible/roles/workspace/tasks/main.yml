@@ -1,0 +1,45 @@
+---
+# Sync the repo from the control node and build it. The src path is derived
+# from playbook_dir (this checkout, whatever its absolute path is) so the role
+# does not care that ml5 keeps the repo under ~/Documents while the Pi uses
+# ~/piros2 — workspace_path per host decides the destination.
+
+- name: Sync the repository to this host
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../"
+    dest: "{{ workspace_path }}/"
+    delete: true
+    rsync_opts:
+      - "--exclude=build"
+      - "--exclude=install"
+      - "--exclude=log"
+
+# src/ holds no packages yet. rosdep errors on an empty --from-paths and colcon
+# happily "builds" nothing — guard both, or this role fails on a machine that
+# is perfectly correct, which is how playbooks lose their owners' trust.
+- name: Check whether src/ contains any packages
+  ansible.builtin.find:
+    paths: "{{ workspace_path }}/src"
+    patterns: package.xml
+    recurse: true
+  register: workspace_packages
+
+# rosdep runs as the login user; it calls sudo itself for the apt installs
+# (passwordless on the Pi). Running the whole thing under become would also
+# misplace the rosdep cache — same trap as in ros2_install.
+- name: Install package dependencies with rosdep
+  ansible.builtin.command:
+    cmd: bash -lc "source /opt/ros/{{ ros_distro }}/setup.bash && rosdep install --from-paths src --ignore-src -r -y"
+    chdir: "{{ workspace_path }}"
+  when: workspace_packages.matched > 0
+  register: workspace_rosdep
+  changed_when: "'#All required rosdeps installed successfully' not in workspace_rosdep.stdout"
+
+# Never under become: a root-owned build/ tree surfaces much later as a
+# confusing permission error. --symlink-install so Python and launch edits
+# apply without a rebuild.
+- name: Build the workspace with colcon
+  ansible.builtin.command:
+    cmd: bash -lc "source /opt/ros/{{ ros_distro }}/setup.bash && colcon build --symlink-install"
+    chdir: "{{ workspace_path }}"
+  when: workspace_packages.matched > 0

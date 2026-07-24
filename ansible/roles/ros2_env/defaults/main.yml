@@ -1,0 +1,7 @@
+---
+# Outside the workspace on purpose: the workspace role rsyncs the repo with
+# --delete, and this file is per-host (each machine pins a different DDS
+# interface) so it can never live in git. Templating it into the synced tree
+# would have the next sync silently delete it — DDS then binds whatever
+# interface it likes and discovery breaks with no error anywhere.
+cyclonedds_config_path: "{{ ansible_env.HOME }}/.config/cyclonedds/cyclonedds.xml"

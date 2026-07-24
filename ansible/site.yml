@@ -8,8 +8,13 @@
 
 - name: Provision ROS 2 on both machines
   hosts: all
-  roles: []
+  roles:
+    - ros2_apt
+    - ros2_install
+    - ros2_env
 
 - name: Sensor-head extras
   hosts: robot
-  roles: []
+  roles:
+    - camera
+    - workspace

@@ -10,8 +10,10 @@ one thing that *is* done is the Pi's OS.
 ## 0. Environment — *in progress*
 
 - [x] Reflash the Pi to Ubuntu Server 24.04 arm64 — done 2026-07-23, [setup.md](setup.md)
-- [ ] Write the Ansible roles — [ansible.md](ansible.md)
-- [ ] `ansible-playbook site.yml` green on both machines
+- [x] Write the Ansible roles — done 2026-07-24, all five in `ansible/roles/`
+- [ ] `ansible-playbook site.yml` green on both machines — **Pi done and
+      idempotent (`changed=0`) 2026-07-24**; the dev box needs an interactive
+      `ansible-playbook site.yml --ask-become-pass` because sudo prompts there
 - [ ] `talker`/`listener` across the LAN — [networking.md](networking.md)
 
 **Done when:** a node on the Pi and a node on the dev box exchange messages.

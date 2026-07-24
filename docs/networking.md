@@ -75,7 +75,7 @@ sits silent, or things work in one direction only.
 > `tailscale0` and `laptop` are *routable-looking* but lead somewhere the Pi is
 > not. Pin explicitly; do not rely on interface ordering.
 
-Fix it by pinning the interface. Create `~/Documents/piros2/config/cyclonedds.xml` on the dev box:
+Fix it by pinning the interface. Create `~/.config/cyclonedds/cyclonedds.xml` on the dev box:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -92,7 +92,7 @@ Fix it by pinning the interface. Create `~/Documents/piros2/config/cyclonedds.xm
 ```
 
 ```bash
-export CYCLONEDDS_URI=file:///home/proxmox-ml5/Documents/piros2/config/cyclonedds.xml
+export CYCLONEDDS_URI=file:///home/proxmox-ml5/.config/cyclonedds/cyclonedds.xml
 ```
 
 The Pi has only one relevant interface, so pinning is less urgent there — but note
@@ -102,6 +102,12 @@ and makes the two configs symmetrical. That symmetry is exactly what the Ansible
 `ros2_env` role produces: one `cyclonedds.xml.j2` template rendered per host from a
 `dds_interface` variable, so the two files cannot drift apart in structure while
 differing in the one field that should differ.
+
+The rendered file lives at `~/.config/cyclonedds/cyclonedds.xml`, deliberately
+*outside* the workspace: the file is per-host so it cannot be committed, and the
+`workspace` role syncs the repo with `rsync --delete` — a config templated into
+the synced tree would be silently deleted on the next sync, after which DDS binds
+whatever interface it likes with no error anywhere.
 
 ## Static peers, if multicast is unreliable
 

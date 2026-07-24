@@ -124,10 +124,15 @@ ros_metapackage: ros-jazzy-ros-base     # sensor head — no GUI stack
 dds_interface: wlan0                    # the Pi has NO Ethernet cable attached
 ```
 
-Templating `config/cyclonedds.xml` from `dds_interface` is the point where Ansible
+Templating `cyclonedds.xml` from `dds_interface` is the point where Ansible
 earns its keep: the file is per-host (the dev box must pin `enp6s18`, the Pi need not
 pin anything) but the surrounding structure is identical, and hand-maintaining two
 near-identical XML files is how they end up disagreeing.
+
+It is rendered to `~/.config/cyclonedds/cyclonedds.xml`, **not** into the
+workspace: the `workspace` role syncs the repo with `rsync --delete`, which would
+silently remove a per-host file living under `config/` — and a missing
+`CYCLONEDDS_URI` target fails silently, not loudly.
 
 ## Gotchas specific to provisioning ROS
 
@@ -148,20 +153,34 @@ These are the ones that will actually bite:
   running it under `become: true` puts the cache in the wrong home directory.
 
 - **Do not source ROS globally.** [setup.md](setup.md#on-sourcing-ros) explains
-  why. Use `blockinfile` with a marker so the block is editable and removable:
+  why. Use `blockinfile` with a marker so the block is editable and removable —
+  but split it across two files, because Ubuntu's `.bashrc` opens with an
+  interactivity guard (`case $- in ... return`) that makes anything appended to
+  it invisible to every non-interactive shell, including the `bash -lc` login
+  shells used to verify over SSH:
 
   ```yaml
-  - name: ROS environment in .bashrc
+  - name: ROS environment variables in .profile   # read by ALL login shells
+    blockinfile:
+      path: "{{ ansible_env.HOME }}/.profile"
+      marker: "# {mark} ANSIBLE MANAGED — ROS 2 {{ ros_distro }} environment"
+      block: |
+        export ROS_DOMAIN_ID={{ ros_domain_id }}
+        export ROS_LOCALHOST_ONLY={{ ros_localhost_only }}
+        export RMW_IMPLEMENTATION={{ rmw_implementation }}
+        export CYCLONEDDS_URI=file://{{ cyclonedds_config_path }}
+
+  - name: ROS sourcing alias in .bashrc           # aliases are interactive-only anyway
     blockinfile:
       path: "{{ ansible_env.HOME }}/.bashrc"
       marker: "# {mark} ANSIBLE MANAGED — ROS 2 {{ ros_distro }}"
       block: |
         alias ros{{ ros_distro }}='source /opt/ros/{{ ros_distro }}/setup.bash'
-        export ROS_DOMAIN_ID={{ ros_domain_id }}
-        export ROS_LOCALHOST_ONLY={{ ros_localhost_only }}
-        export RMW_IMPLEMENTATION={{ rmw_implementation }}
-        export CYCLONEDDS_URI=file://{{ workspace_path }}/config/cyclonedds.xml
   ```
+
+  Interactive sessions get both halves (`.profile` sources `.bashrc`); a plain
+  non-login `ssh pi 'cmd'` still gets neither, so verification over SSH must
+  use `bash -lc`.
 
 - **Restart the ROS daemon on change.** Any task touching the environment or the
   Cyclone DDS config should notify a handler running

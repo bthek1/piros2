@@ -1,0 +1,40 @@
+---
+# The metapackage split is the dev-box/sensor-head distinction made concrete:
+# ml5 gets ros-jazzy-desktop (rviz2, rqt, demo nodes), the Pi ros-jazzy-ros-base
+# and no Qt stack. Which one arrives here is ros_metapackage from group_vars.
+
+- name: Install ROS 2 and the build tooling
+  become: true
+  ansible.builtin.apt:
+    name:
+      - "{{ ros_metapackage }}"
+      - "ros-{{ ros_distro }}-rmw-cyclonedds-cpp"
+      - python3-colcon-common-extensions
+      - python3-rosdep
+      - python3-vcstool
+    state: present
+
+# demo_nodes_cpp ships with `desktop` but not `ros-base` — installed on the Pi
+# so the talker/listener checkpoint (roadmap milestone 0) works both ways.
+- name: Install the demo nodes for the cross-LAN checkpoint
+  become: true
+  ansible.builtin.apt:
+    name: "ros-{{ ros_distro }}-demo-nodes-cpp"
+    state: present
+  when: install_demo_nodes | default(false)
+
+# rosdep init exits non-zero if run twice; without the creates: guard a second
+# playbook run fails on a machine that is already correct.
+- name: Initialise rosdep (system-wide, once)
+  become: true
+  ansible.builtin.command: rosdep init
+  args:
+    creates: /etc/ros/rosdep/sources.list.d/20-default.list
+
+# The opposite trap: rosdep update must run as the *login user* — under become
+# the cache lands in root's home and every later rosdep call misses it. The
+# creates: guard keeps rerun output honest (changed=0 when nothing to do).
+- name: Update the rosdep cache (login user, once)
+  ansible.builtin.command: rosdep update
+  args:
+    creates: "{{ ansible_env.HOME }}/.ros/rosdep/sources.cache"

@@ -95,10 +95,11 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   get one definition in Ansible `group_vars`, so change them there rather than in
   a `.bashrc`.
 - **A non-interactive `ssh pi '...'` does not read the ROS environment.** The
-  exports live in the interactive part of `.bashrc`, so `ssh pi 'ros2 topic list'`
-  silently runs on domain 0 with the default RMW. Set the vars inline or use a
-  login shell when verifying over SSH — and don't report such a result as evidence
-  of anything without checking this first.
+  exports live in `~/.profile` (put there by the `ros2_env` role — `.bashrc`'s
+  interactivity guard would hide them from every non-interactive shell), so
+  `ssh pi 'ros2 topic list'` silently runs on domain 0 with the default RMW. Use
+  a login shell — `ssh pi "bash -lc '...'"` — when verifying over SSH, and don't
+  report such a result as evidence of anything without checking this first.
 - **The Pi's user is in `video`** — set via cloud-init at reflash time, and
   `/dev/video0` is readable without `sudo`. But **`gpio`, `i2c`, and `spi` no
   longer exist** as groups; they were a Raspberry Pi OS vendor addition. Milestone

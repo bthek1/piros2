@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- {{ ansible_managed }} — rendered per host from dds_interface in group_vars.
+     ml5 must pin enp6s18 or DDS binds a Docker bridge / VPN interface and
+     advertises an address the Pi cannot route to. See docs/networking.md. -->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="{{ dds_interface }}" priority="default" multicast="default" />
+      </Interfaces>
+      <AllowMulticast>true</AllowMulticast>
+    </General>
+  </Domain>
+</CycloneDDS>

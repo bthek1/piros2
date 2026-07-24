@@ -326,20 +326,25 @@ root's home where your builds will not find it. Same trap in the role —
 
 The `ros2_env` role deliberately does **not** source ROS unconditionally in
 `.bashrc`. Doing so leaks ROS's Python and library paths into every shell and will
-eventually confuse an unrelated project. It writes an alias plus the environment
-variables instead:
+eventually confuse an unrelated project. It writes the environment variables into
+`.profile` and an alias into `.bashrc`:
 
 ```bash
-alias rosjazzy='source /opt/ros/jazzy/setup.bash'
+# ~/.profile — read by all login shells, interactive or not
 export ROS_DOMAIN_ID=42
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export CYCLONEDDS_URI=file:///home/bthek1/piros2/config/cyclonedds.xml
+export CYCLONEDDS_URI=file:///home/bthek1/.config/cyclonedds/cyclonedds.xml
+
+# ~/.bashrc — aliases only mean anything interactively
+alias rosjazzy='source /opt/ros/jazzy/setup.bash'
 ```
 
-Those four **must match on both machines** — [networking.md](networking.md)
-explains each. They are defined once in `group_vars/all.yml`, so change them there,
-not in a `.bashrc`.
+The split matters: Ubuntu's `.bashrc` returns immediately in non-interactive
+shells, so exports appended there are invisible to `bash -lc` over SSH — which is
+exactly how the environment gets verified. The four values **must match on both
+machines** — [networking.md](networking.md) explains each. They are defined once
+in `group_vars/all.yml`, so change them there, not in a dotfile.
 
 ## 6. Verify
 

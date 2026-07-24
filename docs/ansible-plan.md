@@ -96,16 +96,19 @@ Then `rosdep init` **with a `creates:` guard** and `rosdep update` **without
 **Proves:**
 
 ```bash
-ansible all -m shell -a 'bash -lc "source /opt/ros/jazzy/setup.bash && ros2 --version"'
+ansible all -m shell -a 'bash -lc "source /opt/ros/jazzy/setup.bash && ros2 pkg prefix demo_nodes_cpp"'
 ```
+
+(Not `ros2 --version` — the Jazzy CLI has no such flag.)
 
 **Concept:** the metapackage split is the whole dev-box/sensor-head distinction
 made concrete — the Pi has no reason to carry the Qt stack.
 
 ### Step 3 — `ros2_env`
 
-Two things: the `blockinfile` in `.bashrc`, and `config/cyclonedds.xml` rendered
-per host from `dds_interface`.
+Two things: the `blockinfile` in `.bashrc`, and `~/.config/cyclonedds/cyclonedds.xml`
+rendered per host from `dds_interface` — outside the workspace, so the
+`workspace` role's `rsync --delete` can never remove it.
 
 This is where the project's actual risk lives. `ROS_DOMAIN_ID`,
 `ROS_LOCALHOST_ONLY` and `RMW_IMPLEMENTATION` must be **byte-identical on both
@@ -118,12 +121,13 @@ and advertise an address the Pi cannot route to; `wlan0` on the Pi.
 **Proves:**
 
 ```bash
-ansible all -m shell -a 'bash -lc "echo $ROS_DOMAIN_ID $RMW_IMPLEMENTATION"'
+ansible all -m shell -a 'bash -lc "printenv ROS_DOMAIN_ID RMW_IMPLEMENTATION"'
 ```
 
-Both must print `42 rmw_cyclonedds_cpp`. Note the **login shell** — a plain
-`ansible -m shell` does not read the interactive part of `.bashrc`, so testing
-without `bash -lc` reports empty and looks like a broken role.
+Both must print `42` and `rmw_cyclonedds_cpp`. Two traps in one command:
+`printenv`, not `echo $VAR`, because the remote's outer shell expands `$VAR`
+(to empty) before `bash -lc` ever runs; and the **login shell**, because the
+exports live in `.profile`, which non-login shells never read.
 
 **Concept:** the environment variables DDS actually reads, and why "it works
 locally but not across the LAN" is nearly always one of these three.
