@@ -65,6 +65,16 @@ topics:
 camera:
     ssh pi 'v4l2-ctl --list-devices; ls -l /dev/v4l/by-id/; id -nG | tr " " "\n" | grep -x video'
 
+# Milestone 1 in one command: our talker here, our listener on the Pi (2>&1
+# because ROS logs go to stderr)
+[group('test')]
+hello:
+    #!/usr/bin/env bash
+    bash -lc 'source /opt/ros/jazzy/setup.bash && source "{{ justfile_directory() }}/install/setup.bash" && timeout 20 ros2 run piros2_hello talker >/dev/null 2>&1' &
+    sleep 3
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && timeout 10 ros2 run piros2_hello listener' 2>&1" | grep heard
+    wait
+
 # Milestone 0 in one command: talker on the Pi, one message received here
 [group('test')]
 chatter:

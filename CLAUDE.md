@@ -65,8 +65,9 @@ Machine state:
   the dev box across the LAN. [docs/roadmap.md](docs/roadmap.md) tracks status;
   next is milestone 1, the first hand-written package.
 
-No ROS packages exist yet; `src/` contains only a `.gitkeep` and both build
-tasks in the `workspace` role are guarded on packages existing.
+First package: `src/piros2_hello` (milestone 1, done 2026-07-24) — a
+hand-written `ament_python` talker/listener pair, built on both machines and
+verified across the LAN (`just hello`).
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow

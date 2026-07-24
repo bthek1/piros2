@@ -31,14 +31,21 @@ doing once properly rather than repeatedly by hand.
 ROS apt source, overlay vs underlay sourcing, and the environment variables DDS
 actually reads.
 
-## 1. First node — *not started*
+## 1. First node — *done 2026-07-24*
 
 Write a trivial Python publisher and subscriber by hand rather than running the
 demo nodes. The aim is the mechanics, not the result.
 
-- [ ] `ros2 pkg create --build-type ament_python piros2_hello`
-- [ ] A publisher on a timer, a subscriber that logs
-- [ ] `colcon build`, source the overlay, run it
+- [x] `ros2 pkg create --build-type ament_python piros2_hello`
+- [x] A publisher on a timer, a subscriber that logs — `src/piros2_hello/`,
+      concept notes in the source
+- [x] `colcon build`, source the overlay, run it — and beyond the letter of the
+      milestone: built on both machines and verified cross-LAN (`just hello`),
+      the Pi's listener hearing the dev box's talker on `/hello`
+
+One trap found on the way: ROS 2 loggers write to **stderr**, so piping a
+node's output through `grep` without `2>&1` shows nothing and looks like a
+discovery failure.
 
 **Concepts:** package layout, `setup.py` entry points, `rclpy` node lifecycle,
 the build/source cycle, `ros2 run` vs `ros2 launch`.
