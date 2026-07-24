@@ -66,12 +66,20 @@ camera:
     ssh pi 'v4l2-ctl --list-devices; ls -l /dev/v4l/by-id/; id -nG | tr " " "\n" | grep -x video'
 
 # The launch file owns the symlink/framerate traps (docs/camera.md#running-it);
-# args pass through, e.g. `just cam image_width:=640 image_height:=480`. View:
-#   ros2 run rqt_image_view rqt_image_view /image_raw/compressed
-# Start the camera on the Pi via its launch file (Ctrl-C to stop)
+# args pass through, e.g. `just cam image_width:=640 image_height:=480`.
+# The viewer subscribes to the compressed topic — raw 720p30 is ~83 MB/s and
+# does not fit over the Wi-Fi.
+# Camera on the Pi + rqt_image_view here; closing the viewer stops both
 [group('test')]
 cam *args:
-    ssh -t pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'"
+    #!/usr/bin/env bash
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    sleep 4
+    # PATH override: rqt tools use `#!/usr/bin/env python3`, and the PlatformIO
+    # venv earlier in PATH shadows the system python ROS is built against —
+    # docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml
+    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_raw/compressed'
 
 # (2>&1 on the listener because ROS logs go to stderr)
 # Milestone 1 in one command: our talker here, our listener on the Pi

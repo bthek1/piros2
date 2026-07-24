@@ -122,7 +122,11 @@ Raw 1280×720 RGB8 at 30 fps is about **83 MB/s**. That is not a link you want t
 put on the LAN, and in practice the publisher stalls and frame rate collapses.
 
 With `image_transport_plugins` installed, every `Image` publisher automatically
-gains `compressed` and `theora` variants of its topic. Subscribe to the compressed
+gains `compressed` and `theora` variants of its topic. **Both ends need the
+package**: the publisher to encode, the subscriber to decode — `desktop` does
+not include it, so the dev box gets it from the `ros2_install` role (added
+2026-07-24 after RViz-side subscribes failed with
+`Unable to load plugin ... compressed_sub`). Subscribe to the compressed
 one from the dev box:
 
 ```bash

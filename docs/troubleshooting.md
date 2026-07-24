@@ -250,3 +250,38 @@ Fixes, in order of preference — this is a machine-owner decision because
 
 Until one of these is done, expect `ansible-playbook site.yml` to report the
 dev box red on the apt task while actually changing nothing.
+
+## rqt tools crash with `No module named 'yaml'` (dev box)
+
+```
+File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/parameter.py" ...
+ModuleNotFoundError: No module named 'yaml'
+```
+
+The dev box has PlatformIO's venv early in `PATH`, so `python3` resolves to
+`~/.platformio/penv/bin/python3` — a Python with neither `yaml` nor `rclpy`.
+ROS is built against the **system** 3.12 (see setup.md on why venvs and
+`rclpy` don't mix), and the failure splits cleanly down shebang lines:
+
+- Nodes built by colcon get `#!/usr/bin/python3` hardcoded — immune.
+- The rqt/GUI tools use `#!/usr/bin/env python3` — they follow `PATH` into the
+  venv and crash on import.
+
+Fix for one command: prefix the PATH — `PATH="/usr/bin:$PATH" ros2 run
+rqt_image_view rqt_image_view` (the `just cam` recipe does this). The
+permanent fix is moving the PlatformIO line later in `.bashrc`/`.profile` or
+dropping it, but that is a machine-owner call — other tooling may rely on it.
+
+## `Unable to load plugin for transport 'image_transport/compressed_sub'`
+
+`... Declared types are image_transport/raw_sub` from RViz or `rqt_image_view`
+on the dev box means `image_transport_plugins` is missing **on the subscriber
+side**. Compression is negotiated per endpoint: the Pi encodes, the dev box
+decodes, and each needs the plugin package locally — `ros-jazzy-desktop` does
+not include it (hit 2026-07-24). It is in the `ros2_install` role now, so a
+machine showing this has not run the playbook since:
+
+```bash
+ros2 run image_transport list_transports   # 'compressed' must be listed
+just deploy-dev                            # installs it if missing
+```

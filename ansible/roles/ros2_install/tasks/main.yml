@@ -9,6 +9,11 @@
     name:
       - "{{ ros_metapackage }}"
       - "ros-{{ ros_distro }}-rmw-cyclonedds-cpp"
+      # On BOTH hosts, deliberately: compressed image transport is negotiated
+      # per endpoint, so the subscriber needs this to decode exactly as much as
+      # the publisher needs it to encode — and `desktop` does NOT include it.
+      # Without it the dev box can only subscribe raw (~83 MB/s over Wi-Fi).
+      - "ros-{{ ros_distro }}-image-transport-plugins"
       - python3-colcon-common-extensions
       - python3-rosdep
       - python3-vcstool
