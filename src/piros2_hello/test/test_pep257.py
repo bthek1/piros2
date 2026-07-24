@@ -12,12 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Modified from the generated version: paths are anchored to this file rather
+# than the CWD, so the test checks its own package no matter where pytest is
+# invoked from — colcon runs it with cwd at the package root, VSCode from the
+# workspace root, and the generated argv=[] form lints whichever it gets.
+from pathlib import Path
+
 from ament_pep257.main import main
 import pytest
+
+PACKAGE_DIR = str(Path(__file__).resolve().parents[1])
 
 
 @pytest.mark.linter
 @pytest.mark.pep257
 def test_pep257():
-    rc = main(argv=['.', 'test'])
+    rc = main(argv=[PACKAGE_DIR])
     assert rc == 0, 'Found code style errors / warnings'

@@ -15,7 +15,8 @@ __pycache__/
 rosbag2_*/
 
 # Editors / OS
-.vscode/
+# .vscode is tracked on purpose: settings.json pins the system Python (the
+# PlatformIO venv trap) and tasks.json carries the colcon build/test tasks.
 .idea/
 *.swp
 .DS_Store

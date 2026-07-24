@@ -1,0 +1,50 @@
+{
+    // Every task runs through `bash -lc` so ~/.profile's ROS env is loaded —
+    // a plain shell has no ROS_DOMAIN_ID and no /opt/ros on PATH.
+    "version": "2.0.0",
+    "options": {
+        "cwd": "${workspaceFolder}"
+    },
+    "tasks": [
+        {
+            "label": "colcon: build",
+            "type": "shell",
+            "command": "bash",
+            "args": ["-lc", "source /opt/ros/jazzy/setup.bash && colcon build --symlink-install"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "colcon: test (all)",
+            "type": "shell",
+            "command": "bash",
+            "args": ["-lc", "source /opt/ros/jazzy/setup.bash && colcon test && colcon test-result --verbose"],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "colcon: test one package",
+            "type": "shell",
+            "command": "bash",
+            "args": ["-lc", "source /opt/ros/jazzy/setup.bash && colcon test --packages-select ${input:package} && colcon test-result --verbose --test-result-base build/${input:package}"],
+            "group": "test",
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            // Keep in step with the packages in src/.
+            "id": "package",
+            "type": "pickString",
+            "description": "Which package to test",
+            "options": ["piros2_hello", "piros2_camera", "piros2_vision"],
+            "default": "piros2_vision"
+        }
+    ]
+}

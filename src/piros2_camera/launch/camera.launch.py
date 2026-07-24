@@ -46,6 +46,11 @@ def generate_launch_description():
             description='usb_cam poll rate, NOT the camera rate: 60 is deliberate, '
                         'the camera ceilings at ~30 and polling at 30 beats down to 24 '
                         '(docs/camera.md#running-it)'),
+        DeclareLaunchArgument(
+            'gain', default_value='-1',
+            description='Sensor gain 0-255; -1 leaves the camera as-is. Auto-exposure '
+                        'on the C922 never touches gain, so dim rooms need it raised '
+                        '(e.g. gain:=128) — docs/camera.md#v4l2-controls'),
 
         Node(
             package='usb_cam',
@@ -67,6 +72,8 @@ def generate_launch_description():
                         LaunchConfiguration('image_height'), value_type=int),
                     'framerate': ParameterValue(
                         LaunchConfiguration('framerate'), value_type=float),
+                    'gain': ParameterValue(
+                        LaunchConfiguration('gain'), value_type=int),
                 },
             ],
         ),

@@ -12,8 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Modified from the generated version: paths are anchored to this file rather
+# than the CWD, so the test checks its own package no matter where pytest is
+# invoked from — colcon runs it with cwd at the package root, VSCode from the
+# workspace root, and the generated argv=[] form lints whichever it gets.
+from pathlib import Path
+
 from ament_copyright.main import main
 import pytest
+
+PACKAGE_DIR = str(Path(__file__).resolve().parents[1])
 
 
 # Remove the `skip` decorator once the source file(s) have a copyright header
@@ -21,5 +29,5 @@ import pytest
 @pytest.mark.copyright
 @pytest.mark.linter
 def test_copyright():
-    rc = main(argv=['.', 'test'])
+    rc = main(argv=[PACKAGE_DIR])
     assert rc == 0, 'Found errors'

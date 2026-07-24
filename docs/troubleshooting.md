@@ -130,6 +130,16 @@ Discovery succeeded, data transport did not.
 
 ## Camera opens but every frame is black or green
 
+- **Leftover manual exposure — check this first.** V4L2 controls live *in the
+  camera* and persist across processes, node restarts and reboots (until
+  unplug), so a manual exposure set for a frame-rate benchmark silently
+  applies to every later session. Hit 2026-07-24: `auto_exposure=1` +
+  `exposure_time_absolute=136` + `gain=0` from earlier measurements produced
+  pure black in an evening room. Diagnose and restore:
+  ```bash
+  v4l2-ctl -d /dev/video0 --get-ctrl=auto_exposure,exposure_time_absolute,gain
+  v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=3    # aperture priority, the camera default
+  ```
 - Another process already has the device. `ssh pi 'sudo fuser -v /dev/video0'`.
   UVC allows only one capture client at a time.
 - The driver is pointed at `/dev/video1`, which is the UVC **metadata** node, not a

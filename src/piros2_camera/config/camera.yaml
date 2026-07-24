@@ -19,3 +19,12 @@ usb_cam:
     # Calibration lands here in milestone 5 (camera.md#calibration); until
     # then usb_cam warns that the file is missing, which is honest.
     camera_info_url: ""
+    # usb_cam's own default is 50, well below the camera's native 128 — it
+    # force-darkens every launch unless overridden here (found 2026-07-24).
+    brightness: 128
+    # Quality of the RE-encoded /image_raw/compressed stream (the pipeline is
+    # camera JPEG -> RGB -> JPEG again; this second encode is where webcam-app
+    # comparisons lose). Default 80 is visibly soft; 90 roughly doubles frame
+    # size — if the Wi-Fi viewer starts stuttering, this is the knob to lower
+    # (live: ros2 param set /usb_cam .image_raw.compressed.jpeg_quality 80).
+    image_raw.compressed.jpeg_quality: 90

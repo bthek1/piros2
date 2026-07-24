@@ -107,3 +107,8 @@ daemon-restart:
 [group('build')]
 build:
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && colcon build --symlink-install'
+
+# colcon test + aggregated results (linter tests today — flake8/pep257 per package)
+[group('build')]
+test *args:
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && colcon test {{ args }} && colcon test-result --verbose'

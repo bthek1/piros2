@@ -137,11 +137,20 @@ In RViz, set the Image display's **Transport Hint** to `compressed` rather than
 `raw`. Forgetting this is the usual reason RViz shows a frozen or stuttering image
 while `ros2 topic hz` on the Pi reports a healthy 30 Hz.
 
-Tune JPEG quality at runtime:
+The compressed stream is a **re-encode** — the pipeline is camera JPEG → RGB on
+the Pi → JPEG again at this quality — which is why a local webcam app always
+looks better than the remote view: it decodes once and never re-encodes.
+`camera.yaml` pins the quality at 90 (the plugin default of 80 is visibly
+soft; 90 roughly doubles frame size). If the Wi-Fi viewer stutters, this is
+the knob to lower, live:
 
 ```bash
-ros2 param set /usb_cam_node .image_raw.compressed.jpeg_quality 60
+ros2 param set /usb_cam .image_raw.compressed.jpeg_quality 80
 ```
+
+(Note the node name `/usb_cam` — it is set in the launch file and must match
+`camera.yaml`'s top-level key.) None of this affects processing nodes on the
+Pi: they subscribe to `/image_raw` directly and never pay the re-encode tax.
 
 ## V4L2 controls
 
@@ -169,7 +178,16 @@ v4l2-ctl -d /dev/video0 --set-ctrl=focus_absolute=0        # 0 = infinity on the
 v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=1         # 1 = manual, 3 = aperture priority
 v4l2-ctl -d /dev/video0 --set-ctrl=exposure_time_absolute=150
 v4l2-ctl -d /dev/video0 --set-ctrl=white_balance_automatic=0
+v4l2-ctl -d /dev/video0 --set-ctrl=gain=128                # 0-255; NEVER auto-adjusted on Linux
 ```
+
+**Gain is the dim-room lever.** Aperture-priority auto-exposure on the C922
+adjusts exposure *time* only; gain stays wherever it was set (factory default
+0). In a dim room that reads as "camera works but the image is dark". The
+launch file exposes it as `gain:=` (`just cam gain:=128`); higher is brighter
+and noisier. `brightness` is different again — a post-capture offset that
+usb_cam force-sets to 50 unless `camera.yaml` overrides it (it does, to the
+camera's native 128).
 
 **One `--set-ctrl` per command, in this order.** A manual value is *inactive*
 while its auto mode holds it, and an inactive control in a batched
@@ -178,8 +196,17 @@ while its auto mode holds it, and an inactive control in a batched
 set the manual value in a separate call.
 
 Control names vary between kernel versions — always confirm with `--list-ctrls`
-rather than assuming. `usb_cam` exposes equivalents as ROS parameters, which is the
-tidier route once you have found the values you want.
+rather than assuming. `usb_cam` nominally exposes equivalents as ROS parameters,
+but **they do not work on this kernel**: the node still uses the ROS 1-era
+control names, and its startup log shows `unknown control 'exposure_auto'` /
+`'focus_auto'` (renamed to `auto_exposure` / `focus_automatic_continuous` in
+current kernels). `v4l2-ctl` is the only working channel for exposure and
+focus here.
+
+Related trap: these controls live **in the camera** and persist across
+processes and reboots (until unplug) — a manual exposure set for a benchmark
+stays set for every later session, which is how the viewer showed black frames
+on 2026-07-24. `auto_exposure=3` restores the camera's default behaviour.
 
 ## Calibration
 

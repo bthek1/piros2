@@ -49,16 +49,23 @@ discovery failure.
 **Concepts:** package layout, `setup.py` entry points, `rclpy` node lifecycle,
 the build/source cycle, `ros2 run` vs `ros2 launch`.
 
-## 2. Camera up — *nearly done (2026-07-24)*
+## 2. Camera up — *done 2026-07-24*
 
 - [x] `usb_cam` publishing `/image_raw` from the Pi — with two traps found and
       documented in [camera.md](camera.md#running-it): `usb_cam` mangles the
       by-id symlink (resolve with `readlink -f`), and its poll timer beats
       against the frame cadence at `framerate:=30` (24.0 fps measured; request
       60 to poll fast enough)
-- [ ] Viewed live in `rqt_image_view` on the dev box over compressed transport
-      — topics verified flowing (`/image_raw/compressed`, ~0.14 MB/frame);
-      the eyeball check needs the GUI
+- [x] Viewed live in `rqt_image_view` on the dev box over compressed transport
+      (`just cam` — camera + viewer + cleanup in one recipe). Getting there
+      surfaced four distinct faults, each now in
+      [troubleshooting.md](troubleshooting.md): the PlatformIO venv shadowing
+      `python3` for env-shebang rqt tools; `image_transport_plugins` missing on
+      the *subscriber* side (`desktop` does not include it); leftover manual
+      exposure persisting inside the camera; and usb_cam force-setting
+      `brightness` to 50. Image tuning lives in `camera.yaml` (brightness 128,
+      JPEG re-encode quality 90) and the `gain:=` launch argument — gain is
+      never auto-adjusted on Linux
 - [x] Frame rate confirmed with `ros2 topic hz` — **29.72 fps** at 720p MJPG,
       manual exposure 150, `framerate:=60` polling; 24.0 fps at
       `framerate:=30`; ~23 fps on stock auto-exposure. Raw V4L2 capture

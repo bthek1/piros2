@@ -25,10 +25,12 @@ Ansible playbook in `ansible/` — ROS 2 Jazzy `ros-base` + camera stack on the
 Pi, `desktop` on the dev box — and a `talker` on the Pi reached a listener on
 the dev box across the LAN on domain 42 with CycloneDDS pinned per host.
 
-Since then: **milestone 1 is done** — `src/piros2_hello`, a hand-written
-talker/listener pair verified across the LAN (`just hello`) — and milestone 2
-is nearly there: the C922 streams from the Pi at a measured 29.72 fps over
-compressed transport (`just cam`).
+Since then, **milestones 1–3 are done** (2026-07-24): `src/piros2_hello` — a
+hand-written talker/listener pair verified across the LAN (`just hello`);
+the C922 streaming from the Pi at a measured 29.72 fps and viewed live on the
+dev box over compressed transport; and `src/piros2_camera` — a launch file and
+parameter YAML that own the camera's configuration (`just cam`). Next:
+milestone 4, the first image-processing node.
 
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.

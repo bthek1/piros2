@@ -67,9 +67,11 @@ First package: `src/piros2_hello` (milestone 1, done 2026-07-24) — a
 hand-written `ament_python` talker/listener pair, built on both machines and
 verified across the LAN (`just hello`).
 
-Milestone 2 (camera) is nearly done (2026-07-24): `usb_cam` publishes from the
-Pi at a measured 29.72 fps (`just cam`), compressed transport verified across
-the LAN; only the `rqt_image_view` eyeball check remains.
+Milestone 2 (camera) is done (2026-07-24): `usb_cam` publishes from the Pi at
+a measured 29.72 fps, viewed live in `rqt_image_view` over compressed
+transport (`just cam` runs camera + viewer + cleanup). Image tuning lives in
+`camera.yaml` (brightness, JPEG re-encode quality) plus the `gain:=` launch
+argument.
 
 Milestone 3 (launch files, done 2026-07-24): `src/piros2_camera` —
 `launch/camera.launch.py` + `config/camera.yaml`, resolution/framerate as
@@ -142,6 +144,17 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   against the camera's 33 ms cadence — measured 24.0 fps steady while raw V4L2
   capture delivered 30. It also mangles the by-id symlink; pass it through
   `readlink -f` — [docs/camera.md](docs/camera.md#running-it).
+- **usb_cam's exposure/focus ROS parameters are dead on this kernel** — it uses
+  ROS 1-era control names (`exposure_auto`) the kernel has renamed; `v4l2-ctl`
+  is the only working channel for those controls. And **V4L2 controls persist
+  inside the camera** across processes and reboots — a manual exposure left by
+  a benchmark makes every later session black. Gain is never auto-adjusted on
+  Linux; dim rooms need it raised (`just cam gain:=128`).
+- **The dev box's `python3` is PlatformIO's venv**, which shadows the system
+  Python for anything with an `#!/usr/bin/env python3` shebang — rqt tools
+  crash with `No module named 'yaml'`. colcon-built nodes are immune (hardcoded
+  shebang). Prefix `PATH="/usr/bin:$PATH"` for GUI tools —
+  [docs/troubleshooting.md](docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml).
 - **Never stream raw images across the LAN.** 1280×720 RGB8 @ 30 fps is ~83 MB/s.
   Use `image_transport` compressed topics — [docs/camera.md](docs/camera.md).
 - **No CSI camera is attached.** `libcamera`/`rpicam` guidance does not apply; the

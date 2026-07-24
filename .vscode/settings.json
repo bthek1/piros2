@@ -1,0 +1,37 @@
+{
+    // The system Python, NOT PlatformIO's venv (~/.platformio/penv shadows
+    // python3 in PATH and has no rclpy/yaml) — ROS Jazzy is built against
+    // this exact interpreter. See docs/troubleshooting.md.
+    "python.defaultInterpreterPath": "/usr/bin/python3",
+
+    // Let Pylance resolve rclpy, cv_bridge, launch, etc.
+    "python.analysis.extraPaths": [
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+
+    // colcon output — generated, never edited, and it shadows src/ in search
+    // results (build/ contains symlinks back into src/ via --symlink-install).
+    "search.exclude": {
+        "**/build": true,
+        "**/install": true,
+        "**/log": true
+    },
+
+    // Match the flake8 config ament uses (99, not 79) so editor squiggles
+    // agree with what `just test` / colcon test will actually fail on.
+    "flake8.args": ["--max-line-length=99"],
+
+    // Testing sidebar: works because of two accommodations. (1) ros.env gives
+    // the pytest process the ROS python path — it runs without a login shell,
+    // so ament_* cannot import otherwise. (2) The per-package linter tests are
+    // modified from their generated form to anchor on __file__ instead of the
+    // CWD — the generated form lints whatever directory pytest runs from.
+    // Discovery scans src/ (not "."): build/ holds colcon's copies of the same
+    // tests and would double-collect.
+    "python.envFile": "${workspaceFolder}/.vscode/ros.env",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "src"
+    ],
+    "python.testing.unittestEnabled": false
+}
