@@ -19,7 +19,7 @@ Verified 2026-07-23, so the plan starts from fact rather than assumption:
 | CPU / RAM | 16 / 19 GiB | 4 / 7.8 GiB |
 | Display | GNOME + Xwayland | headless |
 | sudo | **prompts** → needs `--ask-become-pass` | passwordless |
-| Ansible | core 2.16.3 + `ansible.posix` 1.5.4, `community.general` 8.3.0 | not needed |
+| Ansible | core 2.16.3 + collections per `requirements.yml` (`ansible.posix` ≥ 2) | not needed |
 | DDS interface | `enp6s18` (Docker bridges + 2 VPNs compete) | **`wlan0`** — no Ethernet cable |
 | ROS | `desktop` installing 2026-07-24 | **`ros-base` installed 2026-07-24** |
 

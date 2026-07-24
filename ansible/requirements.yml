@@ -1,0 +1,11 @@
+---
+# Collection requirements for the control node:
+#   ansible-galaxy collection install -r requirements.yml
+collections:
+  # >= 2.0 required: the synchronize plugin in 1.x trips a connection-stdin
+  # deprecation warning on every workspace sync under ansible-core 2.16.
+  - name: ansible.posix
+    version: ">=2.0.0"
+  # locale_gen in the ros2_env role.
+  - name: community.general
+    version: ">=8.0.0"

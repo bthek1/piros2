@@ -37,9 +37,14 @@ Already satisfied on the dev box, recorded here so it is checkable:
 
 ```bash
 ansible --version | head -1        # → ansible [core 2.16.3]
-ansible-galaxy collection list | grep -E 'ansible.posix|community.general'
-# → ansible.posix 1.5.4 / community.general 8.3.0
+ansible-galaxy collection install -r requirements.yml   # ansible.posix ≥ 2, community.general
 ```
+
+Collection versions are pinned in [`ansible/requirements.yml`](../ansible/requirements.yml).
+Notably `ansible.posix` must be ≥ 2.0 — the `synchronize` plugin in 1.x (Ubuntu
+ships 1.5.4 system-wide) prints a connection-stdin deprecation warning on every
+workspace sync under core 2.16; the galaxy-installed 2.x in `~/.ansible/collections`
+shadows the system copy.
 
 The Pi needs only Python 3 and key-based SSH, both of which Ubuntu Server 24.04
 ships by default. No agent, no bootstrap package.

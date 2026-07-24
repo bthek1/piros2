@@ -139,6 +139,9 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
 ## Conventions
 
 - This repo doubles as the colcon workspace; packages go in `src/`.
+- Day-to-day commands are recipes in the `justfile` (`just` lists them by
+  group: provision, sync, status, test, build). Add a recipe rather than
+  documenting a long one-off command; keep recipes and docs in agreement.
 - Provisioning lives in `ansible/` — `inventory.yml`, `group_vars/`, `roles/`, and
   `site.yml`. Machine-specific values belong in `group_vars`, never hard-coded in a
   role. See [docs/ansible.md](docs/ansible.md) for the intended layout.
