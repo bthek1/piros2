@@ -19,6 +19,15 @@
       - python3-vcstool
     state: present
 
+# Host-specific additions from group_vars (e.g. the calibration GUI belongs
+# on the dev box only) — keeps the shared list above genuinely shared.
+- name: Install host-specific ROS extras
+  become: true
+  ansible.builtin.apt:
+    name: "{{ extra_ros_packages }}"
+    state: present
+  when: extra_ros_packages | default([]) | length > 0
+
 # demo_nodes_cpp ships with `desktop` but not `ros-base` — installed on the Pi
 # so the talker/listener checkpoint (roadmap milestone 0) works both ways.
 - name: Install the demo nodes for the cross-LAN checkpoint

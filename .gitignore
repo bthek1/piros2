@@ -20,3 +20,6 @@ rosbag2_*/
 .idea/
 *.swp
 .DS_Store
+
+# Recorded sessions (milestone 6)
+bags/

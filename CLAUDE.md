@@ -89,10 +89,25 @@ second trap: **BEST_EFFORT receives zero large frames** — 2.7 MB messages
 fragment into ~1800 UDP datagrams, one always drops, and only RELIABLE
 reassembles; the node subscribes RELIABLE/KEEP_LAST-1 on purpose.
 
-Milestone 5 (TF, in progress 2026-07-27): `camera.launch.py` now also
-publishes a static `base_link → camera_link` transform (placeholder pose,
-5 cm up) — verified across the LAN with `tf2_echo`. Remaining: the RViz
-visual check (`just pipeline` + `rviz2`) and checkerboard calibration.
+Milestone 5 (TF, in progress 2026-07-27): `camera.launch.py` publishes the
+static frame chain `base_link → camera_link → camera_optical_frame`
+(placeholder mount pose 5 cm up; canonical −90/0/−90 optical rotation), and
+image headers now carry `camera_optical_frame` — verified across the LAN with
+`tf2_echo`. Remaining: the RViz visual check (`just pipeline` + `rviz2`) and
+checkerboard calibration.
+
+Milestone 6 (record/replay, done 2026-07-27): `just record` bags the
+compressed stream + `camera_info` + `/tf_static` on the Pi (24 s ≈ 36 MiB
+MCAP) and fetches it to `bags/`; `just replay` runs it through
+`image_transport republish` into the edge detector entirely on the dev box —
+no Pi needed. Jazzy's `republish` takes transports as *parameters*, not
+positional args (see docs/troubleshooting.md).
+
+**The roadmap concluded 2026-07-27.** The project now runs on
+[docs/perception-plan.md](docs/perception-plan.md): phases P0–P4 building
+`src/piros2_perception` (neural monocular depth → point clouds → a room map).
+P0 is the human-gated calibration; no perception code exists until P1 says
+it does.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
@@ -244,6 +259,8 @@ The Ansible `workspace` role does the same as part of a run. Remote is
 | [docs/camera.md](docs/camera.md) | Driver choice, transport, V4L2 controls, calibration |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |
 | [docs/roadmap.md](docs/roadmap.md) | Milestones and their status |
+| [docs/perception.md](docs/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
+| [docs/perception-plan.md](docs/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update
 [docs/hardware.md](docs/hardware.md) from real command output and note the date.

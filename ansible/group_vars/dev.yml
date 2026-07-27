@@ -12,3 +12,7 @@ dds_interface: enp6s18
 
 # Where the checkout lives on this machine. Differs from the Pi's ~/piros2.
 workspace_path: "{{ ansible_env.HOME }}/Documents/piros2"
+
+# Dev-box-only ROS packages: GUI tooling that has no business on the Pi.
+extra_ros_packages:
+  - ros-jazzy-camera-calibration   # cameracalibrator GUI (milestone 5)

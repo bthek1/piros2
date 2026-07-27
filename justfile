@@ -74,7 +74,7 @@ camera:
 cam *args:
     #!/usr/bin/env bash
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     sleep 4
     # PATH override: rqt tools use `#!/usr/bin/env python3`, and the PlatformIO
     # venv earlier in PATH shadows the system python ROS is built against —
@@ -94,8 +94,49 @@ pipeline *args:
 edges *args:
     #!/usr/bin/env bash
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_vision vision.launch.py {{ args }}'" &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_vision\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[e]dge_detector\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_vision\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[e]dge_detector\"; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     sleep 6
+    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_processed/compressed'
+
+# Run while `just pipeline`/`just cam` is up. Print docs/checkerboard-8x6-25mm.svg
+# at 100% first. Decompresses the stream locally onto /calib/image_raw so the
+# calibrator never pulls raw over the Wi-Fi, and PATH-prefixes the GUI (env-shebang
+# Python tool, PlatformIO venv trap). Save lands in /tmp/calibrationdata.tar.gz —
+# see docs/camera.md#calibration for where the yaml goes.
+# Camera calibration GUI against the live stream (needs the printed board)
+[group('test')]
+calibrate:
+    #!/usr/bin/env bash
+    bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 run image_transport republish --ros-args -p in_transport:=compressed -p out_transport:=raw -r in/compressed:=/image_raw/compressed -r out:=/calib/image_raw' >/dev/null 2>&1 &
+    trap 'kill %1 2>/dev/null' EXIT
+    sleep 2
+    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run camera_calibration cameracalibrator --size 8x6 --square 0.025 --ros-args -r image:=/calib/image_raw -p camera:=/usb_cam'
+
+# Run while `just pipeline` or `just cam` is up. Records the compressed
+# stream (raw 720p is ~83 MB/s — neither the SD card nor the Wi-Fi wants
+# that), plus camera_info and the latched static transforms, then pulls the
+# bag back here into bags/ (git-ignored).
+# Record a camera session on the Pi and fetch it to bags/session1
+[group('test')]
+record secs='20':
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && mkdir -p ~/bags && rm -rf ~/bags/session1 && timeout -s INT {{ secs }} ros2 bag record -o ~/bags/session1 /image_raw/compressed /camera_info /tf_static'" || true
+    rsync -a pi:~/bags/session1 "{{ justfile_directory() }}/bags/"
+    bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 bag info "{{ justfile_directory() }}/bags/session1"'
+
+# No Pi needed: loops the bag, decompresses it back to /image_raw
+# (image_transport republish — parameters, not positional args, in Jazzy),
+# runs the edge detector against it locally, and shows the annotated result
+# in rqt_image_view. Closing the viewer stops everything.
+# Replay bags/session1 through the edge detector + viewer, all on the dev box
+[group('test')]
+replay bag='bags/session1':
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play --loop '{{ bag }}'" >/dev/null 2>&1 &
+    bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 run image_transport republish --ros-args -p in_transport:=compressed -p out_transport:=raw -r in/compressed:=/image_raw/compressed -r out:=/image_raw' >/dev/null 2>&1 &
+    bash -lc 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 run piros2_vision edge_detector' &
+    trap 'kill %1 %2 %3 2>/dev/null' EXIT
+    sleep 3
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_processed/compressed'
 
 # (2>&1 on the listener because ROS logs go to stderr)

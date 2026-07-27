@@ -4,10 +4,12 @@ The point of this project is learning ROS 2, so the milestones are ordered by
 concept rather than by feature. Each one should end with something that visibly
 works before moving on.
 
-Status at a glance: **milestones 0–4 are done** (2026-07-24 → 2026-07-27) —
-provisioned machines, `piros2_hello`, the camera stack, launch files, and the
-edge-detection pipeline, each verified end to end. Milestone 5 (TF and
-calibration) is next.
+> **Roadmap concluded 2026-07-27.** Milestones 0–6 delivered a provisioned
+> two-machine system, four packages, the camera stack, TF, and record/replay —
+> each verified end to end. The project continues as the perception build:
+> design in [perception.md](perception.md), phased build order in
+> [perception-plan.md](perception-plan.md). The two checkboxes below still
+> open (RViz eyeball, calibration) carry over there as phase P0.
 
 ## 0. Environment — *done 2026-07-24*
 
@@ -139,24 +141,50 @@ off the executor thread, measuring latency end to end.
 - [ ] The camera frame visible in RViz with the image display attached —
       `just pipeline` on one terminal, `rviz2` on another (Fixed Frame
       `base_link`, add TF + Image with compressed transport)
-- [ ] Camera calibrated so `camera_info` is real — [camera.md](camera.md#calibration);
-      needs a printed checkerboard and a human in front of the camera
+- [ ] Camera calibrated so `camera_info` is real — **turnkey as of
+      2026-07-27**: print [checkerboard-8x6-25mm.svg](checkerboard-8x6-25mm.svg)
+      at 100%, run `just pipeline` + `just calibrate`, wave the board —
+      [camera.md](camera.md#calibration) covers where the yaml goes. Only the
+      human part remains
 
 **Concepts:** `tf2`, frame conventions (REP-103, REP-105), `static_transform_publisher`,
 why a correct `camera_info` matters before any geometry.
 
-## 6. Recording and replay — *not started*
+## 6. Recording and replay — *done 2026-07-27*
 
-- [ ] `ros2 bag record` a camera session on the Pi
-- [ ] Replay it on the dev box and run the processing node against the recording
+- [x] `ros2 bag record` a camera session on the Pi — `just record` (with
+      `just pipeline` running): 24 s → 36 MiB MCAP of `/image_raw/compressed`
+      + `/camera_info` + `/tf_static`, then fetched to `bags/`. Compressed on
+      purpose: raw 720p is ~83 MB/s and the SD card wants none of it. The two
+      latched `/tf_static` messages ride along, so the bag carries its own
+      frame tree.
+- [x] Replay it on the dev box and run the processing node against the
+      recording — `just replay`, no Pi involved: `ros2 bag play` →
+      `image_transport republish` decompressing back to `/image_raw` → the
+      same `edge_detector`, processing every recorded frame at 8–20 ms each.
+
+Two lessons the run itself taught: Jazzy's `republish` takes its transports as
+**parameters** (`-p in_transport:=compressed`), and silently creates no input
+subscription at all if given the old positional form —
+[troubleshooting.md](troubleshooting.md#image_transport-republish-republishes-nothing);
+and during replay the detector's stamp-lag readout jumped to ~320 000 ms — the
+age of the recording — which is `use_sim_time` explaining itself: replayed
+messages keep their original stamps, and stamp-sensitive consumers need
+`ros2 bag play --clock` plus the `use_sim_time` parameter to re-align time.
 
 **Concepts:** `rosbag2`, MCAP storage, `/clock` and `use_sim_time`. This is the
 step that makes the rest of the project pleasant — you stop needing the hardware
 powered on to iterate.
 
-## 7. Something interactive — *not started*
+## 7. Perception: a 3D point-cloud map of the room — *chosen 2026-07-27, planned*
 
-Pick whichever is more interesting at the time:
+The pick landed on a perception system: camera → neural monocular depth →
+point clouds → a fused 3D map of the room. Design, stages (P0–P4) and honest
+constraints in **[perception.md](perception.md)**. P0 is milestone 5's
+calibration — metres come from the K matrix, so the checkerboard run gates
+everything.
+
+The original alternatives, kept for the record:
 
 - **AprilTag detection** — `apriltag_ros`, publishing tag poses into TF. Real 6-DOF
   pose estimation, and a good test of the calibration.

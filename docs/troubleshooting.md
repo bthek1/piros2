@@ -308,3 +308,20 @@ machine showing this has not run the playbook since:
 ros2 run image_transport list_transports   # 'compressed' must be listed
 just deploy-dev                            # installs it if missing
 ```
+
+## `image_transport republish` republishes nothing
+
+Symptom: the output topic exists, `ros2 node info /image_republisher` shows
+publishers but **no input subscription**, and nothing flows. Cause: the old
+positional-argument form (`republish compressed raw`) is silently ignored on
+Jazzy — the transports are node *parameters* now. Working form (hit
+2026-07-27, used by `just replay`):
+
+```bash
+ros2 run image_transport republish --ros-args \
+  -p in_transport:=compressed -p out_transport:=raw \
+  -r in/compressed:=/image_raw/compressed -r out:=/image_raw
+```
+
+`ros2 node info` on the republisher is the fast diagnostic: no subscriber on
+your input topic means the transport arguments never took.

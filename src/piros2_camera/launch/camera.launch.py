@@ -85,8 +85,6 @@ def generate_launch_description():
         # REP-103 axes: x forward, y left, z up — so this reads "5 cm above
         # base_link's origin, facing the same way". Placeholder until the
         # camera is mounted somewhere deliberate; measure and update then.
-        # (A camera_link -> camera_optical_frame rotation joins it when
-        # geometry starts caring that image axes are z-forward/x-right.)
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -96,6 +94,23 @@ def generate_launch_description():
                 '--roll', '0', '--pitch', '0', '--yaw', '0',
                 '--frame-id', 'base_link',
                 '--child-frame-id', 'camera_link',
+            ],
+        ),
+
+        # The optical frame: image geometry uses z forward, x right, y down
+        # (REP-103's optical convention) — NOT the body convention above.
+        # This fixed rotation (the canonical rpy −90°,0,−90°) is pure
+        # bookkeeping, but every projection, AprilTag pose and calibration
+        # assumes it exists; image headers carry THIS frame's name.
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='camera_optical_tf',
+            arguments=[
+                '--x', '0', '--y', '0', '--z', '0',
+                '--roll', '-1.5707963', '--pitch', '0', '--yaw', '-1.5707963',
+                '--frame-id', 'camera_link',
+                '--child-frame-id', 'camera_optical_frame',
             ],
         ),
     ])

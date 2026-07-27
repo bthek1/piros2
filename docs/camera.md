@@ -236,18 +236,34 @@ on 2026-07-24. `auto_exposure=3` restores the camera's default behaviour.
 
 Needed before AprilTags, visual odometry, or anything that turns pixels into metres.
 
-```bash
-sudo apt install ros-jazzy-camera-calibration    # or add it to the Ansible role
+The tooling is provisioned (`ros-jazzy-camera-calibration`, dev box only, via
+the `extra_ros_packages` group var) and the board is in the repo:
+**print [checkerboard-8x6-25mm.svg](checkerboard-8x6-25mm.svg) at 100% scale**
+and verify a square is really 25 mm with a ruler — a scaled print silently
+scales every distance the calibration will ever report. Mount it on something
+flat; a floppy sheet of paper adds curvature the model will faithfully fit.
 
-ros2 run camera_calibration cameracalibrator \
-  --size 8x6 --square 0.025 \
-  --ros-args -r image:=/image_raw -p camera:=/camera
+Then, with `just pipeline` running:
+
+```bash
+just calibrate
 ```
 
-Print a checkerboard, hold it at varied distances, angles, and positions in the
-frame until all four bars go green, then **Calibrate** → **Save**. The result lands
-in `/tmp/calibrationdata.tar.gz`; extract the `.yaml` into `config/` in this repo
-and point the driver at it with `camera_info_url`.
+The recipe decompresses the stream locally onto `/calib/image_raw` before the
+GUI subscribes — pointing the calibrator straight at `/image_raw` would pull
+~83 MB/s of raw frames over the Wi-Fi — and PATH-prefixes the GUI past the
+PlatformIO venv ([troubleshooting.md](troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml)).
+
+Hold the board at varied distances, angles, and positions in the frame until
+all four bars go green, then **Calibrate** (expect a long pause) → **Save**.
+The result lands in `/tmp/calibrationdata.tar.gz`; extract `ost.yaml`, rename
+it to `config/c922_720p.yaml` in `src/piros2_camera/`, add it to `setup.py`'s
+config glob (already covered by `config/*.yaml`) and point the driver at it in
+`camera.yaml`:
+
+```yaml
+camera_info_url: package://piros2_camera/config/c922_720p.yaml
+```
 
 Calibration is per-camera and per-resolution. Recalibrate if you change capture
 resolution — the intrinsics do not simply scale, because the C922 crops rather than
