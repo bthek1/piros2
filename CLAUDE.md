@@ -79,14 +79,15 @@ launch arguments. `just cam` runs it; args pass through
 (`just cam image_width:=640`). The usb_cam TF param is **`frame_id`** —
 `camera_frame_id` is a ROS 1 name it silently ignores.
 
-Milestone 4 (image processing, in progress 2026-07-24): `src/piros2_vision` —
-a hand-written Canny edge detector (`cv_bridge`, hand-rolled compressed
-variant), ~16 fps at ~30–45 ms/frame on the Pi. Its first version exposed the
-camera's timestamp fault, and its QoS exposed a second trap: **BEST_EFFORT
-receives zero large frames** — 2.7 MB messages fragment into ~1800 UDP
-datagrams, one always drops, and only RELIABLE reassembles; the node
-subscribes RELIABLE/KEEP_LAST-1 on purpose. Still to do: a combined launch
-file and a first real unit test.
+Milestone 4 (image processing, done 2026-07-27): `src/piros2_vision` — a
+hand-written Canny edge detector (`cv_bridge`, hand-rolled compressed
+variant), ~16–20 fps at ~30–45 ms/frame on the Pi; `vision.launch.py`
+composes the camera launch via `IncludeLaunchDescription` (`just edges`), and
+`test_edge_detector.py` unit-tests `on_frame` with captured publishers. Its
+first version exposed the camera's timestamp fault, and its QoS exposed a
+second trap: **BEST_EFFORT receives zero large frames** — 2.7 MB messages
+fragment into ~1800 UDP datagrams, one always drops, and only RELIABLE
+reassembles; the node subscribes RELIABLE/KEEP_LAST-1 on purpose.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean as of

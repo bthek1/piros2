@@ -91,7 +91,7 @@ Replace the long `--ros-args -p ...` command line with something declarative.
 **Concepts:** the Python launch system, parameter files, namespaces, remapping,
 `ros2 param` at runtime.
 
-## 4. An image-processing node — *in progress (2026-07-24)*
+## 4. An image-processing node — *done 2026-07-27*
 
 The first node that does something rather than plumbing data.
 
@@ -114,9 +114,12 @@ best-effort never retransmits, so no frame ever reassembles. The textbook
 megabyte frames invert it. Provable either way with
 `ros2 topic echo --qos-reliability {best_effort,reliable} /image_raw`.
 
-Remaining before calling it done: a launch file wiring camera + detector
-together, and a first real unit test (feed `on_frame` a synthetic image,
-assert edges come back).
+Closed out 2026-07-27: `launch/vision.launch.py` composes the camera's launch
+file via `IncludeLaunchDescription` (camera arguments pass through the shared
+launch context — `just edges gain:=128`), verified 19.6 fps annotated output
+from one command; and `test/test_edge_detector.py` unit-tests `on_frame`
+directly — synthetic frame in, captured publishers out, no camera, graph or
+discovery involved (`just test`).
 
 **Concepts:** `cv_bridge`, subscriber/publisher in one node, keeping per-frame work
 off the executor thread, measuring latency end to end.

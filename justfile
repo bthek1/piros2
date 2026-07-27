@@ -81,14 +81,14 @@ cam *args:
     # docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_raw/compressed'
 
-# Camera + edge detector on the Pi, viewer here on the annotated stream;
-# closing the viewer stops all three
+# Camera + edge detector via the composed vision.launch.py, viewer here on
+# the annotated stream; closing the viewer stops everything. Camera args pass
+# through the included launch: `just edges gain:=128`
 [group('test')]
 edges *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 run piros2_vision edge_detector'" &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[e]dge_detector\"" 2>/dev/null; kill %1 %2 2>/dev/null' EXIT
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_vision vision.launch.py {{ args }}'" &
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_vision\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[e]dge_detector\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     sleep 6
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_processed/compressed'
 
