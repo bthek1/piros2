@@ -29,9 +29,11 @@ Since then, **milestones 1–3 are done** (2026-07-24): `src/piros2_hello` — a
 hand-written talker/listener pair verified across the LAN (`just hello`);
 the C922 streaming from the Pi at a measured 29.72 fps and viewed live on the
 dev box over compressed transport; and `src/piros2_camera` — a launch file and
-parameter YAML that own the camera's configuration (`just cam`). Milestone 4
-— `src/piros2_vision`, a Canny edge detector and the first node that
-transforms data — is in progress.
+parameter YAML that own the camera's configuration (`just cam`). **Milestone 4
+followed on 2026-07-27**: `src/piros2_vision`, a Canny edge detector — the
+first node that transforms data — with a composed launch file, a unit test,
+and the whole pipeline viewable live with `just edges`. Next: milestone 5,
+TF and camera calibration.
 
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.

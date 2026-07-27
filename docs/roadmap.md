@@ -4,8 +4,10 @@ The point of this project is learning ROS 2, so the milestones are ordered by
 concept rather than by feature. Each one should end with something that visibly
 works before moving on.
 
-No ROS packages are written yet — the repository is still documentation only. The
-one thing that *is* done is the Pi's OS.
+Status at a glance: **milestones 0–4 are done** (2026-07-24 → 2026-07-27) —
+provisioned machines, `piros2_hello`, the camera stack, launch files, and the
+edge-detection pipeline, each verified end to end. Milestone 5 (TF and
+calibration) is next.
 
 ## 0. Environment — *done 2026-07-24*
 
@@ -117,9 +119,10 @@ megabyte frames invert it. Provable either way with
 Closed out 2026-07-27: `launch/vision.launch.py` composes the camera's launch
 file via `IncludeLaunchDescription` (camera arguments pass through the shared
 launch context — `just edges gain:=128`), verified 19.6 fps annotated output
-from one command; and `test/test_edge_detector.py` unit-tests `on_frame`
-directly — synthetic frame in, captured publishers out, no camera, graph or
-discovery involved (`just test`).
+from one command and eyeballed live in `rqt_image_view` on the dev box; and
+`test/test_edge_detector.py` unit-tests `on_frame` directly — synthetic frame
+in, captured publishers out, no camera, graph or discovery involved
+(`just test`).
 
 **Concepts:** `cv_bridge`, subscriber/publisher in one node, keeping per-frame work
 off the executor thread, measuring latency end to end.

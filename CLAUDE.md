@@ -90,8 +90,9 @@ fragment into ~1800 UDP datagrams, one always drops, and only RELIABLE
 reassembles; the node subscribes RELIABLE/KEEP_LAST-1 on purpose.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
-sidebar — both report identically. All packages are style-clean as of
-2026-07-24.
+sidebar — both report identically. All packages are style-clean and the suite
+is green (12 tests, including `piros2_vision`'s real unit tests) as of
+2026-07-27.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
