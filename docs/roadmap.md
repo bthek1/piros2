@@ -127,11 +127,20 @@ in, captured publishers out, no camera, graph or discovery involved
 **Concepts:** `cv_bridge`, subscriber/publisher in one node, keeping per-frame work
 off the executor thread, measuring latency end to end.
 
-## 5. TF and coordinate frames — *not started*
+## 5. TF and coordinate frames — *in progress (2026-07-27)*
 
-- [ ] A static transform from `base_link` to `camera_link`
-- [ ] The camera frame visible in RViz with the image display attached
-- [ ] Camera calibrated so `camera_info` is real — [camera.md](camera.md#calibration)
+- [x] A static transform from `base_link` to `camera_link` — a
+      `static_transform_publisher` in `camera.launch.py` (placeholder pose:
+      5 cm up, identity rotation — re-measure when the camera is mounted
+      deliberately). Verified across the LAN with
+      `ros2 run tf2_ros tf2_echo base_link camera_link`; note the `At time
+      0.0` — static transforms are latched on `/tf_static` and valid at any
+      query time
+- [ ] The camera frame visible in RViz with the image display attached —
+      `just pipeline` on one terminal, `rviz2` on another (Fixed Frame
+      `base_link`, add TF + Image with compressed transport)
+- [ ] Camera calibrated so `camera_info` is real — [camera.md](camera.md#calibration);
+      needs a printed checkerboard and a human in front of the camera
 
 **Concepts:** `tf2`, frame conventions (REP-103, REP-105), `static_transform_publisher`,
 why a correct `camera_info` matters before any geometry.

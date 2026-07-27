@@ -78,4 +78,24 @@ def generate_launch_description():
                 },
             ],
         ),
+
+        # Where the camera IS, as data on /tf_static: base_link is the
+        # robot's reference frame (REP-105), and this transform states the
+        # camera's mounting pose in it once, latched, for every consumer.
+        # REP-103 axes: x forward, y left, z up — so this reads "5 cm above
+        # base_link's origin, facing the same way". Placeholder until the
+        # camera is mounted somewhere deliberate; measure and update then.
+        # (A camera_link -> camera_optical_frame rotation joins it when
+        # geometry starts caring that image axes are z-forward/x-right.)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='camera_mount_tf',
+            arguments=[
+                '--x', '0', '--y', '0', '--z', '0.05',
+                '--roll', '0', '--pitch', '0', '--yaw', '0',
+                '--frame-id', 'base_link',
+                '--child-frame-id', 'camera_link',
+            ],
+        ),
     ])

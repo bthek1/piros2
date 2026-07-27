@@ -81,6 +81,12 @@ cam *args:
     # docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_raw/compressed'
 
+# Camera + detector on the Pi with no viewer attached — for RViz sessions or
+# hz/latency measurements. Ctrl-C stops it.
+[group('test')]
+pipeline *args:
+    ssh -t pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_vision vision.launch.py {{ args }}'"
+
 # Camera + edge detector via the composed vision.launch.py, viewer here on
 # the annotated stream; closing the viewer stops everything. Camera args pass
 # through the included launch: `just edges gain:=128`

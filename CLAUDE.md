@@ -89,6 +89,11 @@ second trap: **BEST_EFFORT receives zero large frames** — 2.7 MB messages
 fragment into ~1800 UDP datagrams, one always drops, and only RELIABLE
 reassembles; the node subscribes RELIABLE/KEEP_LAST-1 on purpose.
 
+Milestone 5 (TF, in progress 2026-07-27): `camera.launch.py` now also
+publishes a static `base_link → camera_link` transform (placeholder pose,
+5 cm up) — verified across the LAN with `tf2_echo`. Remaining: the RViz
+visual check (`just pipeline` + `rviz2`) and checkerboard calibration.
+
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
 is green (12 tests, including `piros2_vision`'s real unit tests) as of
