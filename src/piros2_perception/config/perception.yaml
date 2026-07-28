@@ -9,3 +9,12 @@ depth_estimator:
     # output to metres-ish (z = depth_scale / output). Arbitrary until P2's
     # tape-measure check; tune, don't trust.
     depth_scale: 10.0
+
+cloud_projector:
+  ros__parameters:
+    # Every Nth pixel in both axes: 4 → ~57k points at 720p, 1/16th the
+    # build cost, still dense enough to read a room.
+    subsample: 4
+    # Depth beyond this is the model saying "background"; the 1/x inversion
+    # makes those values explode, so they are cut before projection.
+    far_clip: 20.0

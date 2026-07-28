@@ -149,7 +149,10 @@ off the executor thread, measuring latency end to end.
       [checkerboard-8x6-25mm.svg](checkerboard-8x6-25mm.svg) at 100%, run
       `just pipeline` + `just calibrate`, wave the board —
       [camera.md](camera.md#calibration) covers where the yaml goes. Only the
-      human part remains
+      human part remains. *Stopgap 2026-07-28:* spec-derived approximate
+      intrinsics (`c922_720p_approx.yaml`, fx = fy ≈ 907) are live on
+      `/camera_info` so perception is unblocked; this box stays open until
+      the board is actually waved
 
 **Concepts:** `tf2`, frame conventions (REP-103, REP-105), `static_transform_publisher`,
 why a correct `camera_info` matters before any geometry.

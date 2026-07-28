@@ -27,23 +27,37 @@ model and cloud assembly run on the dev box; the Pi stays a sensor head.
 ## The new package
 
 ```
-src/piros2_perception/            # ament_python, created in P1
-├── package.xml                   # rclpy, sensor_msgs, cv_bridge, tf2_ros
-├── setup.py                      # nodes below + launch/ + config/
+src/piros2_perception/            # ament_python — EXISTS as of P1 (2026-07-28)
+├── package.xml                   # ✓ rclpy, sensor_msgs, cv_bridge
+├── setup.py                      # ✓ (+ README.md: the venv escape hatch)
 ├── piros2_perception/
-│   ├── depth_estimator.py        # P1: compressed frames → /depth
-│   └── cloud_projector.py        # P2: /depth + /camera_info → /points
-├── launch/perception.launch.py   # P2: composes vision pipeline + both nodes
-├── config/perception.yaml        # model path, subsample, depth scale
-├── models/                       # ONNX weights, git-ignored, fetched by recipe
-└── test/                         # anchored linters + real unit tests per node
+│   ├── depth_estimator.py        # ✓ P1: compressed frames → /depth
+│   └── cloud_projector.py        # ✓ P2: /depth + /camera_info → /points
+├── launch/perception.launch.py   # ✓ P2: both dev-box nodes (camera stays SSH)
+├── config/perception.yaml        # ✓ depth scale + subsample + far clip
+├── config/perception.rviz        # ✓ P2: base_link view, RGB cloud (`just cloud`)
+├── models/                       # ✓ DA-V2 Small fetched (`just fetch-model`)
+└── test/                         # ✓ anchored linters + 11 real unit tests
 ```
 
 Conventions carried over: `piros2_<thing>` naming, anchored tests copied from
 an existing package (never the generated CWD-dependent form), package added to
 `.vscode/tasks.json`'s picker, recipes added to the justfile as they appear.
 
-## P0 — Calibration (human, gates everything)
+## P0 — Calibration (gate released 2026-07-28; board run now an upgrade)
+
+> **2026-07-28 — gate released with spec-derived intrinsics.** Decision:
+> don't block the pipeline on the board. `c922_720p_approx.yaml` computes
+> K from the C922's spec sheet — 78° diagonal FOV at 1280×720 gives
+> fx = fy ≈ 907 px, principal point assumed centred, distortion assumed
+> zero — and `camera_info_url` now points at it. Verified live:
+> `/camera_info` carries K = [907, 0, 640; 0, 907, 360; 0, 0, 1]. Cost:
+> a few percent of geometric error and no distortion correction; monocular
+> depth's scale was hand-tuned anyway, so P2 loses little. The checkerboard
+> run is now an **accuracy upgrade, not a gate** — saving a measured
+> `c922_720p.yaml` and re-pointing `camera_info_url` drops it in. (The
+> verification also re-proved the house daemon trap: the first
+> `/camera_info` echo showed zeros from a stale ROS daemon.)
 
 > **2026-07-27 — attempted; tooling fixed, calibration still open.** A first
 > session live-debugged `just calibrate` into genuinely turnkey shape: the
@@ -128,6 +142,24 @@ derived sensor data with honest headers.
 
 ## P2 — Point cloud projector
 
+> **2026-07-28 — done, verified live.** `cloud_projector.py` syncs `/depth`
+> with `/image_raw/compressed` (message_filters approximate-time — exact in
+> practice, because the depth node keeps honest headers), projects through
+> the live `/camera_info` K, and hand-builds the `PointCloud2`
+> (16-byte x/y/z/rgb layout, numpy structured array → `tobytes()`).
+> Measured: **33k–57k points in ~12 ms per cloud**, updating at the depth
+> node's ~3 fps. Six unit tests pin the maths: a synthetic flat wall at 2 m
+> through a known K comes back flat, at 2 m, pinhole-exact. Live check ran
+> the full chain (Pi camera → depth → cloud): coherent frustum, median
+> z ≈ 3.2 scale-units in a dark room. One plan correction:
+> `perception.launch.py` does NOT include the Pi's vision launch —
+> `IncludeLaunchDescription` executes locally and would open `/dev/video0`
+> on the dev box; the launch composes the two dev-box nodes (the estimator
+> via `ExecuteProcess` under the venv interpreter — launch_ros `Node` would
+> exec the system-shebang entry point), and `just cloud` starts the camera
+> over SSH. Remaining for a human: the RViz look (`just run`) and the
+> tape-measure scale check, which needs a lit room.
+
 `cloud_projector.py`:
 
 - Subscribes `/depth` + `/camera_info` (the P0 payoff) and the RGB frame for
@@ -189,10 +221,10 @@ ambiguity in monocular pipelines.
 
 ## Open decisions
 
-| Question | Options | Lean |
+| Question | Options | Outcome |
 | --- | --- | --- |
-| Depth model | Depth Anything V2 Small ONNX vs MiDaS small | DA-V2 Small — better quality at similar cost |
-| Where inference runs | dev-box CPU vs its NVIDIA GPU (driver present) | CPU first; GPU only if fps actually hurts |
-| Cloud transport | publish `/points` over LAN vs view-only local | local only — a 57k-point cloud at even 5 fps is Wi-Fi abuse |
-| P3 engine | RTAB-Map vs hand-rolled pose accumulation | RTAB-Map, with the fallback written into P3 |
-| Venv home | `~/.venvs/piros2-perception` vs in-repo | home dir — the repo stays apt-only |
+| Depth model | DA-V2 Small ONNX vs MiDaS small | **Decided (P1)**: DA-V2 Small, fp32 onnx-community export, checksum-pinned |
+| Where inference runs | dev-box CPU vs its NVIDIA GPU (driver present) | **Decided (P1)**: CPU — 280–305 ms/frame is enough; GPU only if P3 hurts |
+| Cloud transport | publish `/points` over LAN vs view-only local | Open — lean local only; a 57k-point cloud at even 5 fps is Wi-Fi abuse |
+| P3 engine | RTAB-Map vs hand-rolled pose accumulation | Open — lean RTAB-Map, with the fallback written into P3 |
+| Venv home | `~/.venvs/piros2-perception` vs in-repo | **Decided (P1)**: home dir — the repo stays apt-only |

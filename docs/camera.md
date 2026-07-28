@@ -236,6 +236,14 @@ on 2026-07-24. `auto_exposure=3` restores the camera's default behaviour.
 
 Needed before AprilTags, visual odometry, or anything that turns pixels into metres.
 
+> **Interim state (2026-07-28):** `camera_info_url` points at
+> `config/c922_720p_approx.yaml` — intrinsics *derived from the spec sheet*
+> (78° diagonal FOV → fx = fy ≈ 907 px, centred principal point, zero
+> distortion), not measured. `/camera_info` therefore carries a plausible K
+> right now, good to a few percent. The checkerboard procedure below
+> replaces it with measured values; when the saved `c922_720p.yaml` lands,
+> re-point `camera_info_url` and delete the approx file.
+
 The tooling is provisioned (`ros-jazzy-camera-calibration`, dev box only, via
 the `extra_ros_packages` group var) and the board is in the repo:
 **print [checkerboard-8x6-25mm.svg](checkerboard-8x6-25mm.svg) at 100% scale**

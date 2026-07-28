@@ -1,7 +1,10 @@
 # Perception: from webcam to a 3D map of the room
 
-> **Status: in build.** P1 (depth node) done 2026-07-28, verified on bag
-> replay; P0 (calibration) is still open and gates P2. This document is the
+> **Status: in build — P3 next.** P1 (depth node) and P2 (cloud projector)
+> done 2026-07-28, both verified with measured numbers. P0's gate was
+> released the same day with spec-derived approximate intrinsics
+> (`/camera_info` now carries a real K); the checkerboard run is an
+> accuracy upgrade whenever it happens. This document is the
 > design; the phased build order — which phase creates what, and what each
 > must prove, with per-phase outcome annotations — is
 > [perception-plan.md](perception-plan.md). Milestone 7 was an open choice —
@@ -42,6 +45,13 @@ Already turnkey: print `docs/checkerboard-8x6-25mm.svg` at 100 %, run
 `src/piros2_camera/config/c922_720p.yaml` and point `camera_info_url` at it.
 Done when `/camera_info` carries a real K matrix.
 
+**Gate released 2026-07-28** without the board: `c922_720p_approx.yaml`
+derives K from the C922's spec (78° diagonal FOV → fx = fy ≈ 907 px, centred
+principal point, zero distortion) and `/camera_info` now publishes it. A few
+percent of geometric error, no distortion correction — acceptable against
+monocular depth's already-approximate scale. The checkerboard run upgrades
+accuracy whenever it happens.
+
 ### P1 — Monocular depth node
 
 `piros2_perception/depth_estimator`: subscribes `/image_raw/compressed`
@@ -74,6 +84,13 @@ desk scene with correct near/far ordering. Scale remains honest-relative;
 
 Done when: RViz shows a coloured 3D frustum of the current view, correctly
 oriented relative to `base_link` — the TF payoff made visible.
+
+**Done 2026-07-28.** Measured: 33k–57k points built in ~12 ms per cloud
+(numpy-vectorised projection + structured-array serialisation), cloud rate
+bounded by the depth node's ~3 fps. Verified live end to end; unit tests pin
+the projection against a synthetic wall (flat, 2 m, pinhole-exact). The RViz
+eyeball (`just run`) and the tape-measure scale check remain human steps —
+the latter wants a lit room and a wall at known distance.
 
 ### P3 — From clouds to a map
 

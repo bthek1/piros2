@@ -13,6 +13,8 @@
       - "--exclude=build"
       - "--exclude=install"
       - "--exclude=log"
+      # The depth model (~99 MB) is dev-box-only; the Pi never runs inference
+      - "--exclude=src/piros2_perception/models"
 
 # src/ holds no packages yet. rosdep errors on an empty --from-paths and colcon
 # happily "builds" nothing — guard both, or this role fails on a machine that

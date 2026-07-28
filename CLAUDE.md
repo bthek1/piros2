@@ -110,8 +110,12 @@ positional args (see docs/troubleshooting.md).
 **The roadmap concluded 2026-07-27.** The project now runs on
 [docs/perception-plan.md](docs/perception-plan.md): phases P0–P4 building
 `src/piros2_perception` (neural monocular depth → point clouds → a room map).
-P0 is the human-gated calibration — still open, and it gates P2 (metres come
-from the K matrix).
+P0's gate was released 2026-07-28 with **spec-derived approximate
+intrinsics**: `c922_720p_approx.yaml` (78° diag FOV → fx = fy ≈ 907 px,
+centred principal point, zero distortion) is live via `camera_info_url`,
+verified on `/camera_info`. Good to a few percent; the checkerboard run is
+now an accuracy upgrade, not a blocker — the measured yaml replaces the
+approx file when someone waves the board.
 
 Perception P1 (depth node, done 2026-07-28): `src/piros2_perception` —
 `depth_estimator` subscribes `/image_raw/compressed`, runs Depth Anything V2
@@ -124,11 +128,22 @@ run as `python -m` under that interpreter — colcon's hardcoded shebang
 misses the venv, so `ros2 run` gets no onnxruntime. `just depth` owns the
 invocation; the package README explains it.
 
+Perception P2 (cloud projector, done 2026-07-28): `cloud_projector` syncs
+`/depth` + `/image_raw/compressed` by header stamp (message_filters),
+projects through `/camera_info`'s K, and hand-builds `PointCloud2` (numpy
+structured array = the wire format); measured 33k–57k points in ~12 ms per
+cloud, verified live. `perception.launch.py` runs both dev-box nodes (the
+estimator via `ExecuteProcess` under the venv python — launch_ros `Node`
+would exec the system-shebang entry point); it deliberately does NOT
+include the camera launch, which would open `/dev/video0` locally —
+`just cloud` (aka `just run`) starts the camera over SSH and opens RViz.
+Human steps open: the RViz eyeball and the tape-measure scale check.
+
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (20 tests; `piros2_vision` and `piros2_perception` carry real unit
-tests — the latter injects a fake ONNX session so no weights are needed) as
-of 2026-07-28.
+is green (26 tests; `piros2_vision` and `piros2_perception` carry real unit
+tests — the perception ones need no model weights: a fake ONNX session for
+the estimator, synthetic depth planes for the projector) as of 2026-07-28.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -266,8 +281,12 @@ at `~/piros2` and builds there. Keep them in step with:
 
 ```bash
 rsync -av --delete --exclude build --exclude install --exclude log \
+      --exclude src/piros2_perception/models \
       ~/Documents/piros2/ pi:~/piros2/
 ```
+
+(The models exclude keeps the 99 MB depth weights off the Pi — inference is
+dev-box-only.)
 
 The Ansible `workspace` role does the same as part of a run. Remote is
 `git@github.com:bthek1/piros2.git`.

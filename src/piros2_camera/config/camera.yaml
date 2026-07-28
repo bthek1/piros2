@@ -18,9 +18,11 @@ usb_cam:
     # the ROS 1 name, and usb_cam silently ignores it.
     frame_id: camera_optical_frame
     camera_name: c922
-    # Calibration lands here in milestone 5 (camera.md#calibration); until
-    # then usb_cam warns that the file is missing, which is honest.
-    camera_info_url: ""
+    # APPROXIMATE spec-derived intrinsics (78° diag FOV → f≈907 px), adopted
+    # 2026-07-28 so P2 can project clouds without the checkerboard run. The
+    # measured calibration (camera.md#calibration) replaces this file when
+    # someone waves the board.
+    camera_info_url: package://piros2_camera/config/c922_720p_approx.yaml
     # usb_cam's own default is 50, well below the camera's native 128 — it
     # force-darkens every launch unless overridden here (found 2026-07-24).
     brightness: 128
