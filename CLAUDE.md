@@ -94,7 +94,11 @@ static frame chain `base_link → camera_link → camera_optical_frame`
 (placeholder mount pose 5 cm up; canonical −90/0/−90 optical rotation), and
 image headers now carry `camera_optical_frame` — verified across the LAN with
 `tf2_echo`. Remaining: the RViz visual check (`just pipeline` + `rviz2`) and
-checkerboard calibration.
+checkerboard calibration. A first calibration session (2026-07-27 evening)
+live-debugged `just calibrate` into working shape — three recipe bugs fixed
+(dead `-p camera:=` service remap, window close ignored by the calibrator,
+`kill %N` traps orphaning nodes; see docs/troubleshooting.md) — but ended
+without a save, so `camera_info` is still empty and P0 stays open.
 
 Milestone 6 (record/replay, done 2026-07-27): `just record` bags the
 compressed stream + `camera_info` + `/tf_static` on the Pi (24 s ≈ 36 MiB
@@ -106,13 +110,25 @@ positional args (see docs/troubleshooting.md).
 **The roadmap concluded 2026-07-27.** The project now runs on
 [docs/perception-plan.md](docs/perception-plan.md): phases P0–P4 building
 `src/piros2_perception` (neural monocular depth → point clouds → a room map).
-P0 is the human-gated calibration; no perception code exists until P1 says
-it does.
+P0 is the human-gated calibration — still open, and it gates P2 (metres come
+from the K matrix).
+
+Perception P1 (depth node, done 2026-07-28): `src/piros2_perception` —
+`depth_estimator` subscribes `/image_raw/compressed`, runs Depth Anything V2
+Small (fp32 ONNX, `just fetch-model`, checksum-pinned, git-ignored) and
+publishes `/depth` (32FC1) + a colourised preview; measured 280–305 ms/frame
+on the dev-box CPU (~3 fps), verified against the milestone-6 bag. It is the
+repo's documented venv escape hatch: onnxruntime is PyPI-only, lives in
+`~/.venvs/piros2-perception` (`--system-site-packages`), and the node must
+run as `python -m` under that interpreter — colcon's hardcoded shebang
+misses the venv, so `ros2 run` gets no onnxruntime. `just depth` owns the
+invocation; the package README explains it.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (12 tests, including `piros2_vision`'s real unit tests) as of
-2026-07-27.
+is green (20 tests; `piros2_vision` and `piros2_perception` carry real unit
+tests — the latter injects a fake ONNX session so no weights are needed) as
+of 2026-07-28.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -190,6 +206,16 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   crash with `No module named 'yaml'`. colcon-built nodes are immune (hardcoded
   shebang). Prefix `PATH="/usr/bin:$PATH"` for GUI tools —
   [docs/troubleshooting.md](docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml).
+- **The dev box session is Wayland; Qt5 windows are invisible to X tools.**
+  A Qt5 app (OpenCV's highgui included) opens a native Wayland surface unless
+  `QT_QPA_PLATFORM=xcb` forces it through Xwayland — `xwininfo` sees nothing
+  otherwise, and no `xdotool`/`wmctrl` is installed anyway. `just calibrate`'s
+  window watchdog depends on this pin.
+- **Justfile cleanup traps must `pkill -f` node patterns, not `kill %N`.**
+  Background jobs in recipes are `bash -lc` wrappers; killing the wrapper
+  orphans the actual ros2-run grandchildren, which sit silent until a live
+  stream feeds their subscription again (bit twice on 2026-07-27) —
+  [docs/troubleshooting.md](docs/troubleshooting.md#orphaned-nodes-keep-logging-into-a-terminal-after-a-recipe-ends).
 - **`/image_raw` header stamps lag wall clock by a steady ~0.73 s** — a
   UVC/driver timestamping fault (`ros2 topic delay /image_raw` shows it; the
   frames are live). Never gate freshness or report latency against

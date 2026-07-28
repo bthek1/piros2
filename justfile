@@ -103,14 +103,54 @@ edges *args:
 # calibrator never pulls raw over the Wi-Fi, and PATH-prefixes the GUI (env-shebang
 # Python tool, PlatformIO venv trap). Save lands in /tmp/calibrationdata.tar.gz —
 # see docs/camera.md#calibration for where the yaml goes.
+#
+# The calibrator's OpenCV window ignores the window-manager close button — its
+# loop only exits on q/Esc or COMMIT — so the recipe watches the window via
+# xwininfo and puts the node down when it disappears. QT_QPA_PLATFORM=xcb
+# forces the (Qt5) window onto Xwayland: in this Wayland session it would
+# otherwise be a native Wayland surface no X tool can observe. Cleanup is by
+# pkill pattern, not `kill %N`: the job is a bash wrapper and killing it
+# orphans the actual ros2-run grandchildren (observed leak).
 # Camera calibration GUI against the live stream (needs the printed board)
 [group('test')]
 calibrate:
     #!/usr/bin/env bash
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 run image_transport republish --ros-args -p in_transport:=compressed -p out_transport:=raw -r in/compressed:=/image_raw/compressed -r out:=/calib/image_raw' >/dev/null 2>&1 &
-    trap 'kill %1 2>/dev/null' EXIT
+    trap 'pkill -f "/calib/[i]mage_raw" 2>/dev/null; pkill -f "camera_calibration/[c]ameracalibrator" 2>/dev/null' EXIT
     sleep 2
-    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run camera_calibration cameracalibrator --size 8x6 --square 0.025 --ros-args -r image:=/calib/image_raw -p camera:=/usb_cam'
+    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" QT_QPA_PLATFORM=xcb ros2 run camera_calibration cameracalibrator --size 8x6 --square 0.025 --ros-args -r image:=/calib/image_raw -r camera/set_camera_info:=/usb_cam/set_camera_info' &
+    cal=$!
+    seen_id=""
+    # watch the wrapper PID, not pgrep — the node takes seconds to spawn and a
+    # pattern match here would see nothing and fall straight through.
+    # Closing the window destroys it but the next imshow recreates it within a
+    # frame, so absence-polling races; the recreated window has a NEW X id,
+    # and an id change (or empty) is the reliable user-closed-it signal.
+    # Match only the CLIENT window — empty class "()" — because mutter also
+    # names its frame window "display", frames appear a beat after the client,
+    # and that reparenting churn reads as an id change on the frame.
+    while kill -0 "$cal" 2>/dev/null; do
+        id=$(xwininfo -root -tree 2>/dev/null | awk '/"display": \(\)/{print $1; exit}')
+        if [ -n "$seen_id" ] && [ "$id" != "$seen_id" ]; then
+            break
+        fi
+        [ -n "$id" ] && seen_id="$id"
+        sleep 1
+    done
+
+# Inference is ~300 ms/frame on the dev-box CPU so expect a few fps — that
+# is the design point, mapping needs no more. The estimator runs under the
+# perception venv (PyPI onnxruntime; colcon's hardcoded shebang would miss
+# it) — src/piros2_perception/README.md.
+# Camera on the Pi + neural depth here + preview viewer; closing viewer stops all
+[group('test')]
+depth *args:
+    #!/usr/bin/env bash
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ~/.venvs/piros2-perception/bin/python -m piros2_perception.depth_estimator --ros-args --params-file src/piros2_perception/config/perception.yaml' &
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    sleep 6
+    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /depth/preview/compressed'
 
 # Run while `just pipeline` or `just cam` is up. Records the compressed
 # stream (raw 720p is ~83 MB/s — neither the SD card nor the Wi-Fi wants
@@ -135,7 +175,10 @@ replay bag='bags/session1':
     bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play --loop '{{ bag }}'" >/dev/null 2>&1 &
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 run image_transport republish --ros-args -p in_transport:=compressed -p out_transport:=raw -r in/compressed:=/image_raw/compressed -r out:=/image_raw' >/dev/null 2>&1 &
     bash -lc 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 run piros2_vision edge_detector' &
-    trap 'kill %1 %2 %3 2>/dev/null' EXIT
+    # pkill by pattern, not `kill %N` — the jobs are bash wrappers and killing
+    # them orphans the ros2-run grandchildren, which then haunt the terminal
+    # whenever a live camera feeds them (observed twice)
+    trap 'pkill -f "ros2 bag [p]lay" 2>/dev/null; pkill -f "out:=/[i]mage_raw" 2>/dev/null; pkill -f "piros2_vision/[e]dge_detector" 2>/dev/null' EXIT
     sleep 3
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_processed/compressed'
 
@@ -160,6 +203,25 @@ chatter:
 daemon-restart:
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 daemon stop && ros2 daemon start'
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 daemon stop && ros2 daemon start'"
+
+# Checksum-pinned and idempotent: verifies and skips when the file is
+# already good. Weights are git-ignored; the depth node resolves them from
+# this path — src/piros2_perception/README.md.
+# Fetch Depth Anything V2 Small ONNX weights (~99 MB, HuggingFace)
+[group('build')]
+fetch-model:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    file="{{ justfile_directory() }}/src/piros2_perception/models/depth_anything_v2_small.onnx"
+    sha="afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
+    if [ -f "$file" ] && echo "$sha  $file" | sha256sum --check --quiet 2>/dev/null; then
+        echo "model present and verified"
+        exit 0
+    fi
+    mkdir -p "$(dirname "$file")"
+    curl -L --progress-bar -o "$file" \
+        "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx"
+    echo "$sha  $file" | sha256sum --check
 
 # colcon build on the dev box (the Pi builds via `just deploy-pi`)
 [group('build')]

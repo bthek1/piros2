@@ -1,8 +1,9 @@
 # Perception: from webcam to a 3D map of the room
 
-> **Status: planned (2026-07-27).** Nothing below exists yet except the
-> prerequisites. This document is the design; the phased build order —
-> which phase creates what, and what each must prove — is
+> **Status: in build.** P1 (depth node) done 2026-07-28, verified on bag
+> replay; P0 (calibration) is still open and gates P2. This document is the
+> design; the phased build order — which phase creates what, and what each
+> must prove, with per-phase outcome annotations — is
 > [perception-plan.md](perception-plan.md). Milestone 7 was an open choice —
 > this is the chosen direction, and the roadmap concluded here.
 
@@ -58,6 +59,12 @@ recorded in the package README when it happens. Expect a few fps; that is
 fine, mapping does not need 30.
 
 Done when: a depth preview of the room looks plausibly like the room.
+
+**Done 2026-07-28.** Measured (dev-box CPU, fp32 DA-V2 Small at 518×518):
+280–305 ms per frame steady, ~1.3 s first-inference warm-up — call it 3 fps.
+Verified against the milestone-6 bag: the preview reproduced the recorded
+desk scene with correct near/far ordering. Scale remains honest-relative;
+`depth_scale` is a tuning knob until P2's tape-measure check.
 
 ### P2 — Point cloud
 

@@ -254,6 +254,13 @@ GUI subscribes — pointing the calibrator straight at `/image_raw` would pull
 ~83 MB/s of raw frames over the Wi-Fi — and PATH-prefixes the GUI past the
 PlatformIO venv ([troubleshooting.md](troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml)).
 
+The recipe also remaps the calibrator's service client onto the driver's
+`/usb_cam/set_camera_info` (it refuses to start otherwise) and watches the
+GUI window: upstream ignores the window-manager close button entirely, so the
+recipe stops the node itself when the window goes away. **q**, Esc, Ctrl-C
+and closing the window all shut everything down cleanly —
+[troubleshooting.md](troubleshooting.md#closing-the-calibrator-window-doesnt-stop-it).
+
 Hold the board at varied distances, angles, and positions in the frame until
 all four bars go green, then **Calibrate** (expect a long pause) → **Save**.
 The result lands in `/tmp/calibrationdata.tar.gz`; extract `ost.yaml`, rename

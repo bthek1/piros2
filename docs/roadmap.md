@@ -142,8 +142,12 @@ off the executor thread, measuring latency end to end.
       `just pipeline` on one terminal, `rviz2` on another (Fixed Frame
       `base_link`, add TF + Image with compressed transport)
 - [ ] Camera calibrated so `camera_info` is real — **turnkey as of
-      2026-07-27**: print [checkerboard-8x6-25mm.svg](checkerboard-8x6-25mm.svg)
-      at 100%, run `just pipeline` + `just calibrate`, wave the board —
+      2026-07-27, and live-tested that evening**: a first session found and
+      fixed three recipe bugs (service remap, window-close watchdog, leaky
+      cleanup traps — [troubleshooting.md](troubleshooting.md#just-calibrate-dies-at-startup-no-camera-service-available))
+      but ended without a save. Print
+      [checkerboard-8x6-25mm.svg](checkerboard-8x6-25mm.svg) at 100%, run
+      `just pipeline` + `just calibrate`, wave the board —
       [camera.md](camera.md#calibration) covers where the yaml goes. Only the
       human part remains
 

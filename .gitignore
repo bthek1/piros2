@@ -23,3 +23,6 @@ rosbag2_*/
 
 # Recorded sessions (milestone 6)
 bags/
+
+# Neural model weights, fetched by `just fetch-model` (perception P1)
+src/piros2_perception/models/

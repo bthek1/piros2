@@ -325,3 +325,53 @@ ros2 run image_transport republish --ros-args \
 
 `ros2 node info` on the republisher is the fast diagnostic: no subscriber on
 your input topic means the transport arguments never took.
+
+## `just calibrate` dies at startup: `no camera service available`
+
+The calibrator refuses to start until it can reach a `set_camera_info`
+service. Its client is named `camera/set_camera_info`, and pointing it at the
+driver is a **remap**, not a parameter — an earlier `-p camera:=/usb_cam` form
+was silently ignored (hit 2026-07-27). The working form, now in the recipe:
+
+```bash
+ros2 run camera_calibration cameracalibrator --size 8x6 --square 0.025 \
+  --ros-args -r image:=/calib/image_raw \
+             -r camera/set_camera_info:=/usb_cam/set_camera_info
+```
+
+With the remap in place, this error means the service genuinely isn't there —
+the camera stack isn't running. Start `just pipeline` (or `just cam`) first.
+
+## Closing the calibrator window doesn't stop it
+
+Upstream `cameracalibrator` only exits on **q**/**Esc** or the COMMIT button —
+its display loop never checks whether the window still exists, and the next
+`imshow` recreates a closed window within one frame. Since 2026-07-27 the
+`just calibrate` recipe wraps it in a watchdog that kills the node when the
+window's X id changes (the recreate mints a new id, so an id change *is* the
+close). Two traps inside that fix, kept for the record:
+
+- Qt5 apps in this Wayland session open **native Wayland surfaces** that
+  `xwininfo` cannot see at all; the recipe forces `QT_QPA_PLATFORM=xcb` so
+  the window exists in the X tree in the first place.
+- mutter names its frame window after the client — "display" appears twice in
+  the tree — and the frame arrives a beat after the client maps, which reads
+  as an id change. The watchdog tracks only the client window (the entry with
+  an empty class list `()`), whose id survives the reparenting.
+
+## Orphaned nodes keep logging into a terminal after a recipe ends
+
+Symptom: `edge_detector` or `republish` output appears in a terminal that is
+not running anything, whenever the camera streams. Cause: a recipe's cleanup
+trap used `kill %N` — the background jobs are `bash -lc` wrappers, and killing
+the wrapper orphans the actual ros2-run grandchildren. The orphans sit silent
+(nothing publishes to their topic) until a live publisher comes back, then
+haunt the terminal they were started from. Hit twice on 2026-07-27: a
+republisher and an edge detector leaked from a `just replay`.
+
+The `calibrate` and `replay` traps now `pkill -f` the node patterns instead.
+Diagnose and clear survivors with:
+
+```bash
+pgrep -af 'republish|edge_detector|cameracalibrator'
+```

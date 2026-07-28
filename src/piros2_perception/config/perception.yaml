@@ -1,0 +1,11 @@
+# Parameters for the perception nodes. Keyed by node name — a mismatch
+# silently applies nothing (same trap as camera.yaml).
+depth_estimator:
+  ros__parameters:
+    # model_path defaults inside the node to the package's models/ dir
+    # (fetched by `just fetch-model`); set it here only to override.
+    #
+    # Monocular depth is relative — this scale maps the model's inverse-depth
+    # output to metres-ish (z = depth_scale / output). Arbitrary until P2's
+    # tape-measure check; tune, don't trust.
+    depth_scale: 10.0

@@ -45,6 +45,18 @@ an existing package (never the generated CWD-dependent form), package added to
 
 ## P0 — Calibration (human, gates everything)
 
+> **2026-07-27 — attempted; tooling fixed, calibration still open.** A first
+> session live-debugged `just calibrate` into genuinely turnkey shape: the
+> calibrator's service hookup was a dead parameter (now a proper remap onto
+> `/usb_cam/set_camera_info`), closing its window left the node spinning
+> forever (the recipe now watches the window's X id, with `QT_QPA_PLATFORM=xcb`
+> because the Qt window is otherwise a Wayland surface no X tool can see), and
+> the `calibrate`/`replay` cleanup traps orphaned their nodes (`kill %N` →
+> `pkill` patterns). All verified — window close now stops the whole stack.
+> The session ended without a save, so `camera_info` is still empty and P0
+> keeps gating. Details in
+> [troubleshooting.md](troubleshooting.md#closing-the-calibrator-window-doesnt-stop-it).
+
 Print `docs/checkerboard-8x6-25mm.svg` at **100 % scale** (ruler-check one
 square = 25 mm), then:
 
@@ -68,6 +80,22 @@ While at the screen, do the deferred RViz check: `rviz2`, Fixed Frame
 direction in space; without them a depth image cannot become geometry.
 
 ## P1 — Depth estimator node
+
+> **2026-07-28 — done, verified on the milestone-6 bag.**
+> `src/piros2_perception` exists: `depth_estimator` subscribes
+> `/image_raw/compressed`, decodes with `cv2.imdecode`, runs DA-V2 Small
+> (fp32 ONNX, ~99 MB, `just fetch-model`, checksum-pinned) and publishes
+> `/depth` (32FC1, input frame's header) + `/depth/preview/compressed`.
+> The venv landed as designed (`~/.venvs/piros2-perception`, onnxruntime
+> 1.28.0); the node runs as `python -m` under the venv interpreter because
+> colcon's hardcoded shebang would miss it — `just depth` owns the exact
+> invocation, the package README documents why. Measured on the dev-box CPU:
+> **280–305 ms/frame steady (~3 fps), first inference ~1.3 s warm-up**.
+> Proof: the milestone-6 bag replayed through the node produced a preview
+> that is unmistakably the recorded desk — near desk bright, monitors mid,
+> window wall dark. Five unit tests (fake-session injection, no weights)
+> green in `just test`. `just depth` against the live camera has not been
+> run yet — replay was the verification, per the milestone-6 loop.
 
 Scaffold `piros2_perception` (`ros2 pkg create`), then `depth_estimator.py`:
 
