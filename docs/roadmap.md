@@ -138,9 +138,11 @@ off the executor thread, measuring latency end to end.
       `ros2 run tf2_ros tf2_echo base_link camera_link`; note the `At time
       0.0` — static transforms are latched on `/tf_static` and valid at any
       query time
-- [ ] The camera frame visible in RViz with the image display attached —
-      `just pipeline` on one terminal, `rviz2` on another (Fixed Frame
-      `base_link`, add TF + Image with compressed transport)
+- [x] The camera frame visible in RViz — done 2026-07-28, via perception
+      P2's `just run` rather than the Image-display route: the TF tree and
+      the live point cloud rendered correctly posed in `base_link`,
+      human-confirmed. (Getting rviz2 to start at all took two display-stack
+      fixes — [troubleshooting.md](troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries).)
 - [ ] Camera calibrated so `camera_info` is real — **turnkey as of
       2026-07-27, and live-tested that evening**: a first session found and
       fixed three recipe bugs (service remap, window-close watchdog, leaky

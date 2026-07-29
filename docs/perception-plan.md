@@ -157,8 +157,13 @@ derived sensor data with honest headers.
 > on the dev box; the launch composes the two dev-box nodes (the estimator
 > via `ExecuteProcess` under the venv interpreter — launch_ros `Node` would
 > exec the system-shebang entry point), and `just cloud` starts the camera
-> over SSH. Remaining for a human: the RViz look (`just run`) and the
-> tape-measure scale check, which needs a lit room.
+> over SSH. **RViz check passed 2026-07-28** — after two display-stack
+> fixes (rviz2 needs `QT_QPA_PLATFORM=xcb` forever, plus Mesa software
+> rendering until the NVIDIA driver mismatch is rebooted away —
+> [troubleshooting.md](troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries))
+> the live cloud rendered correctly posed in `base_link`, human-confirmed.
+> Remaining for a human: the tape-measure scale check (lit room, wall at a
+> known distance, tune `depth_scale`).
 
 `cloud_projector.py`:
 

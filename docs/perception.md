@@ -89,8 +89,11 @@ oriented relative to `base_link` — the TF payoff made visible.
 (numpy-vectorised projection + structured-array serialisation), cloud rate
 bounded by the depth node's ~3 fps. Verified live end to end; unit tests pin
 the projection against a synthetic wall (flat, 2 m, pinhole-exact). The RViz
-eyeball (`just run`) and the tape-measure scale check remain human steps —
-the latter wants a lit room and a wall at known distance.
+eyeball passed the same day — live cloud, correctly posed in `base_link`,
+human-confirmed (after the display-stack fixes in
+[troubleshooting.md](troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries)).
+Only the tape-measure scale check remains — a lit room, a wall at a known
+distance, and `depth_scale` tuned to match.
 
 ### P3 — From clouds to a map
 

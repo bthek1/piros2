@@ -137,7 +137,10 @@ estimator via `ExecuteProcess` under the venv python — launch_ros `Node`
 would exec the system-shebang entry point); it deliberately does NOT
 include the camera launch, which would open `/dev/video0` locally —
 `just cloud` (aka `just run`) starts the camera over SSH and opens RViz.
-Human steps open: the RViz eyeball and the tape-measure scale check.
+The RViz check passed 2026-07-28 (live cloud, correctly posed in
+`base_link`, human-confirmed) — which also closed milestone 5's deferred
+RViz checkbox. The one human step still open: the tape-measure scale check
+(lit room, wall at a known distance, tune `depth_scale`).
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
@@ -225,7 +228,12 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   A Qt5 app (OpenCV's highgui included) opens a native Wayland surface unless
   `QT_QPA_PLATFORM=xcb` forces it through Xwayland — `xwininfo` sees nothing
   otherwise, and no `xdotool`/`wmctrl` is installed anyway. `just calibrate`'s
-  window watchdog depends on this pin.
+  window watchdog depends on this pin. **rviz2 needs the same pin to run at
+  all** (OGRE renders via GLX, X11-only), and as of 2026-07-28 additionally
+  needs `__GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1` until the
+  next reboot — apt upgraded the NVIDIA userspace to 595.84 while the loaded
+  kernel module is 595.71, breaking all hardware GL
+  ([docs/troubleshooting.md](docs/troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries)).
 - **Justfile cleanup traps must `pkill -f` node patterns, not `kill %N`.**
   Background jobs in recipes are `bash -lc` wrappers; killing the wrapper
   orphans the actual ros2-run grandchildren, which sit silent until a live

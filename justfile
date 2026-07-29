@@ -77,6 +77,13 @@ run *args: (cloud args)
 # Camera on the Pi + both perception nodes here (perception.launch.py) +
 # RViz on the cloud. Closing RViz stops everything. Depth is ~3 fps, so the
 # cloud updates at ~3 fps too — that is the pipeline's pace, not a fault.
+#
+# RViz env pins: QT_QPA_PLATFORM=xcb is permanent (OGRE renders via GLX,
+# which is X11-only — a Wayland Qt window can never host it). The two mesa
+# vars force software rendering and are a STOPGAP for the NVIDIA driver
+# mismatch (userspace 595.84 vs loaded module 595.71 — reboot to fix, then
+# drop them): GLVND would otherwise dispatch GLX to the broken NVIDIA
+# vendor library no matter what — troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window.
 # Camera on the Pi + depth + point cloud + RViz; closing RViz stops all
 [group('test')]
 cloud *args:
@@ -85,7 +92,7 @@ cloud *args:
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch piros2_perception perception.launch.py' &
     trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_perception" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; kill %1 2>/dev/null' EXIT
     sleep 8
-    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && rviz2 -d src/piros2_perception/config/perception.rviz'
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 rviz2 -d src/piros2_perception/config/perception.rviz'
 
 # The launch file owns the symlink/framerate traps (docs/camera.md#running-it);
 # args pass through, e.g. `just cam image_width:=640 image_height:=480`.

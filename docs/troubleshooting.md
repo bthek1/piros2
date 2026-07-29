@@ -359,6 +359,35 @@ close). Two traps inside that fix, kept for the record:
   as an id change. The watchdog tracks only the client window (the entry with
   an empty class list `()`), whose id survives the reparenting.
 
+## rviz2 crashes: "Unable to create the rendering window" (GLXContext, 100 tries)
+
+Two independent layers, both hit 2026-07-28 on the first real rviz2 run:
+
+1. **Wayland vs GLX — permanent.** rviz2's OGRE renderer creates its context
+   through GLX, which only exists on X11. In this GNOME Wayland session Qt
+   opens a native Wayland window, GLX has nothing to bind to, and context
+   creation fails 100 times before rviz gives up. Fix: run rviz2 with
+   `QT_QPA_PLATFORM=xcb` so the whole app lives on Xwayland (same class of
+   trap as the calibrator's invisible window — Qt apps here prefer Wayland).
+2. **NVIDIA driver mismatch — until the next reboot.** `nvidia-smi` says
+   `Driver/library version mismatch`: apt upgraded the userspace to 595.84
+   while the loaded kernel module is still 595.71.05, which breaks every GL
+   application on the box. Diagnose:
+   ```bash
+   nvidia-smi                          # "Driver/library version mismatch"
+   cat /proc/driver/nvidia/version     # loaded module vs dpkg -l nvidia-driver-*
+   ```
+   The fix is a reboot (loads the matching module). Until then, force Mesa's
+   software path — and note `LIBGL_ALWAYS_SOFTWARE=1` alone is NOT enough:
+   GLVND dispatches GLX to the (broken) NVIDIA vendor library regardless, so
+   the vendor override is the load-bearing variable:
+   ```bash
+   QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 rviz2
+   ```
+   llvmpipe reports OpenGL 4.5 and renders a 57k-point cloud without fuss.
+   The `just cloud` recipe carries all three variables; drop the two mesa
+   ones after a reboot (keep `QT_QPA_PLATFORM=xcb` — layer 1 is permanent).
+
 ## Orphaned nodes keep logging into a terminal after a recipe ends
 
 Symptom: `edge_detector` or `republish` output appears in a terminal that is
