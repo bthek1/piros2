@@ -1,6 +1,6 @@
 ---
 # One playbook, both machines. Roles are appended as they are built — the build
-# order and what each step must prove is docs/ansible-plan.md.
+# order and what each step must prove is docs/plans/completed/ansible-plan.md.
 #
 # Run from this directory on ml5:
 #   ansible-playbook site.yml --ask-become-pass   # sudo prompts on ml5

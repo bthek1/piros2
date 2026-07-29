@@ -22,7 +22,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 # The serial-keyed symlink survives replugs and reboots; /dev/video0 does not.
-# usb_cam mangles symlinks (docs/camera.md#running-it), so resolve it here —
+# usb_cam mangles symlinks (docs/info/camera.md#running-it), so resolve it here —
 # realpath runs on the launching machine, which is the one with the camera.
 CAMERA_BY_ID = '/dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0'
 
@@ -46,12 +46,12 @@ def generate_launch_description():
             'framerate', default_value='60.0',
             description='usb_cam poll rate, NOT the camera rate: 60 is deliberate, '
                         'the camera ceilings at ~30 and polling at 30 beats down to 24 '
-                        '(docs/camera.md#running-it)'),
+                        '(docs/info/camera.md#running-it)'),
         DeclareLaunchArgument(
             'gain', default_value='-1',
             description='Sensor gain 0-255; -1 leaves the camera as-is. Auto-exposure '
                         'on the C922 never touches gain, so dim rooms need it raised '
-                        '(e.g. gain:=128) — docs/camera.md#v4l2-controls'),
+                        '(e.g. gain:=128) — docs/info/camera.md#v4l2-controls'),
 
         Node(
             package='usb_cam',

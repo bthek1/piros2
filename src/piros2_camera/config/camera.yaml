@@ -5,7 +5,7 @@
 #
 # video_device is NOT set here: it must be resolved from the serial-keyed
 # symlink at launch time (usb_cam mangles the symlink itself), which YAML
-# cannot do. The launch file owns it — docs/camera.md#running-it.
+# cannot do. The launch file owns it — docs/info/camera.md#running-it.
 usb_cam:
   ros__parameters:
     # MJPG off the wire, decoded to RGB on the Pi. The only route to 720p30 —

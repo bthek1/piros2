@@ -1,13 +1,13 @@
 # piros2_perception
 
-Perception stack, built per [docs/perception-plan.md](../../docs/perception-plan.md).
+Perception stack, built per [docs/plans/in-progress/perception-plan.md](../../docs/plans/in-progress/perception-plan.md).
 P1 so far: `depth_estimator` — neural monocular depth on the dev box.
 
 ## The venv escape hatch (read this before running anything)
 
 ONNX Runtime is PyPI-only; there is no rosdep key and no apt package. This
 package is therefore the documented exception to the repo's apt-only rule
-([docs/setup.md](../../docs/setup.md#on-sourcing-ros)):
+([docs/info/setup.md](../../docs/info/setup.md#on-sourcing-ros)):
 
 ```bash
 /usr/bin/python3 -m venv --system-site-packages ~/.venvs/piros2-perception
@@ -18,7 +18,7 @@ package is therefore the documented exception to the repo's apt-only rule
 `numpy` still resolve from the system/ROS installation, only `onnxruntime`
 comes from pip. Note `/usr/bin/python3` explicitly — plain `python3` on this
 machine is PlatformIO's venv
-([docs/troubleshooting.md](../../docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml)).
+([docs/info/troubleshooting.md](../../docs/info/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml)).
 
 Because colcon hardcodes `#!/usr/bin/python3` into entry-point scripts,
 `ros2 run piros2_perception depth_estimator` would miss the venv. The node

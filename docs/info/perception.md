@@ -7,7 +7,7 @@
 > accuracy upgrade whenever it happens. This document is the
 > design; the phased build order — which phase creates what, and what each
 > must prove, with per-phase outcome annotations — is
-> [perception-plan.md](perception-plan.md). Milestone 7 was an open choice —
+> [perception-plan.md](../plans/in-progress/perception-plan.md). Milestone 7 was an open choice —
 > this is the chosen direction, and the roadmap concluded here.
 
 The goal: point the C922 around the room and end up with a coloured 3D point
@@ -40,7 +40,7 @@ Each stage runs and is verifiable before the next starts, per house rules.
 
 ### P0 — Calibration (the gate)
 
-Already turnkey: print `docs/checkerboard-8x6-25mm.svg` at 100 %, run
+Already turnkey: print `docs/info/checkerboard-8x6-25mm.svg` at 100 %, run
 `just pipeline` + `just calibrate`, commit the yaml as
 `src/piros2_camera/config/c922_720p.yaml` and point `camera_info_url` at it.
 Done when `/camera_info` carries a real K matrix.
@@ -106,6 +106,19 @@ RTAB-Map's odometry do continuous tracking, and iterate on recorded bags
 
 Done when: a recognisable, roughly-scaled point-cloud room in RViz, built
 from a slow hand-held sweep.
+
+**In progress 2026-07-29; plumbing verified.** `mapping.launch.py`
+composes the depth estimator with RTAB-Map's `rgbd_odometry` and
+`rtabmap` nodes (exact RGB/depth sync — the depth node's honest headers
+pay off here — poses in `base_link`), and `just map [bag]` drives it from
+a bag played once, watched in `rtabmap_viz`. The milestone-6 bag carries
+an all-zero K (recorded before P0's intrinsics), so a fresh
+valid-intrinsics bag (`bags/static1`) became the plumbing-check input —
+and the check passed: on the static desk bag, odometry tracked with
+quality 447–563 features (std dev 3–8 cm) at ~1–2 Hz synced pairs, and
+RTAB-Map built a 1-node map, which is correct for a motionless scene.
+First evidence Plan A's neural-depth pattern holds. Sweep numbers — map
+quality, loop closure, scale error — follow the first real sweep.
 
 ### P4 — Make it repeatable
 

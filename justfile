@@ -94,7 +94,7 @@ cloud *args:
     sleep 8
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 rviz2 -d src/piros2_perception/config/perception.rviz'
 
-# The launch file owns the symlink/framerate traps (docs/camera.md#running-it);
+# The launch file owns the symlink/framerate traps (docs/info/camera.md#running-it);
 # args pass through, e.g. `just cam image_width:=640 image_height:=480`.
 # The viewer subscribes to the compressed topic — raw 720p30 is ~83 MB/s and
 # does not fit over the Wi-Fi.
@@ -107,7 +107,7 @@ cam *args:
     sleep 4
     # PATH override: rqt tools use `#!/usr/bin/env python3`, and the PlatformIO
     # venv earlier in PATH shadows the system python ROS is built against —
-    # docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml
+    # docs/info/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_raw/compressed'
 
 # Camera + detector on the Pi with no viewer attached — for RViz sessions or
@@ -127,11 +127,11 @@ edges *args:
     sleep 6
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_processed/compressed'
 
-# Run while `just pipeline`/`just cam` is up. Print docs/checkerboard-8x6-25mm.svg
+# Run while `just pipeline`/`just cam` is up. Print docs/info/checkerboard-8x6-25mm.svg
 # at 100% first. Decompresses the stream locally onto /calib/image_raw so the
 # calibrator never pulls raw over the Wi-Fi, and PATH-prefixes the GUI (env-shebang
 # Python tool, PlatformIO venv trap). Save lands in /tmp/calibrationdata.tar.gz —
-# see docs/camera.md#calibration for where the yaml goes.
+# see docs/info/camera.md#calibration for where the yaml goes.
 #
 # The calibrator's OpenCV window ignores the window-manager close button — its
 # loop only exits on q/Esc or COMMIT — so the recipe watches the window via
@@ -181,16 +181,45 @@ depth *args:
     sleep 6
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /depth/preview/compressed'
 
+# No Pi needed: plays a bag ONCE (looping would teleport the odometry back
+# to the start pose and wreck the map), decompresses it to /image_raw, and
+# runs mapping.launch.py — depth estimator + RTAB-Map's rgbd_odometry +
+# rtabmap — with rtabmap_viz watching the map build. Closing the viz stops
+# everything. Needs ros-jazzy-rtabmap-ros (`just deploy-dev`). The default
+# bag is the static desk bag (plumbing check); record a sweep with
+# `just record 45 sweep1` (fix exposure first — camera.md#v4l2-controls)
+# and pass it: `just map bags/sweep1`.
+# Replay a bag through depth + RTAB-Map + map viewer, all on the dev box
+[group('test')]
+map bag='bags/static1':
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play '{{ bag }}'" >/dev/null 2>&1 &
+    bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 run image_transport republish --ros-args -p in_transport:=compressed -p out_transport:=raw -r in/compressed:=/image_raw/compressed -r out:=/image_raw' >/dev/null 2>&1 &
+    bash -lc 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch piros2_perception mapping.launch.py' &
+    trap 'pkill -f "ros2 bag [p]lay" 2>/dev/null; pkill -f "out:=/[i]mage_raw" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_perception" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "rtabmap_[s]lam" 2>/dev/null' EXIT
+    sleep 5
+    # Same display pins as rviz2: xcb because the GL view is X11-only, mesa
+    # software rendering until the NVIDIA userspace/module mismatch is
+    # rebooted away — troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries
+    # Subscribes the same RGB-D pair as the SLAM nodes so the viz shows the
+    # camera + depth panels, not just the odometry track. `|| true`: Ctrl-C
+    # gives rtabmap_viz a nonzero exit (255) that would otherwise make the
+    # whole recipe report failure after a perfectly good session.
+    bash -lc 'source /opt/ros/jazzy/setup.bash && QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 ros2 run rtabmap_viz rtabmap_viz --ros-args -p frame_id:=base_link -p subscribe_depth:=true -p approx_sync:=false -r rgb/image:=/image_raw -r rgb/camera_info:=/camera_info -r depth/image:=/depth' || true
+
 # Run while `just pipeline` or `just cam` is up. Records the compressed
 # stream (raw 720p is ~83 MB/s — neither the SD card nor the Wi-Fi wants
 # that), plus camera_info and the latched static transforms, then pulls the
-# bag back here into bags/ (git-ignored).
-# Record a camera session on the Pi and fetch it to bags/session1
+# bag back here into bags/ (git-ignored). Name each bag for its purpose
+# (`just record 45 sweep1`) — session1 is the milestone-6 bag, whose
+# camera_info predates the P0 intrinsics and is all zeros.
+# Record a camera session on the Pi and fetch it to bags/<name>
 [group('test')]
-record secs='20':
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && mkdir -p ~/bags && rm -rf ~/bags/session1 && timeout -s INT {{ secs }} ros2 bag record -o ~/bags/session1 /image_raw/compressed /camera_info /tf_static'" || true
-    rsync -a pi:~/bags/session1 "{{ justfile_directory() }}/bags/"
-    bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 bag info "{{ justfile_directory() }}/bags/session1"'
+record secs='20' name='session1':
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && mkdir -p ~/bags && rm -rf ~/bags/{{ name }} && timeout -s INT {{ secs }} ros2 bag record -o ~/bags/{{ name }} /image_raw/compressed /camera_info /tf_static'" || true
+    rsync -a pi:~/bags/{{ name }} "{{ justfile_directory() }}/bags/"
+    bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 bag info "{{ justfile_directory() }}/bags/{{ name }}"'
 
 # No Pi needed: loops the bag, decompresses it back to /image_raw
 # (image_transport republish — parameters, not positional args, in Jazzy),

@@ -1,9 +1,9 @@
 # Perception build plan — camera to 3D room map
 
-> **Working document.** [perception.md](perception.md) is the design — what is
+> **Working document.** [perception.md](../../info/perception.md) is the design — what is
 > being built and what a single webcam honestly can do. This is the build
 > order: stable phases, each ending with something you can run and check
-> before the next starts. The [roadmap](roadmap.md) concluded 2026-07-27; its
+> before the next starts. The [roadmap](../../info/roadmap.md) concluded 2026-07-27; its
 > two open human checkboxes (the RViz eyeball check and calibration) carry
 > over here as P0.
 
@@ -16,8 +16,8 @@ What the perception stack inherits from milestones 0–6:
 | Camera at ~30 fps, compressed stream over Wi-Fi | `just pipeline`, `src/piros2_camera` |
 | TF chain `base_link → camera_link → camera_optical_frame`, headers stamped with the optical frame | `camera.launch.py` |
 | Record/replay loop so hardware can stay off | `just record` / `just replay`, `bags/` |
-| Calibration made turnkey | `just calibrate`, `docs/checkerboard-8x6-25mm.svg` |
-| Working QoS knowledge for megabyte messages | RELIABLE for large frames — [troubleshooting.md](troubleshooting.md) |
+| Calibration made turnkey | `just calibrate`, `docs/info/checkerboard-8x6-25mm.svg` |
+| Working QoS knowledge for megabyte messages | RELIABLE for large frames — [troubleshooting.md](../../info/troubleshooting.md) |
 | Test conventions | anchored linter tests, `pytest.ini`, `.vscode/` picker |
 
 Known constraints that shape the phases: the camera's `header.stamp` lags
@@ -34,6 +34,7 @@ src/piros2_perception/            # ament_python — EXISTS as of P1 (2026-07-28
 │   ├── depth_estimator.py        # ✓ P1: compressed frames → /depth
 │   └── cloud_projector.py        # ✓ P2: /depth + /camera_info → /points
 ├── launch/perception.launch.py   # ✓ P2: both dev-box nodes (camera stays SSH)
+├── launch/mapping.launch.py      # P3: depth + RTAB-Map odom/slam (wired, untested)
 ├── config/perception.yaml        # ✓ depth scale + subsample + far clip
 ├── config/perception.rviz        # ✓ P2: base_link view, RGB cloud (`just cloud`)
 ├── models/                       # ✓ DA-V2 Small fetched (`just fetch-model`)
@@ -69,9 +70,9 @@ an existing package (never the generated CWD-dependent form), package added to
 > `pkill` patterns). All verified — window close now stops the whole stack.
 > The session ended without a save, so `camera_info` is still empty and P0
 > keeps gating. Details in
-> [troubleshooting.md](troubleshooting.md#closing-the-calibrator-window-doesnt-stop-it).
+> [troubleshooting.md](../../info/troubleshooting.md#closing-the-calibrator-window-doesnt-stop-it).
 
-Print `docs/checkerboard-8x6-25mm.svg` at **100 % scale** (ruler-check one
+Print `docs/info/checkerboard-8x6-25mm.svg` at **100 % scale** (ruler-check one
 square = 25 mm), then:
 
 ```bash
@@ -125,7 +126,7 @@ Scaffold `piros2_perception` (`ros2 pkg create`), then `depth_estimator.py`:
   untrusted.
 
 **Python-dependency reality:** ONNX Runtime is PyPI-only. This is the
-documented escape hatch from [setup.md](setup.md#on-sourcing-ros):
+documented escape hatch from [setup.md](../../info/setup.md#on-sourcing-ros):
 `python3 -m venv --system-site-packages ~/.venvs/piros2-perception`, so
 `rclpy` still resolves from the system while `onnxruntime` comes from pip.
 The node runs under this venv's interpreter; the exact invocation lives in
@@ -160,7 +161,7 @@ derived sensor data with honest headers.
 > over SSH. **RViz check passed 2026-07-28** — after two display-stack
 > fixes (rviz2 needs `QT_QPA_PLATFORM=xcb` forever, plus Mesa software
 > rendering until the NVIDIA driver mismatch is rebooted away —
-> [troubleshooting.md](troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries))
+> [troubleshooting.md](../../info/troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries))
 > the live cloud rendered correctly posed in `base_link`, human-confirmed.
 > Remaining for a human: the tape-measure scale check (lit room, wall at a
 > known distance, tune `depth_scale`).
@@ -190,6 +191,45 @@ topics, why everything is published in the optical frame and RViz transforms
 it.
 
 ## P3 — From clouds to a map
+
+> **2026-07-29 — plumbing wired, not yet run.** What landed:
+> `ros-jazzy-rtabmap-ros` added to the dev box's `extra_ros_packages`
+> (**not installed yet** — sudo prompts, so `just deploy-dev` is a human
+> step); `mapping.launch.py` — depth estimator + `rgbd_odometry` +
+> `rtabmap`, exact sync (the depth node's honest headers make RGB/depth
+> stamps identical), poses in `base_link`, `Odom/ResetCountdown=1` so
+> neural-depth odometry loss auto-resets, fresh database each run; and
+> `just map [bag]` — plays a bag **once** (looping would teleport the
+> odometry back to the start), decompresses, launches, and watches in
+> `rtabmap_viz` with the usual display pins. One discovery: **the
+> milestone-6 bag is unusable for mapping** — its `/camera_info` predates
+> P0's approx intrinsics and carries an all-zero K. `just record` now
+> takes a bag name (session1 stays as the milestone-6 artifact) and a
+> fresh 19 s desk bag `bags/static1` was recorded and verified
+> (K = [907, 0, 640; …]). Step 1's exposure fix was deliberately skipped
+> for this bag: a static scene tracks nothing, and manual V4L2 controls
+> persist inside the camera. Launch parses, package builds, suite green
+> (26 tests). Remaining: `just deploy-dev`, then `just map` against
+> `static1` as the plumbing check, then the exposure fix + hand-held
+> sweep (`just record 45 sweep1`) and the tuning loop below.
+
+> **2026-07-29, later — plumbing check PASSED.** `just deploy-dev`
+> installed rtabmap 0.22.1 (playbook otherwise `changed` only on the
+> rendered cyclonedds.xml) and `just map` ran the static1 bag through the
+> full chain. Measured, on the static desk bag: `rgbd_odometry` locked on
+> with **quality 447–563 tracked features** (std dev 3–8 cm, translation),
+> synced pairs arriving at ~1–2 Hz (depth inference 270–470 ms/frame while
+> mapping ran); `rtabmap` processed 7 frames into a 1-node map — correct
+> for a motionless scene, RTAB-Map merges lookalike frames. First evidence
+> the neural-depth-into-RTAB-Map pattern holds. Log literacy for later
+> runs: `delay=2177s` is the bag's age (stamps, not wall clock — harmless),
+> and the "Did not receive data since 5 seconds" warnings are a watchdog
+> tripping between ~1–2 Hz pairs, then permanently once the bag ends.
+> Two recipe defects found and fixed: Ctrl-C made the viz exit 255 and
+> the recipe report failure (`|| true` now), and `rtabmap_viz` subscribed
+> only `/odom` — it now takes the same RGB-D pair as the SLAM nodes so
+> sweep tuning gets camera + depth panels. Remaining: the exposure fix,
+> the hand-held sweep, and the tuning loop.
 
 The hard phase; iterate on bags, not live hardware.
 

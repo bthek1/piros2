@@ -1,6 +1,6 @@
 ---
 # The shared truth. These three must be byte-identical on both hosts —
-# a mismatch produces silence, not an error. See docs/networking.md.
+# a mismatch produces silence, not an error. See docs/info/networking.md.
 ros_distro: jazzy
 ros_domain_id: 42
 ros_localhost_only: 0

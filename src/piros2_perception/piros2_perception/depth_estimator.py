@@ -32,7 +32,7 @@ from sensor_msgs.msg import CompressedImage, Image
 
 # RELIABLE for megabyte-class messages, same reasoning as piros2_vision's
 # edge detector: BEST_EFFORT delivers zero large frames once they fragment
-# past the socket buffer (measured, docs/troubleshooting.md). The compressed
+# past the socket buffer (measured, docs/info/troubleshooting.md). The compressed
 # frames here are ~100-200 kB and the 32FC1 depth is 3.7 MB — both sides of
 # this node stay RELIABLE/KEEP_LAST-1: always the freshest frame, no backlog.
 BIG_FRAME_QOS = QoSProfile(
@@ -134,7 +134,7 @@ class DepthEstimator(Node):
         self.pub_preview.publish(preview)
 
         # Measured against our own clock only — this camera's header stamps
-        # lag ~0.73 s by fault and prove nothing (docs/camera.md#timestamps).
+        # lag ~0.73 s by fault and prove nothing (docs/info/camera.md#timestamps).
         done = self.get_clock().now()
         self.get_logger().info(
             f'inference+publish {(done - entry).nanoseconds / 1e6:.0f} '

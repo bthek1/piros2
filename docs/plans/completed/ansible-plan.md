@@ -1,6 +1,6 @@
 # Ansible provisioning — build plan
 
-> **Working document — its job is done.** [ansible.md](ansible.md) is the design;
+> **Working document — its job is done.** [ansible.md](../../info/ansible.md) is the design;
 > this was the build order. As of 2026-07-24 the tree exists, the playbook is
 > green and idempotent on both machines, and every step below is annotated with
 > what actually happened. The original rule was to delete this file at that
@@ -27,7 +27,7 @@ Verified 2026-07-23, so the plan starts from fact rather than assumption:
 
 > **Blockers cleared (2026-07-23).** `ml5` now reaches the Pi over key-based SSH:
 > its key has been added to the Pi's `authorized_keys` and the stale pre-reflash
-> host key removed — details in [ansible.md](ansible.md#prerequisites). Verified:
+> host key removed — details in [ansible.md](../../info/ansible.md#prerequisites). Verified:
 > `ssh -o BatchMode=yes bthek1@192.168.2.17 'hostname'` → `raspberrypi`.
 
 The repo now lives on `ml5` at `~/Documents/piros2` (since 2026-07-23); everything
@@ -88,7 +88,7 @@ source being present and trusted, so it earns its own role.
 
 **Done on both hosts 2026-07-24.** The first `ml5` run tripped over a
 pre-existing kernel/DKMS failure (resolved the same day —
-[troubleshooting.md](troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box));
+[troubleshooting.md](../../info/troubleshooting.md#apt-fails-on-linux--kernel-packages-dev-box));
 since then the play is green and idempotent on both machines.
 
 Installs, per host, from `ros_metapackage`:
@@ -101,7 +101,7 @@ Installs, per host, from `ros_metapackage`:
 
 Then `rosdep init` **with a `creates:` guard** and `rosdep update` **without
 `become`** — both traps are spelled out in
-[ansible.md](ansible.md#gotchas-specific-to-provisioning-ros).
+[ansible.md](../../info/ansible.md#gotchas-specific-to-provisioning-ros).
 
 > Budget time here. `ros-jazzy-desktop` is a large download, and `ros-base` on the
 > Pi arrives over Wi-Fi. This is the slowest step by a wide margin; run it once
@@ -123,7 +123,7 @@ made concrete — the Pi has no reason to carry the Qt stack.
 **Done on the Pi 2026-07-24**, after one real discovery: exports appended to
 `.bashrc` are invisible to every non-interactive shell (Ubuntu's interactivity
 guard returns first), so the env block lives in `.profile` and only the sourcing
-alias stays in `.bashrc` — [ansible.md](ansible.md#gotchas-specific-to-provisioning-ros).
+alias stays in `.bashrc` — [ansible.md](../../info/ansible.md#gotchas-specific-to-provisioning-ros).
 The role also generates the `en_US.UTF-8` locale that Ubuntu Server lacks.
 
 Two things: the `blockinfile` in `.bashrc`, and `~/.config/cyclonedds/cyclonedds.xml`
@@ -162,7 +162,7 @@ favour of `ROS_AUTOMATIC_DISCOVERY_RANGE` — ours is `0`/disabled, so the
 warning is cosmetic for now.
 
 Not a role. A checkpoint, and **the real milestone 0** —
-[roadmap.md](roadmap.md) step 0 is not done until this passes.
+[roadmap.md](../../info/roadmap.md) step 0 is not done until this passes.
 
 ```bash
 # Pi
@@ -176,13 +176,13 @@ either install `ros-jazzy-demo-nodes-cpp` on the Pi for this test, or run the
 talker on the dev box and echo from the Pi.
 
 If nothing arrives, stop and fix it here rather than building more on top.
-[networking.md](networking.md) is the reference, and `ros2 daemon stop && ros2
+[networking.md](../../info/networking.md) is the reference, and `ros2 daemon stop && ros2
 daemon start` on **both** machines first — the daemon caches discovery state and
 will keep reporting the pre-fix view.
 
 > **Expect multicast trouble.** The Pi is on Wi-Fi, and most access points drop or
 > rate-limit multicast. If discovery is flaky, this is the first suspect, not the
-> last — go to [networking.md](networking.md#static-peers-if-multicast-is-unreliable)
+> last — go to [networking.md](../../info/networking.md#static-peers-if-multicast-is-unreliable)
 > and try `ROS_STATIC_PEERS`. If that fixes it, promote it to a `group_vars`
 > variable rather than leaving an export in one shell.
 
@@ -250,7 +250,7 @@ is the property that makes the playbook worth having; test it explicitly.
 
 ## What stays manual
 
-Unchanged from [ansible.md](ansible.md#what-stays-manual): flashing the card,
+Unchanged from [ansible.md](../../info/ansible.md#what-stays-manual): flashing the card,
 camera calibration, anything in RViz or `rqt`, and the learning itself.
 
 ## Order of work, condensed

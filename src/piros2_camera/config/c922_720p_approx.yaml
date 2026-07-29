@@ -4,7 +4,7 @@
 # real distortion is mild but nonzero — straight lines bow slightly at the
 # frame edges). Good enough to project point clouds; wrong by a few percent.
 #
-# The checkerboard run (docs/camera.md#calibration) replaces this file with
+# The checkerboard run (docs/info/camera.md#calibration) replaces this file with
 # a measured c922_720p.yaml — update camera_info_url in camera.yaml when it
 # lands and delete this one.
 image_width: 1280

@@ -1,7 +1,7 @@
 ---
 # Deliberately a reminder, not automation: restarting the daemon needs ROS
 # sourced as the login user, which is awkward and fragile from Ansible
-# (docs/ansible-plan.md, open decisions). The daemon caches discovery state,
+# (docs/plans/completed/ansible-plan.md, open decisions). The daemon caches discovery state,
 # so skipping this after an env change makes a correct fix look like it did
 # nothing — the reminder exists to keep that failure mode visible.
 - name: Remind about the ROS daemon

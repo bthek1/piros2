@@ -5,7 +5,7 @@ ros_metapackage: ros-jazzy-desktop
 
 # The LAN interface. NOT docker0/br-* (172.17-172.19), not tailscale0, and not
 # the WireGuard `laptop` interface (10.8.0.3) — DDS will bind to any of them and
-# advertise an unroutable address. See docs/networking.md.
+# advertise an unroutable address. See docs/info/networking.md.
 dds_interface: enp6s18
 
 # sudo prompts on this host, so playbook runs need --ask-become-pass.
@@ -13,6 +13,8 @@ dds_interface: enp6s18
 # Where the checkout lives on this machine. Differs from the Pi's ~/piros2.
 workspace_path: "{{ ansible_env.HOME }}/Documents/piros2"
 
-# Dev-box-only ROS packages: GUI tooling that has no business on the Pi.
+# Dev-box-only ROS packages: GUI tooling and heavy compute that have no
+# business on the Pi.
 extra_ros_packages:
   - ros-jazzy-camera-calibration   # cameracalibrator GUI (milestone 5)
+  - ros-jazzy-rtabmap-ros          # RGB-D SLAM for the room map (perception P3)

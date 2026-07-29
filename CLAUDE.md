@@ -43,7 +43,7 @@ ssh pi 'v4l2-ctl --list-devices'
 ssh pi 'ls -l /dev/video0'
 ```
 
-Full measured specs: [docs/hardware.md](docs/hardware.md).
+Full measured specs: [docs/info/hardware.md](docs/info/hardware.md).
 
 ## Current state
 
@@ -61,7 +61,7 @@ Machine state:
   The playbook is idempotent here too (`changed=0`); the kernel/DKMS apt
   blocker was resolved 2026-07-24 by removing the unused `v4l2loopback-dkms`.
 - **Milestone 0 passed 2026-07-24**: `/chatter` published on the Pi arrived on
-  the dev box across the LAN. [docs/roadmap.md](docs/roadmap.md) tracks status.
+  the dev box across the LAN. [docs/info/roadmap.md](docs/info/roadmap.md) tracks status.
 
 First package: `src/piros2_hello` (milestone 1, done 2026-07-24) — a
 hand-written `ament_python` talker/listener pair, built on both machines and
@@ -93,22 +93,24 @@ Milestone 5 (TF, in progress 2026-07-27): `camera.launch.py` publishes the
 static frame chain `base_link → camera_link → camera_optical_frame`
 (placeholder mount pose 5 cm up; canonical −90/0/−90 optical rotation), and
 image headers now carry `camera_optical_frame` — verified across the LAN with
-`tf2_echo`. Remaining: the RViz visual check (`just pipeline` + `rviz2`) and
-checkerboard calibration. A first calibration session (2026-07-27 evening)
-live-debugged `just calibrate` into working shape — three recipe bugs fixed
-(dead `-p camera:=` service remap, window close ignored by the calibrator,
-`kill %N` traps orphaning nodes; see docs/troubleshooting.md) — but ended
-without a save, so `camera_info` is still empty and P0 stays open.
+`tf2_echo`. The RViz visual check passed 2026-07-28 (closed by perception
+P2's live-cloud session); checkerboard calibration remains open as an
+accuracy upgrade — perception P0's approx intrinsics released its gate. A
+first calibration session (2026-07-27 evening) live-debugged
+`just calibrate` into working shape — three recipe bugs fixed (dead
+`-p camera:=` service remap, window close ignored by the calibrator,
+`kill %N` traps orphaning nodes; see docs/info/troubleshooting.md) — but
+ended without a save, so the measured yaml is still unwritten.
 
 Milestone 6 (record/replay, done 2026-07-27): `just record` bags the
 compressed stream + `camera_info` + `/tf_static` on the Pi (24 s ≈ 36 MiB
 MCAP) and fetches it to `bags/`; `just replay` runs it through
 `image_transport republish` into the edge detector entirely on the dev box —
 no Pi needed. Jazzy's `republish` takes transports as *parameters*, not
-positional args (see docs/troubleshooting.md).
+positional args (see docs/info/troubleshooting.md).
 
 **The roadmap concluded 2026-07-27.** The project now runs on
-[docs/perception-plan.md](docs/perception-plan.md): phases P0–P4 building
+[docs/plans/in-progress/perception-plan.md](docs/plans/in-progress/perception-plan.md): phases P0–P4 building
 `src/piros2_perception` (neural monocular depth → point clouds → a room map).
 P0's gate was released 2026-07-28 with **spec-derived approximate
 intrinsics**: `c922_720p_approx.yaml` (78° diag FOV → fx = fy ≈ 907 px,
@@ -142,15 +144,30 @@ The RViz check passed 2026-07-28 (live cloud, correctly posed in
 RViz checkbox. The one human step still open: the tape-measure scale check
 (lit room, wall at a known distance, tune `depth_scale`).
 
+Perception P3 (mapping, in progress 2026-07-29): plumbing verified —
+`mapping.launch.py` (depth estimator + RTAB-Map `rgbd_odometry` + `rtabmap`,
+exact sync off the depth node's honest headers, `base_link` poses) and
+`just map [bag]` (plays a bag once — looping teleports odometry — then
+republish + launch + `rtabmap_viz`). rtabmap 0.22.1 installed via
+`extra_ros_packages` / `just deploy-dev`; the static plumbing bag ran the
+full chain with odometry quality 447–563 and a 1-node map (correct for a
+motionless scene — RTAB-Map merges lookalike frames). The milestone-6 bag
+can't feed mapping — its `/camera_info` predates the P0 intrinsics (K all
+zeros); `just record` now takes a bag name, and `bags/static1` (19 s, valid
+K) is the plumbing bag. RTAB-Map's `delay=` figure is the bag's age, and its
+5-second no-data warnings are a watchdog beating against ~1–2 Hz synced
+pairs — neither is a fault. Next: exposure fix, hand-held sweep
+(`just record 45 sweep1`), tuning loop.
+
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
 is green (26 tests; `piros2_vision` and `piros2_perception` carry real unit
 tests — the perception ones need no model weights: a fake ONNX session for
-the estimator, synthetic depth planes for the projector) as of 2026-07-28.
+the estimator, synthetic depth planes for the projector) as of 2026-07-29.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
-this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
+this convention and [docs/info/roadmap.md](docs/info/roadmap.md) tracks status.
 
 ## Constraints that are easy to get wrong
 
@@ -158,7 +175,7 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   `apt install ros-jazzy-ros-base` works on the Pi. `packages.ros.org` serves 3361
   `ros-jazzy-*` binaries for `noble/arm64` against **zero** for `bookworm/arm64`,
   which is why the reflash happened — reasoning and rejected alternatives in
-  [docs/setup.md](docs/setup.md).
+  [docs/info/setup.md](docs/info/setup.md).
 - **The Pi is on Wi-Fi, not Ethernet.** `eth0` has no carrier; it reaches the LAN
   via `wlan0` on `THEKKEL_MESH`. Anything that assumes a wired link — a doc, an
   Ansible fact, a bandwidth estimate — is wrong. It also means a bad network config
@@ -183,7 +200,7 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   `10.8.0.3`. DDS will happily pick one instead of `enp6s18` and advertise an
   address the Pi cannot route to. The VPN interfaces are the nastier half — they
   look routable and are not. Pin via `CYCLONEDDS_URI` —
-  [docs/networking.md](docs/networking.md).
+  [docs/info/networking.md](docs/info/networking.md).
 - **`ROS_DOMAIN_ID=42`** on both machines. Non-default on purpose; `0` is shared
   with every other project on the LAN. It, `ROS_LOCALHOST_ONLY=0` and
   `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` must be identical on both hosts; they
@@ -212,7 +229,7 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   grabs frames on a ROS timer at the requested rate, and at 30 that timer beats
   against the camera's 33 ms cadence — measured 24.0 fps steady while raw V4L2
   capture delivered 30. It also mangles the by-id symlink; pass it through
-  `readlink -f` — [docs/camera.md](docs/camera.md#running-it).
+  `readlink -f` — [docs/info/camera.md](docs/info/camera.md#running-it).
 - **usb_cam's exposure/focus ROS parameters are dead on this kernel** — it uses
   ROS 1-era control names (`exposure_auto`) the kernel has renamed; `v4l2-ctl`
   is the only working channel for those controls. And **V4L2 controls persist
@@ -223,7 +240,7 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   Python for anything with an `#!/usr/bin/env python3` shebang — rqt tools
   crash with `No module named 'yaml'`. colcon-built nodes are immune (hardcoded
   shebang). Prefix `PATH="/usr/bin:$PATH"` for GUI tools —
-  [docs/troubleshooting.md](docs/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml).
+  [docs/info/troubleshooting.md](docs/info/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml).
 - **The dev box session is Wayland; Qt5 windows are invisible to X tools.**
   A Qt5 app (OpenCV's highgui included) opens a native Wayland surface unless
   `QT_QPA_PLATFORM=xcb` forces it through Xwayland — `xwininfo` sees nothing
@@ -233,20 +250,20 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   needs `__GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1` until the
   next reboot — apt upgraded the NVIDIA userspace to 595.84 while the loaded
   kernel module is 595.71, breaking all hardware GL
-  ([docs/troubleshooting.md](docs/troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries)).
+  ([docs/info/troubleshooting.md](docs/info/troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries)).
 - **Justfile cleanup traps must `pkill -f` node patterns, not `kill %N`.**
   Background jobs in recipes are `bash -lc` wrappers; killing the wrapper
   orphans the actual ros2-run grandchildren, which sit silent until a live
   stream feeds their subscription again (bit twice on 2026-07-27) —
-  [docs/troubleshooting.md](docs/troubleshooting.md#orphaned-nodes-keep-logging-into-a-terminal-after-a-recipe-ends).
+  [docs/info/troubleshooting.md](docs/info/troubleshooting.md#orphaned-nodes-keep-logging-into-a-terminal-after-a-recipe-ends).
 - **`/image_raw` header stamps lag wall clock by a steady ~0.73 s** — a
   UVC/driver timestamping fault (`ros2 topic delay /image_raw` shows it; the
   frames are live). Never gate freshness or report latency against
   `header.stamp` on this camera: a stamp-age gate silently dropped 100% of
   frames. Measure processing cost against one process's own clock only —
-  [docs/camera.md](docs/camera.md#timestamps).
+  [docs/info/camera.md](docs/info/camera.md#timestamps).
 - **Never stream raw images across the LAN.** 1280×720 RGB8 @ 30 fps is ~83 MB/s.
-  Use `image_transport` compressed topics — [docs/camera.md](docs/camera.md).
+  Use `image_transport` compressed topics — [docs/info/camera.md](docs/info/camera.md).
 - **No CSI camera is attached.** `libcamera`/`rpicam` guidance does not apply; the
   C922 is a standard UVC device on V4L2.
 - **Restart the ROS daemon** (`ros2 daemon stop && ros2 daemon start`) after
@@ -261,7 +278,7 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
   documenting a long one-off command; keep recipes and docs in agreement.
 - Provisioning lives in `ansible/` — `inventory.yml`, `group_vars/`, `roles/`, and
   `site.yml`. Machine-specific values belong in `group_vars`, never hard-coded in a
-  role. See [docs/ansible.md](docs/ansible.md) for the intended layout.
+  role. See [docs/info/ansible.md](docs/info/ansible.md) for the intended layout.
 - `rosdep init` is not idempotent and needs a `creates:` guard; `rosdep update` and
   `colcon build` must run as the login user, never under `become`/`sudo`.
 - Build with `colcon build --symlink-install` so Python and launch edits apply
@@ -281,6 +298,17 @@ this convention and [docs/roadmap.md](docs/roadmap.md) tracks status.
 - `build/`, `install/`, `log/`, and bag files are git-ignored.
 - Prose in docs uses British-ish spelling consistent with the existing files;
   match the surrounding style rather than reformatting.
+- **Docs are split by kind**: reference docs live in `docs/info/`, plans in
+  `docs/plans/`. A new plan starts in `docs/plans/in-progress/` and moves to
+  `docs/plans/completed/` when its work is done — moving the file *is* the
+  status change, so fix inbound links when it moves. Don't create plan files
+  outside `docs/plans/`.
+- **Plans are structured as stable phases** (P0, P1, …), each ending with
+  something runnable and checkable. Once a phase is written, its number and
+  scope stay fixed — record progress by annotating the phase (dates, ✓ marks,
+  what actually happened), never by renumbering or reshuffling phases, so
+  that "P2" means the same thing in every doc, commit message, and
+  conversation that mentions it.
 
 ## Syncing to the Pi
 
@@ -301,19 +329,22 @@ The Ansible `workspace` role does the same as part of a run. Remote is
 
 ## Documentation map
 
+`docs/info/` holds reference docs; `docs/plans/` holds plans, sorted by status
+into `in-progress/` and `completed/` (see Conventions).
+
 | File | Contents |
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
-| [docs/hardware.md](docs/hardware.md) | Measured specs of both machines and the camera's capture modes |
-| [docs/setup.md](docs/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
-| [docs/ansible.md](docs/ansible.md) | The playbook: inventory, roles, gotchas |
-| [docs/ansible-plan.md](docs/ansible-plan.md) | Build order for the `ansible/` tree — working doc, delete once green |
-| [docs/networking.md](docs/networking.md) | DDS discovery, domain IDs, interface pinning |
-| [docs/camera.md](docs/camera.md) | Driver choice, transport, V4L2 controls, calibration |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |
-| [docs/roadmap.md](docs/roadmap.md) | Milestones and their status |
-| [docs/perception.md](docs/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
-| [docs/perception-plan.md](docs/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
+| [docs/info/hardware.md](docs/info/hardware.md) | Measured specs of both machines and the camera's capture modes |
+| [docs/info/setup.md](docs/info/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
+| [docs/info/ansible.md](docs/info/ansible.md) | The playbook: inventory, roles, gotchas |
+| [docs/info/networking.md](docs/info/networking.md) | DDS discovery, domain IDs, interface pinning |
+| [docs/info/camera.md](docs/info/camera.md) | Driver choice, transport, V4L2 controls, calibration |
+| [docs/info/troubleshooting.md](docs/info/troubleshooting.md) | Symptom → cause |
+| [docs/info/roadmap.md](docs/info/roadmap.md) | Milestones and their status |
+| [docs/info/perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
+| [docs/plans/in-progress/perception-plan.md](docs/plans/in-progress/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
+| [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update
-[docs/hardware.md](docs/hardware.md) from real command output and note the date.
+[docs/info/hardware.md](docs/info/hardware.md) from real command output and note the date.

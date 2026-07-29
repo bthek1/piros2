@@ -40,7 +40,7 @@ BIG_FRAME_QOS = QoSProfile(
 # camera: `ros2 topic delay /image_raw` shows the stamps lag wall clock by a
 # steady ~0.73 s even on a freshly started camera, while the frames themselves
 # are visibly live — a UVC/driver timestamping fault, not a queue
-# (docs/camera.md#timestamps). A first version of this node gated on stamp
+# (docs/info/camera.md#timestamps). A first version of this node gated on stamp
 # age and silently dropped 100% of frames. Only spans between our *own* clock
 # reads are trustworthy here.
 

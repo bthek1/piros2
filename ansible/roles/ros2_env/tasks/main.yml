@@ -41,7 +41,7 @@
       export CYCLONEDDS_URI=file://{{ cyclonedds_config_path }}
   notify: Remind about the ROS daemon
 
-# ROS is deliberately NOT sourced globally (docs/setup.md#on-sourcing-ros) —
+# ROS is deliberately NOT sourced globally (docs/info/setup.md#on-sourcing-ros) —
 # the alias makes sourcing a one-word habit instead. It lives in .bashrc
 # because aliases only mean anything in an interactive shell.
 - name: ROS sourcing alias in .bashrc

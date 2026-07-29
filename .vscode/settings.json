@@ -1,7 +1,7 @@
 {
     // The system Python, NOT PlatformIO's venv (~/.platformio/penv shadows
     // python3 in PATH and has no rclpy/yaml) — ROS Jazzy is built against
-    // this exact interpreter. See docs/troubleshooting.md.
+    // this exact interpreter. See docs/info/troubleshooting.md.
     "python.defaultInterpreterPath": "/usr/bin/python3",
 
     // Let Pylance resolve rclpy, cv_bridge, launch, etc.

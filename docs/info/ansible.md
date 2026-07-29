@@ -3,7 +3,7 @@
 > **Status: built and working (2026-07-24).** All five roles and `site.yml`
 > exist; the playbook has provisioned both machines and is idempotent on both
 > (`changed=0` on a clean rerun) — milestone 0's cross-LAN talker/listener
-> passed. [ansible-plan.md](ansible-plan.md) records how this was built.
+> passed. [ansible-plan.md](../plans/completed/ansible-plan.md) records how this was built.
 
 Both machines run the same native ROS 2 Jazzy install, so both are provisioned by
 the same playbook. The dev box is the control node; the Pi is a managed host.
@@ -37,7 +37,7 @@ ansible --version | head -1        # → ansible [core 2.16.3]
 ansible-galaxy collection install -r requirements.yml   # ansible.posix ≥ 2, community.general
 ```
 
-Collection versions are pinned in [`ansible/requirements.yml`](../ansible/requirements.yml).
+Collection versions are pinned in [`ansible/requirements.yml`](../../ansible/requirements.yml).
 Notably `ansible.posix` must be ≥ 2.0 — the `synchronize` plugin in 1.x (Ubuntu
 ships 1.5.4 system-wide) prints a connection-stdin deprecation warning on every
 workspace sync under core 2.16; the galaxy-installed 2.x in `~/.ansible/collections`

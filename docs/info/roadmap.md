@@ -8,7 +8,7 @@ works before moving on.
 > two-machine system, four packages, the camera stack, TF, and record/replay —
 > each verified end to end. The project continues as the perception build:
 > design in [perception.md](perception.md), phased build order in
-> [perception-plan.md](perception-plan.md). The two checkboxes below still
+> [perception-plan.md](../plans/in-progress/perception-plan.md). The two checkboxes below still
 > open (RViz eyeball, calibration) carry over there as phase P0.
 
 ## 0. Environment — *done 2026-07-24*
