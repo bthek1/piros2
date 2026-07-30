@@ -1,5 +1,17 @@
 # Perception build plan — camera to 3D room map
 
+> **Closed 2026-07-29 — by decision, not by finishing P3.** The per-frame
+> pipeline is done and verified (P0 approx intrinsics live, P1 depth, P2
+> point cloud in RViz), and P3's plumbing ran end to end: the static-bag
+> check put neural depth through `rgbd_odometry` (quality 447–563) and
+> `rtabmap` successfully. What was **not** done: the hand-held sweep and
+> therefore the room map itself, the tuning loop, the tape-measure
+> `depth_scale` check, and the checkerboard upgrade. P4's archival
+> criterion ("when P3's map exists") was overridden by a decision to close
+> the plan as-is. If mapping resumes, the next step is unchanged: fix
+> exposure, `just record 45 sweep1`, `just map bags/sweep1` — everything
+> it needs is built and working.
+
 > **Working document.** [perception.md](../../info/perception.md) is the design — what is
 > being built and what a single webcam honestly can do. This is the build
 > order: stable phases, each ending with something you can run and check

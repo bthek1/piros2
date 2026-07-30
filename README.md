@@ -33,9 +33,10 @@ launch file and unit tests (`just edges`); the static TF chain
 the pipeline iterates without hardware (`just record` / `just replay`).
 [docs/info/roadmap.md](docs/info/roadmap.md) is the milestone-by-milestone log.
 
-The project now runs on the
-[perception plan](docs/plans/in-progress/perception-plan.md), building
-`src/piros2_perception` — camera → neural depth → point clouds → a room map:
+After it, the [perception plan](docs/plans/completed/perception-plan.md)
+built `src/piros2_perception` — camera → neural depth → point clouds —
+and was **closed 2026-07-29**, before its final mapping phase produced a
+room map:
 
 - **P0 (2026-07-28)** — camera intrinsics live on `/camera_info`,
   spec-derived (fx = fy ≈ 907 px); a checkerboard run remains as an
@@ -46,10 +47,10 @@ The project now runs on the
 - **P2 (2026-07-28)** — `cloud_projector`: depth + intrinsics into a
   coloured `PointCloud2`, verified live in RViz, correctly posed in
   `base_link` (`just cloud`).
-- **P3 (in progress, 2026-07-29)** — RTAB-Map RGB-D mapping. The plumbing
-  is verified: `just map` ran a static bag through depth → odometry →
-  RTAB-Map (odometry quality ~450–560); still ahead: a hand-held sweep
-  and the tuning loop.
+- **P3 (plumbing verified 2026-07-29; plan closed here)** — RTAB-Map RGB-D
+  mapping. `just map` ran a static bag through depth → odometry → RTAB-Map
+  (odometry quality ~450–560). The hand-held sweep, the tuning loop, and
+  therefore the map itself were not run — the plan records how to resume.
 
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.
@@ -77,7 +78,7 @@ status.
 | [troubleshooting.md](docs/info/troubleshooting.md) | Symptoms → causes for the failures you are most likely to hit |
 | [roadmap.md](docs/info/roadmap.md) | The learning path, milestone by milestone — concluded 2026-07-27 |
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
-| [perception-plan.md](docs/plans/in-progress/perception-plan.md) | Perception build order, phases P0–P4 — the current plan |
+| [perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order, phases P0–P4 — closed 2026-07-29, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

@@ -1,14 +1,13 @@
 # Perception: from webcam to a 3D map of the room
 
-> **Status: in build — P3 next.** P1 (depth node) and P2 (cloud projector)
-> done 2026-07-28, both verified with measured numbers. P0's gate was
-> released the same day with spec-derived approximate intrinsics
-> (`/camera_info` now carries a real K); the checkerboard run is an
-> accuracy upgrade whenever it happens. This document is the
-> design; the phased build order — which phase creates what, and what each
-> must prove, with per-phase outcome annotations — is
-> [perception-plan.md](../plans/in-progress/perception-plan.md). Milestone 7 was an open choice —
-> this is the chosen direction, and the roadmap concluded here.
+> **Status: build closed 2026-07-29, before the map.** P0 (approx
+> intrinsics), P1 (depth node) and P2 (cloud projector) done and verified
+> with measured numbers; P3's RTAB-Map plumbing verified on a static bag,
+> but the hand-held sweep — and therefore the room map this document aims
+> at — was not run. The build plan, closed with per-phase outcome
+> annotations and the resume steps, is
+> [perception-plan.md](../plans/completed/perception-plan.md). Milestone 7 was an open choice —
+> this was the chosen direction, and the roadmap concluded here.
 
 The goal: point the C922 around the room and end up with a coloured 3D point
 cloud of it, visible in RViz, anchored to the TF tree the earlier milestones
@@ -107,7 +106,8 @@ RTAB-Map's odometry do continuous tracking, and iterate on recorded bags
 Done when: a recognisable, roughly-scaled point-cloud room in RViz, built
 from a slow hand-held sweep.
 
-**In progress 2026-07-29; plumbing verified.** `mapping.launch.py`
+**Plumbing verified 2026-07-29; the plan closed here — no sweep, no map.**
+`mapping.launch.py`
 composes the depth estimator with RTAB-Map's `rgbd_odometry` and
 `rtabmap` nodes (exact RGB/depth sync — the depth node's honest headers
 pay off here — poses in `base_link`), and `just map [bag]` drives it from
@@ -118,7 +118,8 @@ and the check passed: on the static desk bag, odometry tracked with
 quality 447–563 features (std dev 3–8 cm) at ~1–2 Hz synced pairs, and
 RTAB-Map built a 1-node map, which is correct for a motionless scene.
 First evidence Plan A's neural-depth pattern holds. Sweep numbers — map
-quality, loop closure, scale error — follow the first real sweep.
+quality, loop closure, scale error — would follow a real sweep; the plan
+records the resume steps if one happens.
 
 ### P4 — Make it repeatable
 

@@ -109,8 +109,9 @@ MCAP) and fetches it to `bags/`; `just replay` runs it through
 no Pi needed. Jazzy's `republish` takes transports as *parameters*, not
 positional args (see docs/info/troubleshooting.md).
 
-**The roadmap concluded 2026-07-27.** The project now runs on
-[docs/plans/in-progress/perception-plan.md](docs/plans/in-progress/perception-plan.md): phases P0–P4 building
+**The roadmap concluded 2026-07-27.** The perception build followed it —
+[docs/plans/completed/perception-plan.md](docs/plans/completed/perception-plan.md), **closed 2026-07-29 by
+decision, before P3's map was built**: phases P0–P4 building
 `src/piros2_perception` (neural monocular depth → point clouds → a room map).
 P0's gate was released 2026-07-28 with **spec-derived approximate
 intrinsics**: `c922_720p_approx.yaml` (78° diag FOV → fx = fy ≈ 907 px,
@@ -144,7 +145,8 @@ The RViz check passed 2026-07-28 (live cloud, correctly posed in
 RViz checkbox. The one human step still open: the tape-measure scale check
 (lit room, wall at a known distance, tune `depth_scale`).
 
-Perception P3 (mapping, in progress 2026-07-29): plumbing verified —
+Perception P3 (mapping; plumbing verified 2026-07-29, then the plan was
+closed by decision — the sweep and the map itself were never run):
 `mapping.launch.py` (depth estimator + RTAB-Map `rgbd_odometry` + `rtabmap`,
 exact sync off the depth node's honest headers, `base_link` poses) and
 `just map [bag]` (plays a bag once — looping teleports odometry — then
@@ -156,8 +158,8 @@ can't feed mapping — its `/camera_info` predates the P0 intrinsics (K all
 zeros); `just record` now takes a bag name, and `bags/static1` (19 s, valid
 K) is the plumbing bag. RTAB-Map's `delay=` figure is the bag's age, and its
 5-second no-data warnings are a watchdog beating against ~1–2 Hz synced
-pairs — neither is a fault. Next: exposure fix, hand-held sweep
-(`just record 45 sweep1`), tuning loop.
+pairs — neither is a fault. If mapping resumes: exposure fix, hand-held
+sweep (`just record 45 sweep1`), `just map bags/sweep1`, tuning loop.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
@@ -343,7 +345,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/info/troubleshooting.md](docs/info/troubleshooting.md) | Symptom → cause |
 | [docs/info/roadmap.md](docs/info/roadmap.md) | Milestones and their status |
 | [docs/info/perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
-| [docs/plans/in-progress/perception-plan.md](docs/plans/in-progress/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
+| [docs/plans/completed/perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

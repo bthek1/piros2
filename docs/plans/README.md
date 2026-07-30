@@ -23,5 +23,6 @@ Current plans:
 
 | Plan | Status |
 | --- | --- |
-| [perception-plan.md](in-progress/perception-plan.md) | In progress — P0–P2 done, P3–P4 remain |
+| [cloud-fusion-plan.md](in-progress/cloud-fusion-plan.md) | In progress — P0–P1 done 2026-07-30 (`cloud_fusion` node fusing, verified on `bags/static1`); P2 hysteresis next |
+| [perception-plan.md](completed/perception-plan.md) | Closed 2026-07-29 — P0–P2 done, P3 plumbing verified; the sweep and map were not run |
 | [ansible-plan.md](completed/ansible-plan.md) | Completed 2026-07-24 — kept as the build log |

@@ -1,6 +1,6 @@
 # piros2_perception
 
-Perception stack, built per [docs/plans/in-progress/perception-plan.md](../../docs/plans/in-progress/perception-plan.md).
+Perception stack, built per [docs/plans/completed/perception-plan.md](../../docs/plans/completed/perception-plan.md).
 P1 so far: `depth_estimator` — neural monocular depth on the dev box.
 
 ## The venv escape hatch (read this before running anything)
