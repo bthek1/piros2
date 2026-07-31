@@ -169,7 +169,7 @@ def test_surface_takes_the_wall_colour(node):
     assert np.all(rgb[:, 2] < 32)
 
 
-def test_seed_lattice_before_any_frame(node):
+def test_seed_shell_before_any_frame(node):
     node.publish_map()
     out = node.pub_map.messages[0]
     pts = np.frombuffer(out.data, POINT_DTYPE)
@@ -177,6 +177,13 @@ def test_seed_lattice_before_any_frame(node):
     assert pts.size > 0
     # Every point is the faint seed grey — nothing observed yet.
     assert np.all(pts['rgb'].view(np.uint32) == 0x003C3C3C)
+    # And every point sits on one of the grid's six outer faces: the
+    # seed renders as an empty room, never as points filling the volume.
+    xyz = np.stack([pts['x'], pts['y'], pts['z']], axis=-1)
+    lo = node.centres_flat.min(axis=0)
+    hi = node.centres_flat.max(axis=0)
+    on_face = (np.abs(xyz - lo) < 1e-5) | (np.abs(xyz - hi) < 1e-5)
+    assert np.all(on_face.any(axis=1))
 
 
 def test_map_publishes_surface_after_fusion(node):

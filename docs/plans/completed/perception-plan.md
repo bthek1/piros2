@@ -281,7 +281,7 @@ ambiguity in monocular pipelines.
 | Question | Options | Outcome |
 | --- | --- | --- |
 | Depth model | DA-V2 Small ONNX vs MiDaS small | **Decided (P1)**: DA-V2 Small, fp32 onnx-community export, checksum-pinned |
-| Where inference runs | dev-box CPU vs its NVIDIA GPU (driver present) | **Decided (P1)**: CPU — 280–305 ms/frame is enough; GPU only if P3 hurts |
+| Where inference runs | dev-box CPU vs its NVIDIA GPU (driver present) | **Decided (P1)**: CPU — 280–305 ms/frame is enough; GPU only if P3 hurts. **Revisited 2026-07-30** (cloud-fusion work, `todo.md`'s "reduce compute"): switched to CUDA via `onnxruntime-gpu[cuda,cudnn]` — 72–79 ms/frame in-node (~13 fps) |
 | Cloud transport | publish `/points` over LAN vs view-only local | Open — lean local only; a 57k-point cloud at even 5 fps is Wi-Fi abuse |
 | P3 engine | RTAB-Map vs hand-rolled pose accumulation | Open — lean RTAB-Map, with the fallback written into P3 |
 | Venv home | `~/.venvs/piros2-perception` vs in-repo | **Decided (P1)**: home dir — the repo stays apt-only |

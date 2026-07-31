@@ -55,7 +55,8 @@ accuracy whenever it happens.
 
 `piros2_perception/depth_estimator`: subscribes `/image_raw/compressed`
 (decompressing locally, as `just replay` does), runs Depth Anything V2 Small
-via ONNX Runtime on the dev box CPU, publishes:
+via ONNX Runtime on the dev box (GPU since 2026-07-30, CPU fallback),
+publishes:
 
 - `/depth` (`sensor_msgs/Image`, 32FC1, metres-ish) — aligned 1:1 with the
   input frame, same header/frame_id
@@ -75,6 +76,15 @@ Verified against the milestone-6 bag: the preview reproduced the recorded
 desk scene with correct near/far ordering. Scale remains honest-relative;
 `depth_scale` is a tuning knob until P2's tape-measure check.
 
+**Moved to the GPU 2026-07-30**: `onnxruntime-gpu` with the pip
+`[cuda,cudnn]` extras runs the same fp32 model on the dev box's
+GTX 1660 SUPER via `CUDAExecutionProvider` — measured ~57 ms inference,
+72–79 ms/frame in-node against `bags/static1` (~13 fps, a 4× pipeline
+speedup). The node prefers CUDA and falls back to CPU, logging which
+provider actually loaded
+([troubleshooting](troubleshooting.md#onnxruntime-ignores-the-gpu-and-runs-on-cpu)
+covers the silent-fallback trap).
+
 ### P2 — Point cloud
 
 `piros2_perception/cloud_projector`: `/depth` + `/camera_info` →
@@ -86,7 +96,8 @@ oriented relative to `base_link` — the TF payoff made visible.
 
 **Done 2026-07-28.** Measured: 33k–57k points built in ~12 ms per cloud
 (numpy-vectorised projection + structured-array serialisation), cloud rate
-bounded by the depth node's ~3 fps. Verified live end to end; unit tests pin
+bounded by the depth node's rate (~3 fps on CPU then; ~13 fps since the
+2026-07-30 GPU switch). Verified live end to end; unit tests pin
 the projection against a synthetic wall (flat, 2 m, pinhole-exact). The RViz
 eyeball passed the same day — live cloud, correctly posed in `base_link`,
 human-confirmed (after the display-stack fixes in

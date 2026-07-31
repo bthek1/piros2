@@ -74,16 +74,17 @@ camera:
 [group('test')]
 run *args: (cloud args)
 
-# Camera on the Pi + both perception nodes here (perception.launch.py) +
-# RViz on the cloud. Closing RViz stops everything. Depth is ~3 fps, so the
-# cloud updates at ~3 fps too — that is the pipeline's pace, not a fault.
+# Camera on the Pi + the perception nodes here (perception.launch.py) +
+# RViz on the cloud. Closing RViz stops everything. Depth runs on the GPU
+# since 2026-07-30 (~13 fps in-node); the cloud updates at that pace —
+# slower than the camera's 30 fps is the pipeline's pace, not a fault.
 #
-# RViz env pins: QT_QPA_PLATFORM=xcb is permanent (OGRE renders via GLX,
-# which is X11-only — a Wayland Qt window can never host it). The two mesa
-# vars force software rendering and are a STOPGAP for the NVIDIA driver
-# mismatch (userspace 595.84 vs loaded module 595.71 — reboot to fix, then
-# drop them): GLVND would otherwise dispatch GLX to the broken NVIDIA
-# vendor library no matter what — troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window.
+# RViz env pin: QT_QPA_PLATFORM=xcb is permanent (OGRE renders via GLX,
+# which is X11-only — a Wayland Qt window can never host it). The mesa
+# software-rendering stopgap for the 2026-07-28 NVIDIA driver mismatch was
+# dropped 2026-07-30: the reboot landed matching 595.84 kernel + userspace,
+# verified by running rviz2 on hardware GL (OpenGL 4.6, no GLX errors) —
+# troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window.
 # Camera on the Pi + depth + point cloud + RViz; closing RViz stops all
 [group('test')]
 cloud *args:
@@ -92,7 +93,7 @@ cloud *args:
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch piros2_perception perception.launch.py' &
     trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_perception" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; kill %1 2>/dev/null' EXIT
     sleep 8
-    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 rviz2 -d src/piros2_perception/config/perception.rviz'
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_perception/config/perception.rviz'
 
 # The launch file owns the symlink/framerate traps (docs/info/camera.md#running-it);
 # args pass through, e.g. `just cam image_width:=640 image_height:=480`.
@@ -167,10 +168,11 @@ calibrate:
         sleep 1
     done
 
-# Inference is ~300 ms/frame on the dev-box CPU so expect a few fps — that
-# is the design point, mapping needs no more. The estimator runs under the
-# perception venv (PyPI onnxruntime; colcon's hardcoded shebang would miss
-# it) — src/piros2_perception/README.md.
+# Inference runs on the GPU since 2026-07-30 (~13 fps in-node; ~3 fps on
+# CPU before, and the node falls back to CPU silently — check its provider
+# log line). The estimator runs under the perception venv (PyPI
+# onnxruntime-gpu; colcon's hardcoded shebang would miss it) —
+# src/piros2_perception/README.md.
 # Camera on the Pi + neural depth here + preview viewer; closing viewer stops all
 [group('test')]
 depth *args:
@@ -206,7 +208,7 @@ map bag='bags/static1':
     # camera + depth panels, not just the odometry track. `|| true`: Ctrl-C
     # gives rtabmap_viz a nonzero exit (255) that would otherwise make the
     # whole recipe report failure after a perfectly good session.
-    bash -lc 'source /opt/ros/jazzy/setup.bash && QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 ros2 run rtabmap_viz rtabmap_viz --ros-args -p frame_id:=base_link -p subscribe_depth:=true -p approx_sync:=false -r rgb/image:=/image_raw -r rgb/camera_info:=/camera_info -r depth/image:=/depth' || true
+    bash -lc 'source /opt/ros/jazzy/setup.bash && QT_QPA_PLATFORM=xcb ros2 run rtabmap_viz rtabmap_viz --ros-args -p frame_id:=base_link -p subscribe_depth:=true -p approx_sync:=false -r rgb/image:=/image_raw -r rgb/camera_info:=/camera_info -r depth/image:=/depth' || true
 
 # Run while `just pipeline` or `just cam` is up. Records the compressed
 # stream (raw 720p is ~83 MB/s — neither the SD card nor the Wi-Fi wants

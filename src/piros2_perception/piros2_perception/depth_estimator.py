@@ -88,8 +88,20 @@ class DepthEstimator(Node):
         if not os.path.isfile(path):
             raise FileNotFoundError(
                 f'model not found at {path} — run `just fetch-model`')
-        return onnxruntime.InferenceSession(
-            path, providers=['CPUExecutionProvider'])
+        # The CUDA/cuDNN libraries come from pip (the onnxruntime-gpu
+        # [cuda,cudnn] extras — see the README) and sit inside site-packages
+        # where the system loader never looks; preload_dlls() dlopens them
+        # first so the CUDA provider can link against them.
+        onnxruntime.preload_dlls()
+        # CUDA first, CPU as the fallback: onnxruntime falls back *silently*
+        # when the GPU libs are missing or broken, so log which provider
+        # actually won rather than assuming.
+        session = onnxruntime.InferenceSession(
+            path,
+            providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        self.get_logger().info(
+            f'inference provider: {session.get_providers()[0]}')
+        return session
 
     def on_frame(self, msg: CompressedImage):
         entry = self.get_clock().now()

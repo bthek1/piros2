@@ -24,15 +24,17 @@ cloud_fusion:
     # The frame the map lives in: base_link while the camera is static
     # (only static TF needed); odom once keypoint odometry exists (P5).
     map_frame: base_link
-    # Grid placement in map_frame metres: min corner + extents. The
-    # default seed cube starts at the camera and extends 2 m forward
-    # (+x in base_link), centred sideways.
-    grid_origin: [0.0, -1.0, -0.5]
-    grid_size: [2.0, 2.0, 2.0]
-    voxel_size: 0.02
+    # Grid placement in map_frame metres: min corner + extents. Sized to
+    # cover the measured desk scene (median ~3.2 scale-units out): the
+    # plan's 2 m seed cube left most of the room outside the grid, so
+    # nothing visibly fused. Shrink these back to taste — the seed-cube
+    # behaviour is the same at any extent.
+    grid_origin: [0.0, -2.0, -1.0]
+    grid_size: [4.0, 4.0, 2.5]
+    voxel_size: 0.04
     # Half-width of the fused band around a surface: ~3 voxels. Cells
     # further behind a measured surface were never seen — untouched.
-    truncation: 0.06
+    truncation: 0.12
     # Saturation: a cell stops moving with new frames once it has this
     # many observations (~17 s at the depth node's ~3 fps).
     w_max: 50.0

@@ -42,8 +42,8 @@ room map:
   spec-derived (fx = fy ≈ 907 px); a checkerboard run remains as an
   accuracy upgrade.
 - **P1 (2026-07-28)** — `depth_estimator`: Depth Anything V2 Small (ONNX)
-  turns the compressed stream into `/depth` at ~3 fps on the dev-box CPU
-  (`just depth`).
+  turns the compressed stream into `/depth` (`just depth`); ~3 fps on the
+  dev-box CPU then, ~13 fps on its GPU since 2026-07-30.
 - **P2 (2026-07-28)** — `cloud_projector`: depth + intrinsics into a
   coloured `PointCloud2`, verified live in RViz, correctly posed in
   `base_link` (`just cloud`).

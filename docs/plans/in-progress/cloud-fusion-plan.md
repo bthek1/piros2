@@ -101,8 +101,11 @@ Both in `piros2_perception`, alongside — not replacing — `cloud_projector`
 - Subscribes the synced `/depth` + `/image_raw/compressed` pair
   (message_filters, as `cloud_projector` does) + `/camera_info`.
 - Holds the grid as numpy arrays: `D` float32, `w` float32, colour
-  3 × uint8 — default 2 m cube at `voxel_size: 0.02` is 100³ = 1 M cells,
-  ~11 MB. Origin/size/resolution are parameters in `perception.yaml`.
+  3 × uint8. Origin/size/resolution are parameters in `perception.yaml`
+  (2026-07-30: default re-aimed from the 2 m seed cube to 4 × 4 × 2.5 m
+  at 4 cm — the desk scene's median ~3.2 scale-units fell outside the
+  cube, so a live run visibly fused almost nothing; the seed-cube
+  behaviour is unchanged, just bigger).
 - Per frame, vectorised end to end: transform all cell centres into
   `camera_optical_frame`, project through K, sample the depth image,
   truncate, apply the update rule. No per-cell Python loops.
@@ -139,6 +142,14 @@ Both in `piros2_perception`, alongside — not replacing — `cloud_projector`
 > `base_link`, every point inside the configured cube, all in the faint
 > seed grey. The RViz eyeball of the cube is still a human step —
 > `just cloud` now shows it.
+>
+> **2026-07-30, later — seed display reshaped to a hollow shell.** The
+> first RViz look showed the `[::stride]³` lattice reads as points
+> *inside* the room — but an unobserved volume should render as its
+> boundary only, like an empty room. `publish_map` now samples
+> never-observed cells on the grid's six outer faces instead of
+> throughout the volume; the seed test pins every published point to a
+> boundary face. Fusion state is untouched — this is display-layer only.
 
 `cloud_fusion.py` with the grid allocated, parameters declared, tf2
 listening, subscriptions wired but fusion stubbed out. Unobserved cells
@@ -180,6 +191,29 @@ being a pure frame-in/frame-out filter.
 > suite green at 34 tests. Still human: the RViz side-by-side
 > (`/map_points` steady vs `/points` shimmering) and the live
 > camera-restart check.
+>
+> **2026-07-30, later — first live RViz session.** Two findings. The
+> "map switching between small and big" was two `cloud_fusion`
+> instances on one topic — a scratch bag-test node had outlived its
+> cleanup trap alongside the `just cloud` one (new troubleshooting
+> entry). And the 2 m default grid missed the actual room: the desk
+> scene's median ~3.2 scale-units sat outside it, so the defaults now
+> cover 4 × 4 × 2.5 m at 4 cm (the bag-verified values). The RViz
+> config now renders `/map_points` as voxel-sized Boxes and ships with
+> `/points` off by default — toggle it on for the side-by-side.
+>
+> **2026-07-30, later still — depth moved to the GPU.** The note above
+> measured depth inference degrading to 342–704 ms/frame while sharing
+> the CPU with fusion; `todo.md`'s "reduce compute" answered by switching
+> `depth_estimator` to `CUDAExecutionProvider` (GTX 1660 SUPER,
+> `onnxruntime-gpu[cuda,cudnn]` in the venv — package README): 72–79
+> ms/frame in-node (~13 fps), and fusion no longer competes with
+> inference for cores. Synced pairs now arrive faster than the ~2 Hz
+> quoted in these annotations — re-measure rates rather than reusing
+> them. `perception.rviz` also gained two image sub-panels:
+> `DepthPreview` (`/depth/preview/compressed`, live now) and `Keypoints`
+> (`/features/preview/compressed` — blank until P3's
+> `keypoint_odometry.py` publishes it).
 
 Implement the projective update: transform → project → sample → truncate →
 weighted average, with the camera on the desk and `map_frame: base_link`.

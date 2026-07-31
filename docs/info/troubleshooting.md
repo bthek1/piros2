@@ -385,8 +385,26 @@ Two independent layers, both hit 2026-07-28 on the first real rviz2 run:
    QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 rviz2
    ```
    llvmpipe reports OpenGL 4.5 and renders a 57k-point cloud without fuss.
-   The `just cloud` recipe carries all three variables; drop the two mesa
-   ones after a reboot (keep `QT_QPA_PLATFORM=xcb` — layer 1 is permanent).
+   **Resolved 2026-07-30**: a reboot loaded the matching 595.84 module,
+   verified by running rviz2 on hardware GL (OpenGL 4.6, no GLX errors),
+   and the two mesa variables were dropped from the recipes. Layer 1 is
+   permanent — `QT_QPA_PLATFORM=xcb` stays in every rviz2/Qt invocation.
+
+## RViz opens but the mouse won't rotate/orbit the 3D view
+
+Symptom: the scene renders, but dragging in the viewport does nothing —
+no orbit, no pan, no zoom. Cause: the `-d` config had **no `Tools:`
+section**. rviz2 populates its toolbar entirely from the loaded config;
+with no tools there is no current tool, and mouse events in the render
+panel are dispatched to nothing. A hand-minimal config (only Panels +
+Displays + Views) triggers this; `rviz2` without `-d` never does, because
+the stock `default.rviz` carries the tool list. Hit 2026-07-30 with
+`perception.rviz`.
+
+Fix: give every hand-written config the stock tool list (copy from
+`/opt/ros/jazzy/share/rviz_common/default.rviz`) — at minimum
+`Interact` + `MoveCamera` — and a fully-keyed `Views: Current:` block
+with `Target Frame: <Fixed Frame>` so the Orbit controller has an anchor.
 
 ## Orphaned nodes keep logging into a terminal after a recipe ends
 
@@ -404,3 +422,46 @@ Diagnose and clear survivors with:
 ```bash
 pgrep -af 'republish|edge_detector|cameracalibrator'
 ```
+
+## An RViz cloud flickers between two different shapes or sizes
+
+Symptom: a PointCloud2 display alternates between two versions of the
+scene — e.g. `/map_points` switching between a small cube and a
+room-sized grid at about 1 Hz. Cause: **two node instances publishing the
+same topic**, each with its own idea of the content; RViz keeps only the
+latest message, so the view flips at their combined publish rate. First
+seen 2026-07-30, when a scratch `cloud_fusion` (grid overridden for a bag
+test) outlived its cleanup trap while `just cloud` launched the real one.
+
+Diagnose with the publisher count, then find and kill the stray:
+
+```bash
+ros2 topic info -v /map_points   # Publisher count: 2 → there's a stray
+pgrep -af cloud_fusion
+```
+
+Same family as the orphaned-nodes entry above: ad-hoc background runs
+need the same `pkill -f` hygiene as the recipes.
+
+## onnxruntime ignores the GPU and runs on CPU
+
+Symptom: `onnxruntime-gpu` is installed and
+`ort.get_available_providers()` lists `CUDAExecutionProvider`, yet a
+session created with CUDA first still reports
+`get_providers() == ['CPUExecutionProvider']`, with an
+`libcublasLt.so.13: cannot open shared object file` error above it.
+Two causes stack (hit both on 2026-07-30):
+
+1. **The wheel alone ships no CUDA libraries.** The CUDA 13 / cuDNN 9
+   runtimes come from the pip extras —
+   `pip install "onnxruntime-gpu[cuda,cudnn]"` (~1.5 GB of `nvidia-*`
+   packages into the venv). The plain `onnxruntime` package has no CUDA
+   provider at all.
+2. **The loader can't see pip-installed CUDA libs.** They land in
+   `site-packages/nvidia/*/lib`, which is on no library path. Call
+   `onnxruntime.preload_dlls()` before creating the session — it dlopens
+   them from inside the venv (`depth_estimator._load_model` does this).
+
+The failure is *silent* at the API level: with a CPU fallback in the
+providers list, the session simply runs slow. Always log
+`session.get_providers()[0]` rather than assuming — the depth node does.

@@ -123,8 +123,13 @@ approx file when someone waves the board.
 Perception P1 (depth node, done 2026-07-28): `src/piros2_perception` —
 `depth_estimator` subscribes `/image_raw/compressed`, runs Depth Anything V2
 Small (fp32 ONNX, `just fetch-model`, checksum-pinned, git-ignored) and
-publishes `/depth` (32FC1) + a colourised preview; measured 280–305 ms/frame
-on the dev-box CPU (~3 fps), verified against the milestone-6 bag. It is the
+publishes `/depth` (32FC1) + a colourised preview; verified against the
+milestone-6 bag. **On the GPU since 2026-07-30**: `onnxruntime-gpu` with
+the pip `[cuda,cudnn]` extras runs it on the dev box's GTX 1660 SUPER at
+72–79 ms/frame in-node (~13 fps; the CPU figure was 280–305 ms, ~3 fps).
+The node prefers CUDA, falls back to CPU, and logs the winning provider —
+the GPU path degrades to CPU *silently* if the nvidia pip libs are missing
+or `preload_dlls()` isn't called (docs/info/troubleshooting.md). It is the
 repo's documented venv escape hatch: onnxruntime is PyPI-only, lives in
 `~/.venvs/piros2-perception` (`--system-site-packages`), and the node must
 run as `python -m` under that interpreter — colcon's hardcoded shebang

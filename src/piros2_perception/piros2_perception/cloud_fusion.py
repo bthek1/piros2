@@ -2,9 +2,10 @@
 A persistent map the camera feed edits, instead of a cloud it replaces.
 
 cloud_projector rebuilds its output from scratch every frame; this node
-holds state — a fixed lattice of cells covering (by default) a 2 m cube in
-front of the camera — and every synced depth frame nudges the cells it can
-see towards what was observed. Three ideas, met by hand:
+holds state — a fixed lattice of cells covering a block of room in front
+of the camera (the plan's seed cube, at whatever extent the parameters
+say) — and every synced depth frame nudges the cells it can see towards
+what was observed. Three ideas, met by hand:
 
 - The grid is a truncated signed distance field (TSDF). Each cell stores
   D, how far in front of (+) or behind (−) the observed surface it sits,
@@ -24,9 +25,10 @@ see towards what was observed. Three ideas, met by hand:
 - Publishing is decoupled from fusing. Fusion runs per synced pair
   (~3 fps, the depth node's pace); the map is extracted and published on
   its own ~1 Hz timer, because the map changes slowly and extraction has
-  its own cost. Unobserved cells (w = 0) publish as a faint strided
-  lattice so the initial state — the seed cube — is visible in RViz
-  before a single frame has been fused.
+  its own cost. Unobserved cells (w = 0) on the grid's outer faces
+  publish as a faint strided shell so the initial state — the seed
+  cube, rendered as an empty room — is visible in RViz before a single
+  frame has been fused.
 
 Everything is published in map_frame; RViz needs no transform gymnastics.
 """
@@ -67,16 +69,16 @@ class CloudFusion(Node):
         # static; odom once an odometry node exists to publish it.
         self.declare_parameter('map_frame', 'base_link')
         # Grid placement in map_frame metres: min corner + extents.
-        # Default: a 2 m cube starting at the camera and extending
-        # forward (+x in base_link), centred sideways, half a metre
-        # below the mount to 1.5 m above it.
-        self.declare_parameter('grid_origin', [0.0, -1.0, -0.5])
-        self.declare_parameter('grid_size', [2.0, 2.0, 2.0])
-        self.declare_parameter('voxel_size', 0.02)
-        # Half-width of the fused band around a surface. Cells further
-        # behind a measured surface than this were never actually seen
-        # and must not be touched.
-        self.declare_parameter('truncation', 0.06)
+        # Default: a block starting at the camera and extending forward
+        # (+x in base_link), sized so the measured desk scene (median
+        # ~3.2 scale-units away) actually lands inside it.
+        self.declare_parameter('grid_origin', [0.0, -2.0, -1.0])
+        self.declare_parameter('grid_size', [4.0, 4.0, 2.5])
+        self.declare_parameter('voxel_size', 0.04)
+        # Half-width of the fused band around a surface (~3 voxels).
+        # Cells further behind a measured surface than this were never
+        # actually seen and must not be touched.
+        self.declare_parameter('truncation', 0.12)
         # Saturation: observations stop shifting a cell once w hits this.
         self.declare_parameter('w_max', 50.0)
         # A cell needs this many observations before it counts as surface.
@@ -86,7 +88,7 @@ class CloudFusion(Node):
         self.declare_parameter('change_threshold', 0.15)
         self.declare_parameter('reopen_frames', 5)
         self.declare_parameter('publish_rate', 1.0)
-        # Every Nth unobserved cell per axis in the seed-lattice display.
+        # Every Nth unobserved cell per axis in the seed-shell display.
         self.declare_parameter('seed_stride', 5)
         # Depth beyond this is the model saying "background, no idea".
         self.declare_parameter('far_clip', 20.0)
@@ -248,10 +250,17 @@ class CloudFusion(Node):
         # thick — readable without marching cubes.
         surface = (self.w >= w_min) & (np.abs(self.d) < self.voxel)
 
-        # The seed lattice: a sparse sample of never-observed cells, so
-        # the unfused map is visible instead of an empty display.
+        # The seed shell: a sparse sample of never-observed cells on the
+        # grid's six outer faces only, so the unfused map reads as an
+        # empty room — points inside the volume would say "surface here",
+        # which nothing has observed.
         seed = np.zeros_like(surface)
-        seed[::stride, ::stride, ::stride] = True
+        strided = [slice(None, None, stride)] * 3
+        for axis in range(3):
+            for edge in (0, -1):
+                face = list(strided)
+                face[axis] = edge
+                seed[tuple(face)] = True
         seed &= self.w == 0
 
         rgb = self.colour.astype(np.uint32)
