@@ -13,10 +13,11 @@ launch arguments with defaults.
 """
 
 import os
+import stat
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -25,6 +26,30 @@ from launch_ros.parameter_descriptions import ParameterValue
 # usb_cam mangles symlinks (docs/info/camera.md#running-it), so resolve it here —
 # realpath runs on the launching machine, which is the one with the camera.
 CAMERA_BY_ID = '/dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0'
+
+
+def _require_camera(context):
+    """
+    Fail the whole launch, loudly, if the capture device is not there.
+
+    usb_cam does NOT do this itself: given a missing device it logs one
+    ERROR and then idles forever (measured 2026-07-31), so without this
+    check the launch sits there publishing nothing but static transforms.
+    An OpaqueFunction runs after argument resolution on the launching
+    machine — the one with the camera — and a raise here aborts the launch
+    with a nonzero exit before any node starts.
+    """
+    device = LaunchConfiguration('video_device').perform(context)
+    if not os.path.exists(device):
+        raise RuntimeError(
+            f'camera not detected: {device} does not exist '
+            f'(by-id symlink: {CAMERA_BY_ID}). Is the C922 plugged in? '
+            'Check with `just camera` / `v4l2-ctl --list-devices`.')
+    if not stat.S_ISCHR(os.stat(device).st_mode):
+        raise RuntimeError(
+            f'camera not detected: {device} exists but is not a character '
+            'device, so it cannot be a V4L2 capture node.')
+    return []
 
 
 def generate_launch_description():
@@ -53,6 +78,8 @@ def generate_launch_description():
                         'on the C922 never touches gain, so dim rooms need it raised '
                         '(e.g. gain:=128) — docs/info/camera.md#v4l2-controls'),
 
+        OpaqueFunction(function=_require_camera),
+
         Node(
             package='usb_cam',
             executable='usb_cam_node_exe',
@@ -77,6 +104,11 @@ def generate_launch_description():
                         LaunchConfiguration('gain'), value_type=int),
                 },
             ],
+            # If the camera node dies mid-run (device yanked, driver fault),
+            # take the whole launch down with a nonzero exit instead of
+            # leaving the static transform publishers idling as if all were
+            # well — same fail-loudly rule as the pre-flight check above.
+            on_exit=Shutdown(reason='usb_cam exited — camera lost'),
         ),
 
         # Where the camera IS, as data on /tf_static: base_link is the

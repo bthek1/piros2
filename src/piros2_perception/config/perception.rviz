@@ -4,7 +4,7 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /FusedMap1
+        - /Points1
       Splitter Ratio: 0.5
     Tree Height: 500
   - Class: rviz_common/Views
@@ -40,7 +40,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/PointCloud2
       Name: Points
-      Enabled: false
+      Enabled: true
       Topic:
         Value: /points
         Depth: 1
@@ -51,37 +51,12 @@ Visualization Manager:
       Position Transformer: XYZ
       Size (m): 0.01
       Style: Flat Squares
-      Value: false
-    - Class: rviz_default_plugins/PointCloud2
-      Name: FusedMap
-      Enabled: true
-      Topic:
-        Value: /map_points
-        Depth: 1
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Color Transformer: RGB8
-      Position Transformer: XYZ
-      Size (m): 0.04
-      Style: Boxes
       Value: true
     - Class: rviz_default_plugins/Image
       Name: DepthPreview
       Enabled: true
       Topic:
         Value: /depth/preview/compressed
-        Depth: 1
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Normalize Range: true
-      Value: true
-    - Class: rviz_default_plugins/Image
-      Name: Keypoints
-      Enabled: true
-      Topic:
-        Value: /features/preview/compressed
         Depth: 1
         Durability Policy: Volatile
         History Policy: Keep Last
@@ -121,8 +96,6 @@ Window Geometry:
   DepthPreview:
     collapsed: false
   Displays:
-    collapsed: false
-  Keypoints:
     collapsed: false
   Height: 846
   Hide Left Dock: false

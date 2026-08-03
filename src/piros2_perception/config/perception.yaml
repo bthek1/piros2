@@ -18,34 +18,3 @@ cloud_projector:
     # Depth beyond this is the model saying "background"; the 1/x inversion
     # makes those values explode, so they are cut before projection.
     far_clip: 20.0
-
-cloud_fusion:
-  ros__parameters:
-    # The frame the map lives in: base_link while the camera is static
-    # (only static TF needed); odom once keypoint odometry exists (P5).
-    map_frame: base_link
-    # Grid placement in map_frame metres: min corner + extents. Sized to
-    # cover the measured desk scene (median ~3.2 scale-units out): the
-    # plan's 2 m seed cube left most of the room outside the grid, so
-    # nothing visibly fused. Shrink these back to taste — the seed-cube
-    # behaviour is the same at any extent.
-    grid_origin: [0.0, -2.0, -1.0]
-    grid_size: [4.0, 4.0, 2.5]
-    voxel_size: 0.04
-    # Half-width of the fused band around a surface: ~3 voxels. Cells
-    # further behind a measured surface were never seen — untouched.
-    truncation: 0.12
-    # Saturation: a cell stops moving with new frames once it has this
-    # many observations (~17 s at the depth node's ~3 fps).
-    w_max: 50.0
-    # Observations before a cell counts as surface at all.
-    w_min: 3.0
-    # P2 hysteresis: a saturated cell re-opens only after reopen_frames
-    # consecutive disagreements bigger than change_threshold metres.
-    change_threshold: 0.15
-    reopen_frames: 5
-    # Map extraction/publish rate — deliberately slower than fusion.
-    publish_rate: 1.0
-    # Every Nth unobserved cell per axis shown as the faint seed lattice.
-    seed_stride: 5
-    far_clip: 20.0

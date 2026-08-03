@@ -39,7 +39,6 @@ setup(
             # and the `just depth` recipe.
             'depth_estimator = piros2_perception.depth_estimator:main',
             'cloud_projector = piros2_perception.cloud_projector:main',
-            'cloud_fusion = piros2_perception.cloud_fusion:main',
         ],
     },
 )

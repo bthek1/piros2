@@ -39,10 +39,4 @@ def generate_launch_description():
             name='cloud_projector',
             parameters=[config],
             output='screen'),
-        Node(
-            package='piros2_perception',
-            executable='cloud_fusion',
-            name='cloud_fusion',
-            parameters=[config],
-            output='screen'),
     ])

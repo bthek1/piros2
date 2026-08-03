@@ -141,6 +141,19 @@ Discovery succeeded, data transport did not.
   /dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0
   ```
 
+## Camera launch aborts at startup: `camera not detected`
+
+Deliberate, not a fault in the launch file (added 2026-07-31): `camera.launch.py`
+pre-flight-checks the resolved `video_device` and aborts the whole launch —
+and every recipe on top of it (`just cam`/`cloud`/`edges`/`depth`) — because
+`usb_cam` given a missing device logs one ERROR and then idles forever,
+which used to end as a viewer staring at a dead stream. The abort means the
+camera genuinely is not there: work through
+[`/dev/video0` not found](#devvideo0-not-found-or-permission-denied) —
+unplugged cable, re-enumerated device, or a fresh reflash without the
+playbook. Details of the fail-loudly rule:
+[camera.md](camera.md#when-the-camera-is-missing).
+
 ## Camera opens but every frame is black or green
 
 - **Leftover manual exposure — check this first.** V4L2 controls live *in the
@@ -148,11 +161,13 @@ Discovery succeeded, data transport did not.
   unplug), so a manual exposure set for a frame-rate benchmark silently
   applies to every later session. Hit 2026-07-24: `auto_exposure=1` +
   `exposure_time_absolute=136` + `gain=0` from earlier measurements produced
-  pure black in an evening room. Diagnose and restore:
+  pure black in an evening room. Diagnose and restore from the dev box:
   ```bash
-  v4l2-ctl -d /dev/video0 --get-ctrl=auto_exposure,exposure_time_absolute,gain
-  v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=3    # aperture priority, the camera default
+  just camera          # every control, current vs default — mismatches are leftover state
+  just camera-reset    # back to the known-good baseline
   ```
+  (Equivalent by hand: `v4l2-ctl --get-ctrl=…` / `--set-ctrl=auto_exposure=3` on
+  the Pi — [camera.md](camera.md#camera-state).)
 - Another process already has the device. `ssh pi 'sudo fuser -v /dev/video0'`.
   UVC allows only one capture client at a time.
 - The driver is pointed at `/dev/video1`, which is the UVC **metadata** node, not a
@@ -162,12 +177,13 @@ Discovery succeeded, data transport did not.
 
 ## Frame rate far below what was requested
 
-- **Auto-exposure is stealing frames — check this first.** The C922 ships with
-  `exposure_dynamic_framerate=1`, letting it lengthen exposure past the frame
-  interval in dim light. Measured on this camera: 18–21 fps at 720p on defaults
-  versus 30.00 fps with a fixed exposure. Confirm and fix:
+- **Auto-exposure is stealing frames — check this first.** The C922 *powers on*
+  with `exposure_dynamic_framerate=1` (despite the driver reporting `default=0`
+  — measured 2026-08-01), letting it lengthen exposure past the frame interval
+  in dim light. Measured on this camera: 18–21 fps at 720p on power-on state
+  versus 30.00 fps with a fixed exposure. `just camera-reset` turns it off as
+  part of the baseline; for a locked exposure on top of that:
   ```bash
-  v4l2-ctl -d /dev/video0 --list-ctrls | grep -E 'auto_exposure|dynamic_framerate'
   v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=1
   v4l2-ctl -d /dev/video0 --set-ctrl=exposure_time_absolute=150   # separate call — batched, it fails "Permission denied"
   ```
@@ -426,18 +442,18 @@ pgrep -af 'republish|edge_detector|cameracalibrator'
 ## An RViz cloud flickers between two different shapes or sizes
 
 Symptom: a PointCloud2 display alternates between two versions of the
-scene — e.g. `/map_points` switching between a small cube and a
-room-sized grid at about 1 Hz. Cause: **two node instances publishing the
-same topic**, each with its own idea of the content; RViz keeps only the
+scene at a steady rate. Cause: **two node instances publishing the same
+topic**, each with its own idea of the content; RViz keeps only the
 latest message, so the view flips at their combined publish rate. First
-seen 2026-07-30, when a scratch `cloud_fusion` (grid overridden for a bag
-test) outlived its cleanup trap while `just cloud` launched the real one.
+seen 2026-07-30 on the since-removed `cloud_fusion` node's map topic,
+when a scratch instance (grid overridden for a bag test) outlived its
+cleanup trap while `just cloud` launched the real one.
 
 Diagnose with the publisher count, then find and kill the stray:
 
 ```bash
-ros2 topic info -v /map_points   # Publisher count: 2 → there's a stray
-pgrep -af cloud_fusion
+ros2 topic info -v /points   # Publisher count: 2 → there's a stray
+pgrep -af cloud_projector
 ```
 
 Same family as the orphaned-nodes entry above: ad-hoc background runs

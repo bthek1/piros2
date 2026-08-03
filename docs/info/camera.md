@@ -11,6 +11,41 @@ to a correct, sharp, well-exposed image, and sustained capture holds exactly
 18–21 fps instead — read [the frame-rate note](hardware.md#frame-rate-and-auto-exposure)
 before benchmarking anything.
 
+## Handling rules
+
+The invariants for any code, doc or session that touches the camera — each
+learned the hard way, detail in the linked sections:
+
+1. **The camera belongs to the Pi.** Dev-box launches must never open
+   `/dev/video0` — recipes start the camera over SSH, and a dev-box launch
+   file must not `IncludeLaunchDescription` the camera launch (the include
+   executes locally; `perception.launch.py` documents the split).
+2. **Capture is exclusive; controls are shared.** One process streams at a
+   time — a second opener fails with `VIDIOC_REQBUFS … Device or resource
+   busy` (verified 2026-08-01). Reading and setting V4L2 controls works
+   fine *alongside* an active stream, so state can be inspected and tuned
+   live.
+3. **Fail loudly when the camera is missing** — never idle on a dead
+   device or stream ([below](#when-the-camera-is-missing)).
+4. **Camera state persists inside the camera.** Controls survive
+   processes, node restarts and reboots; check `just camera` and restore
+   the baseline with `just camera-reset` *before* debugging black frames
+   or low fps as a software problem ([below](#camera-state)).
+5. **Address it by the serial-keyed symlink**, resolved through
+   `readlink -f`/`os.path.realpath` because usb_cam mangles symlinks;
+   `/dev/video0` can renumber across replugs, and `/dev/video1` is the
+   metadata node, never capture ([Running it](#running-it)).
+6. **`v4l2-ctl` is the only working channel for exposure and focus** —
+   usb_cam's equivalent ROS parameters use ROS 1-era control names this
+   kernel no longer has ([V4L2 controls](#v4l2-controls)).
+7. **Never trust `header.stamp` for freshness or latency** — the driver
+   stamps ~0.73 s behind wall clock ([Timestamps](#timestamps)).
+8. **Never stream raw images across the LAN** — compressed transport only;
+   raw 720p30 is ~83 MB/s ([Image transport](#image-transport)).
+9. **Never quote a frame rate without stating the exposure mode**, and run
+   usb_cam at `framerate:=60` to get the camera's real 30
+   ([Running it](#running-it)).
+
 ## Driver choice
 
 | Package | Notes |
@@ -96,6 +131,35 @@ YAML/launch split: facts about the camera in `config/camera.yaml`, run-to-run
 knobs as launch arguments. Parameter files are keyed by node name — a mismatch
 between the YAML's top-level key and the node's launch `name=` applies nothing,
 silently.
+
+### When the camera is missing
+
+Everything that touches the camera **fails loudly and exits** rather than
+idling (rule adopted 2026-07-31). It has to be done by hand because `usb_cam`
+itself does not: given a missing device it logs one ERROR and then sits
+forever, publishing nothing — the launch's static transform publishers keep
+spinning and every recipe downstream opens a viewer on a dead stream
+(measured 2026-07-31).
+
+Three layers enforce it:
+
+- **`camera.launch.py` pre-flight-checks the device.** An `OpaqueFunction`
+  runs after argument resolution, on the launching machine (the one with the
+  camera), and raises if the resolved `video_device` is missing or not a
+  character device — the launch aborts with exit 1 before any node starts.
+  `vision.launch.py` inherits the check through its
+  `IncludeLaunchDescription`.
+- **The usb_cam node carries `on_exit=Shutdown()`.** If the node dies
+  mid-run (camera yanked, driver fault), launch reports it as *required*
+  and takes the whole process tree down instead of leaving the TF
+  publishers idling.
+- **The recipes surface it.** `just cam` / `cloud` / `edges` / `depth`
+  treat their warm-up seconds as a health check and exit 1 if the camera
+  job died before the viewer opens; `just record` and `just calibrate`
+  refuse to start when no `usb_cam` is running on the Pi.
+
+Any new node, launch file or recipe that consumes the camera must follow the
+same rule — see the conventions in `CLAUDE.md`.
 
 ## MJPG and the decode cost
 
@@ -227,10 +291,44 @@ control names, and its startup log shows `unknown control 'exposure_auto'` /
 current kernels). `v4l2-ctl` is the only working channel for exposure and
 focus here.
 
-Related trap: these controls live **in the camera** and persist across
-processes and reboots (until unplug) — a manual exposure set for a benchmark
-stays set for every later session, which is how the viewer showed black frames
-on 2026-07-24. `auto_exposure=3` restores the camera's default behaviour.
+### Camera state
+
+The controls above are **state that lives in the camera itself**, not in any
+process: they persist across node restarts, sessions and reboots, until the
+camera loses USB power. A manual exposure set for a benchmark stays set for
+every later session — which is how the viewer showed black frames on
+2026-07-24 — and the drift is invisible unless you look for it.
+
+So treat camera state like any other machine state in this repo — inspect
+it, don't assume it:
+
+```bash
+just camera        # devices, symlink, group — and every control, current vs default
+just camera-reset  # restore the known-good baseline
+```
+
+`--list-ctrls` prints each control's `value` next to its `default`; any
+mismatch is leftover state from an earlier session. Measured example
+(2026-08-01): a freshly checked camera showed `exposure_dynamic_framerate`
+at `value=1` against `default=0` — the camera *powers on* with it enabled
+despite what the driver reports as default, and it is exactly the control
+that drops indoor frame rate to 18–21 fps.
+
+`just camera-reset` restores the baseline: all autos on (`auto_exposure=3`,
+continuous autofocus, auto white balance), neutral image controls, `gain=0`,
+zoom/pan/tilt home, and `exposure_dynamic_framerate=0` so frame rate stays a
+function of the requested mode rather than of room lighting. Both recipes
+are safe while the camera streams — control access works alongside an
+active capture (verified 2026-08-01; only *capture* is exclusive). It
+deliberately leaves `power_line_frequency` alone: set it to the local mains
+frequency (`1` = 50 Hz, `2` = 60 Hz, the camera default) only if indoor
+frames show rolling brightness bands.
+
+The reset restores *defaults*, which is the recovery move — locking
+controls down manually for CV work (the block above) remains a deliberate,
+per-session act layered on top of a known baseline. Rule of thumb: run
+`just camera` before believing any camera symptom is a software bug, and
+run `just camera-reset` after any session that set manual values.
 
 ## Calibration
 

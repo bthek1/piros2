@@ -63,10 +63,28 @@ status:
 topics:
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 daemon stop && ros2 daemon start && ros2 topic list'
 
-# Camera state on the Pi: devices, group membership, the serial-keyed symlink
+# The V4L2 controls persist INSIDE the camera across processes and reboots,
+# so `value` drifting from `default` is leftover state from an earlier
+# session (the classic cause of black frames and 18–21 fps). Reset with
+# `just camera-reset`.
+# Camera state on the Pi: devices, symlink, group, every control current-vs-default
 [group('status')]
 camera:
     ssh pi 'v4l2-ctl --list-devices; ls -l /dev/v4l/by-id/; id -nG | tr " " "\n" | grep -x video'
+    ssh pi 'v4l2-ctl -d /dev/video0 --list-ctrls'
+
+# The baseline: all autos on, neutral image controls, gain 0, dynamic
+# framerate OFF (its power-on state is 1, which trades fps for exposure in
+# indoor light — camera.md#camera-state). Safe while the camera streams:
+# V4L2 control writes work alongside an active capture (verified
+# 2026-08-01). One --set-ctrl per call on purpose — a batched set fails
+# wholesale if any control is held inactive by its auto mode. Leaves
+# power_line_frequency alone; set it to the local mains (1=50Hz, 2=60Hz)
+# only if indoor frames show rolling bands.
+# Restore the camera's persistent V4L2 controls to the known-good baseline
+[group('status')]
+camera-reset:
+    ssh pi 'set -e; for c in auto_exposure=3 exposure_dynamic_framerate=0 focus_automatic_continuous=1 white_balance_automatic=1 gain=0 brightness=128 contrast=128 saturation=128 sharpness=128 zoom_absolute=100 pan_absolute=0 tilt_absolute=0; do v4l2-ctl -d /dev/video0 --set-ctrl=$c; done; echo "camera baseline restored"'
 
 # Points at whatever the project's newest runnable thing is — retarget this
 # as phases land. Args pass through to the underlying recipe.
@@ -90,9 +108,17 @@ run *args: (cloud args)
 cloud *args:
     #!/usr/bin/env bash
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch piros2_perception perception.launch.py' &
     trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_perception" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; kill %1 2>/dev/null' EXIT
-    sleep 8
+    # Warm-up doubles as a health check: camera.launch.py exits nonzero when
+    # the C922 is missing (pre-flight in the launch file), so if the ssh job
+    # dies during these seconds, bail loudly instead of opening a viewer on
+    # nothing. Same pattern in cam/edges/depth.
+    for _ in $(seq 8); do
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        sleep 1
+    done
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_perception/config/perception.rviz'
 
 # The launch file owns the symlink/framerate traps (docs/info/camera.md#running-it);
@@ -104,8 +130,13 @@ cloud *args:
 cam *args:
     #!/usr/bin/env bash
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    cam_pid=$!
     trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
-    sleep 4
+    # warm-up + health check — see `cloud` for the why
+    for _ in $(seq 4); do
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        sleep 1
+    done
     # PATH override: rqt tools use `#!/usr/bin/env python3`, and the PlatformIO
     # venv earlier in PATH shadows the system python ROS is built against —
     # docs/info/troubleshooting.md#rqt-tools-crash-with-no-module-named-yaml
@@ -124,8 +155,13 @@ pipeline *args:
 edges *args:
     #!/usr/bin/env bash
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_vision vision.launch.py {{ args }}'" &
+    cam_pid=$!
     trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_vision\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[e]dge_detector\"; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
-    sleep 6
+    # warm-up + health check — see `cloud` for the why
+    for _ in $(seq 6); do
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        sleep 1
+    done
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_processed/compressed'
 
 # Run while `just pipeline`/`just cam` is up. Print docs/info/checkerboard-8x6-25mm.svg
@@ -145,6 +181,8 @@ edges *args:
 [group('test')]
 calibrate:
     #!/usr/bin/env bash
+    # fail loudly up front rather than opening a calibrator on a dead stream
+    ssh pi 'pgrep -f usb_cam_[n]ode_exe >/dev/null' || { echo "no camera running on the Pi — start 'just cam' or 'just pipeline' first" >&2; exit 1; }
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 run image_transport republish --ros-args -p in_transport:=compressed -p out_transport:=raw -r in/compressed:=/image_raw/compressed -r out:=/calib/image_raw' >/dev/null 2>&1 &
     trap 'pkill -f "/calib/[i]mage_raw" 2>/dev/null; pkill -f "camera_calibration/[c]ameracalibrator" 2>/dev/null' EXIT
     sleep 2
@@ -178,9 +216,14 @@ calibrate:
 depth *args:
     #!/usr/bin/env bash
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ~/.venvs/piros2-perception/bin/python -m piros2_perception.depth_estimator --ros-args --params-file src/piros2_perception/config/perception.yaml' &
     trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; kill %1 2>/dev/null' EXIT
-    sleep 6
+    # warm-up + health check — see `cloud` for the why
+    for _ in $(seq 6); do
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        sleep 1
+    done
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /depth/preview/compressed'
 
 # No Pi needed: plays a bag ONCE (looping would teleport the odometry back
@@ -219,6 +262,7 @@ map bag='bags/static1':
 # Record a camera session on the Pi and fetch it to bags/<name>
 [group('test')]
 record secs='20' name='session1':
+    ssh pi 'pgrep -f usb_cam_[n]ode_exe >/dev/null' || { echo "no camera running on the Pi — start 'just cam' or 'just pipeline' first (an empty bag would record silently otherwise)" >&2; exit 1; }
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && mkdir -p ~/bags && rm -rf ~/bags/{{ name }} && timeout -s INT {{ secs }} ros2 bag record -o ~/bags/{{ name }} /image_raw/compressed /camera_info /tf_static'" || true
     rsync -a pi:~/bags/{{ name }} "{{ justfile_directory() }}/bags/"
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 bag info "{{ justfile_directory() }}/bags/{{ name }}"'

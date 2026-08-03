@@ -241,8 +241,13 @@ this convention and [docs/info/roadmap.md](docs/info/roadmap.md) tracks status.
   ROS 1-era control names (`exposure_auto`) the kernel has renamed; `v4l2-ctl`
   is the only working channel for those controls. And **V4L2 controls persist
   inside the camera** across processes and reboots — a manual exposure left by
-  a benchmark makes every later session black. Gain is never auto-adjusted on
-  Linux; dim rooms need it raised (`just cam gain:=128`).
+  a benchmark makes every later session black, and the C922 powers on with
+  `exposure_dynamic_framerate=1` (the 18–21 fps thief) despite the driver
+  reporting its default as 0. Treat camera state as inspectable machine
+  state: `just camera` prints every control current-vs-default, and
+  `just camera-reset` restores the known-good baseline — run them before
+  diagnosing black frames or low fps as a software bug. Gain is never
+  auto-adjusted on Linux; dim rooms need it raised (`just cam gain:=128`).
 - **The dev box's `python3` is PlatformIO's venv**, which shadows the system
   Python for anything with an `#!/usr/bin/env python3` shebang — rqt tools
   crash with `No module named 'yaml'`. colcon-built nodes are immune (hardcoded
@@ -298,6 +303,22 @@ this convention and [docs/info/roadmap.md](docs/info/roadmap.md) tracks status.
   generates the CWD-dependent form: when adding a package, copy the anchored
   tests from an existing one and add the package to `.vscode/tasks.json`'s
   picker.
+- **Camera handling rules are consolidated in
+  [docs/info/camera.md#handling-rules](docs/info/camera.md#handling-rules)** —
+  ownership (the Pi opens the device, dev-box launches must not), exclusive
+  capture vs shared live controls, persistent camera state, fail-loudly,
+  transport, and timestamp rules. Read them before writing any code, recipe
+  or doc that touches the camera, and keep `just camera` /
+  `just camera-reset` in agreement with them.
+- **Camera consumers fail loudly.** Anything that opens or depends on the
+  camera must verify it and exit nonzero with a clear message rather than
+  idling: `camera.launch.py` pre-flight-checks the device (usb_cam itself
+  logs one ERROR on a missing device and then idles forever) and puts
+  `on_exit=Shutdown()` on the camera node; the camera recipes verify the
+  launch survived warm-up, and `record`/`calibrate` check a stream exists
+  before starting. Apply the same rule to any new node, launch file or
+  recipe that uses the camera —
+  [docs/info/camera.md](docs/info/camera.md#when-the-camera-is-missing).
 - Package naming: `piros2_<thing>` (e.g. `piros2_camera`).
 - Python packages use `ament_python`; C++ uses `ament_cmake`.
 - Parameters belong in `config/*.yaml` and launch files in `launch/*.launch.py` —
@@ -351,6 +372,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/info/roadmap.md](docs/info/roadmap.md) | Milestones and their status |
 | [docs/info/perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
 | [docs/plans/completed/perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
+| [docs/plans/in-progress/world-plan.md](docs/plans/in-progress/world-plan.md) | Planned: `src/piros2_world` — camera/depth/keypoint feeds + live stats composed into one dashboard window |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update
