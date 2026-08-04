@@ -36,6 +36,13 @@ and the plan says so plainly rather than implying more.
 
 ## Preconditions, verified
 
+> Re-checked 2026-08-04 evening, after the day's detector work: matching
+> runs against a 10-frame `match_window` pool and holds ≈90% matched at
+> `max_features: 500` (the cap was briefly 100 for readability, restored
+> once green/yellow colouring made density legible). The dashboard shows
+> the match rate as a percentage; the wire keeps raw Int32 counts —
+> which is what P0 consumes.
+
 | Have | Where |
 | --- | --- |
 | Keypoint matching (green/yellow, `/keypoints/matched`; a 10-frame `match_window` since 2026-08-04 — P0's estimator needs strict *consecutive-pair* matches, computed separately from the display matching) | `keypoint_detector.py`, 2026-08-04 |
@@ -90,7 +97,20 @@ already holds the previous frame's keypoints and descriptors, and shipping
 matched pixel pairs between nodes would need a custom rosidl message — the
 same trade that put the counts on plain Int32.
 
-## P0 — Rotation from matched rays
+## P0 — Rotation from matched rays ✓ (2026-08-04, live pan check open)
+
+> Landed as planned, in `keypoint_detector.py`: CRC dup-skip (also part
+> of the "reduce compute" todo), cached K with the zero-K bag guard, the
+> pure functions (`rays_from_pixels`, `kabsch`, `estimate_rotation`,
+> `quaternion_from_rotation`), the `~/reset` Trigger service, and both
+> gate params in `world.yaml`. One decision the plan left open, now
+> fixed: the published pose is already conjugated into **base_link
+> axes** (`BASE_FROM_OPTICAL` — a pan arrives as yaw-about-z-up), so
+> P1's TF broadcast is a transcription, not more geometry. Verified
+> against `bags/static1`: 196 poses, K cached from the bag (fx = 907),
+> orientation held within ~0.001° of identity over the full replay,
+> 19.8 ms/frame with estimation running. 12 new unit tests; suite at 59
+> green. Remaining: the hand-pan runnable check below.
 
 Extend `keypoint_detector.py`:
 

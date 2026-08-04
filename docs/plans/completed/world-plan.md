@@ -101,7 +101,9 @@ suite green with the new package counted, style-clean.
 > `/keypoints/matched` (Int32) joins the count topic; the dashboard shows
 > both. Caveat: usb_cam's duplicate-frame republish (the ~60 msgs/s
 > finding above) means every other "previous frame" is pixel-identical, so
-> the matched count flatters tracking until that todo is fixed.
+> the matched count flatters tracking until that todo is fixed. *(Fixed
+> later the same day: the world 3D plan's P0 CRC-skips byte-identical
+> frames whole, so duplicates no longer reach matching at all.)*
 
 `keypoint_detector.py`: subscribe `/image_raw/compressed` (RELIABLE),
 run OpenCV **ORB** per frame — chosen because it is fast enough for the

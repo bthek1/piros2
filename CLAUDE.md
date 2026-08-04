@@ -191,16 +191,23 @@ exceeds the old "30 fps ceiling" now (see the 720p60 bullet below).
 Throttling is left for the "reduce compute" todo.
 
 **In progress:** the [world 3D plan](docs/plans/in-progress/world-3d-plan.md)
-(authored 2026-08-04, not started) — rotation-only camera orientation from
+(authored 2026-08-04) — rotation-only camera orientation from
 the keypoint matches (Kabsch on bearing rays; the essential matrix is
 degenerate under pure rotation) published as `odom → base_link`, then the
 depth clouds accumulated in that frame into an RViz panorama. Phases
 P0–P4; honest scope: orientation without position, drift accepted, reset
-services instead of loop closure.
+services instead of loop closure. **P0 done 2026-08-04**: the detector
+estimates per-frame rotation from strict consecutive-pair matches,
+composes it, and publishes `/camera/orientation` (PoseStamped, base_link
+axes via the canonical optical conjugation) plus the repo's first
+service (`~/reset`); byte-identical usb_cam duplicates are CRC-skipped
+whole (part of the "reduce compute" todo). Verified against
+`bags/static1` — 196 poses within ~0.001° of identity, 19.8 ms/frame —
+with the live hand-pan check still open.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (47 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (59 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, and pure-function

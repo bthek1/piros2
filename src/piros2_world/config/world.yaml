@@ -19,6 +19,14 @@ keypoint_detector:
     # detection flicker at the feature cap; 10 forgives a feature that
     # drops out for a few frames and returns.
     match_window: 10
+    # Rotation estimator gates (world 3D plan P0). Fewer strict
+    # consecutive-pair matches than this and the frame's rotation is
+    # not trusted (estimate returns None, orientation holds).
+    min_matched_pairs: 8
+    # Mean ray residual (radians) allowed after the reject-worst refits;
+    # ~0.03 rad ≈ 1.7° ≈ 27 px at fx≈907. Looser admits bad geometry,
+    # tighter starves the estimator in blurry motion.
+    max_residual_rad: 0.03
 
 dashboard:
   ros__parameters:

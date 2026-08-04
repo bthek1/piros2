@@ -61,10 +61,15 @@ and staleness banners — published as a single compressed topic. `just world`
 (the new `just run`) starts the camera on the Pi and opens the one-window
 view in `rqt_image_view`. Since **2026-08-04** the detector also matches
 descriptors against a 10-frame window — re-observed keypoints drawn green,
-new ones yellow, matched count on the dashboard — the first step toward the
+new ones yellow, matched rate on the dashboard — feeding the
 [world 3D plan](docs/plans/in-progress/world-3d-plan.md) (**in progress**):
 rotation-only camera orientation from those matches, plus the depth clouds
-accumulated into an RViz panorama.
+accumulated into an RViz panorama. Its **P0 landed the same day**: the
+detector unprojects strict frame-pair matches to bearing rays, solves the
+rotation by Kabsch, and publishes a running orientation on
+`/camera/orientation` (with a `~/reset` service, and usb_cam's duplicate
+frames CRC-skipped) — verified to hold within ~0.001° of identity across a
+static bag replay.
 
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.

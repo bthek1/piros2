@@ -20,7 +20,9 @@ works before moving on.
 > (green = re-observed, yellow = new). Now in progress:
 > [world-3d-plan.md](../plans/in-progress/world-3d-plan.md) — rotation-only
 > camera orientation from those matches plus an accumulated cloud panorama,
-> both in RViz.
+> both in RViz. Its P0 (Kabsch on bearing rays → `/camera/orientation`,
+> plus the repo's first service, `~/reset`) landed 2026-08-04, verified
+> against a static bag; the live hand-pan check and phases P1–P4 remain.
 
 ## 0. Environment — *done 2026-07-24*
 
