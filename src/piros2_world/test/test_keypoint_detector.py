@@ -45,6 +45,7 @@ def node():
     node = KeypointDetector()
     node.pub_image = CapturingPublisher()
     node.pub_count = CapturingPublisher()
+    node.pub_matched = CapturingPublisher()
     yield node
     node.destroy_node()
     rclpy.shutdown()
@@ -63,6 +64,42 @@ def make_frame(squares=8, square_px=20) -> CompressedImage:
     msg.header.frame_id = 'camera_optical_frame'
     msg.header.stamp.sec = 12345
     return msg
+
+
+def make_textured_frame(seed=7) -> CompressedImage:
+    """
+    Build a JPEG of seeded noise — every patch unique, by construction.
+
+    The chessboard is the right input for *detection* but the wrong one for
+    *matching*: its corners are deliberate lookalikes, and the matcher's
+    cross-check throws lookalikes away. Matching tests need texture where
+    each keypoint's neighbourhood is distinctive. Greyscale noise, like
+    the chessboard, so the overlay colours remain unmistakable — colour
+    noise would contain green-ish and yellow-ish pixels of its own.
+    """
+    rng = np.random.default_rng(seed)
+    img = cv2.cvtColor(rng.integers(0, 256, (240, 320), dtype=np.uint8),
+                       cv2.COLOR_GRAY2BGR)
+    msg = CompressedImage()
+    msg.format = 'jpeg'
+    msg.data = cv2.imencode('.jpg', img)[1].tobytes()
+    return msg
+
+
+def greenish(img):
+    """Mask of pixels only the matched-keypoint overlay can produce."""
+    return (img[:, :, 1].astype(int) - img[:, :, 2].astype(int)) > 100
+
+
+def yellowish(img):
+    """Mask of pixels only the new-keypoint overlay can produce."""
+    blue = img[:, :, 0].astype(int)
+    return ((img[:, :, 1].astype(int) - blue > 100)
+            & (img[:, :, 2].astype(int) - blue > 100))
+
+
+def decode(msg):
+    return cv2.imdecode(np.frombuffer(msg.data, np.uint8), cv2.IMREAD_COLOR)
 
 
 def test_keypoints_found_and_counted(node):
@@ -89,13 +126,11 @@ def test_annotated_image_round_trips(node):
                             cv2.IMREAD_COLOR)
     annotated = cv2.imdecode(np.frombuffer(out.data, np.uint8),
                              cv2.IMREAD_COLOR)
-    # Same geometry as the input, and visibly annotated: the overlay is
-    # drawn pure green, a colour a grey chessboard cannot produce even
-    # through JPEG artefacts.
+    # Same geometry as the input, and visibly annotated: with no previous
+    # frame every keypoint is new, so the overlay is pure yellow — a colour
+    # a grey chessboard cannot produce even through JPEG artefacts.
     assert annotated.shape == original.shape
-    greenish = (annotated[:, :, 1].astype(int)
-                - annotated[:, :, 2].astype(int)) > 100
-    assert greenish.any(), 'no keypoint overlay found in the output'
+    assert yellowish(annotated).any(), 'no keypoint overlay in the output'
 
 
 def test_count_matches_detection(node):
@@ -105,8 +140,10 @@ def test_count_matches_detection(node):
 
     img = cv2.imdecode(np.frombuffer(frame.data, np.uint8), cv2.IMREAD_COLOR)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    expected = len(node.orb.detect(gray, None))
-    assert node.pub_count.messages[0].data == expected
+    # detectAndCompute, like the node: compute drops keypoints whose
+    # descriptor patch falls off the edge, so detect() would over-count.
+    expected, _ = node.orb.detectAndCompute(gray, None)
+    assert node.pub_count.messages[0].data == len(expected)
 
 
 def test_header_is_preserved(node):
@@ -117,6 +154,40 @@ def test_header_is_preserved(node):
     assert out.header.stamp.sec == 12345
 
 
+def test_first_frame_has_nothing_to_match(node):
+    """No previous frame means zero matches and an all-yellow overlay."""
+    node.on_frame(make_textured_frame())
+
+    assert node.pub_matched.messages[0].data == 0
+    annotated = decode(node.pub_image.messages[0])
+    assert yellowish(annotated).any()
+    assert not greenish(annotated).any()
+
+
+def test_identical_frame_matches_and_draws_green(node):
+    """A repeated frame re-observes its keypoints: matched, drawn green."""
+    frame = make_textured_frame()
+    node.on_frame(frame)
+    node.on_frame(frame)
+
+    total = node.pub_count.messages[1].data
+    matched = node.pub_matched.messages[1].data
+    # Identical descriptors match at Hamming distance 0; on distinctive
+    # texture the cross-check keeps nearly all of them.
+    assert matched > total * 0.8
+    assert greenish(decode(node.pub_image.messages[1])).any()
+
+
+def test_unrelated_frame_matches_little(node):
+    """Different texture = different fingerprints: matching collapses."""
+    node.on_frame(make_textured_frame(seed=7))
+    node.on_frame(make_textured_frame(seed=8))
+
+    total = node.pub_count.messages[1].data
+    matched = node.pub_matched.messages[1].data
+    assert matched < total * 0.2
+
+
 def test_undecodable_frame_is_skipped(node):
     bad = CompressedImage()
     bad.format = 'jpeg'
@@ -125,3 +196,4 @@ def test_undecodable_frame_is_skipped(node):
 
     assert node.pub_image.messages == []
     assert node.pub_count.messages == []
+    assert node.pub_matched.messages == []

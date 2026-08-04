@@ -170,7 +170,10 @@ The world dashboard (done 2026-08-03, the whole
 [world plan](docs/plans/completed/world-plan.md) in one session):
 `src/piros2_world` — `keypoint_detector` (ORB on the compressed stream,
 500 keypoints in ~14 ms/frame, publishes `/keypoints/compressed` +
-`/keypoints/count` as a plain Int32) and `dashboard` (three latest-wins
+`/keypoints/count` as a plain Int32; since 2026-08-04 it also
+Hamming-matches descriptors against the previous frame — matched
+keypoints drawn green, new ones yellow, count on `/keypoints/matched` —
+the first step toward tracking camera pose) and `dashboard` (three latest-wins
 RELIABLE subscriptions — deliberately no message_filters sync, the
 contrast with `cloud_projector` is the lesson — composed by a 10 Hz
 wall-timer into a 2×2 mosaic + stats panel on
@@ -186,11 +189,13 @@ Throttling is left for the "reduce compute" todo.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (43 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (46 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, and pure-function
-`compose_grid`/`rates` tests for the dashboard) as of 2026-08-03.
+`compose_grid`/`rates` tests for the dashboard, and matching tests on
+seeded greyscale noise — a chessboard's lookalike corners defeat the
+matcher's cross-check by design) as of 2026-08-04.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow

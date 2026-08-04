@@ -88,6 +88,17 @@ suite green with the new package counted, style-clean.
 > Landed as planned. Measured on the dev box: 500 keypoints (the cap, on a
 > real scene) at ~14 ms/frame; against `bags/static1` the count topic ran
 > at 14.85 Hz vs the bag's own 14.9 fps — the detector keeps up exactly.
+>
+> **Extended 2026-08-04 with frame-to-frame matching** (the first item in
+> "out of scope" below, pulled in as the first step toward tracking camera
+> pose): `detectAndCompute` instead of `detect`, a `BFMatcher`
+> (`NORM_HAMMING`, cross-check) against the previous frame's descriptors,
+> and a `match_max_distance` parameter (Hamming bits, default 64). The
+> overlay now draws re-observed keypoints green and new ones yellow, and
+> `/keypoints/matched` (Int32) joins the count topic; the dashboard shows
+> both. Caveat: usb_cam's duplicate-frame republish (the ~60 msgs/s
+> finding above) means every other "previous frame" is pixel-identical, so
+> the matched count flatters tracking until that todo is fixed.
 
 `keypoint_detector.py`: subscribe `/image_raw/compressed` (RELIABLE),
 run OpenCV **ORB** per frame — chosen because it is fast enough for the
@@ -202,6 +213,9 @@ the status change; fix inbound links.
 
 - **Keypoint *matching* / tracking across frames** (the road to visual
   odometry) — a different project; this package only detects and counts.
+  *Overtaken 2026-08-04:* descriptor matching against the previous frame
+  landed in P1 (see the annotation there); pose estimation from the
+  matched pairs remains future work.
 - **A custom stats message type** — needs a rosidl `ament_cmake` package;
   Int32 + the dashboard's own arrival clocks cover today's stats.
 - **Point-cloud or RViz integration** — the cloud stays in `just cloud`'s

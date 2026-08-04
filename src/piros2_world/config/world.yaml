@@ -7,6 +7,10 @@ keypoint_detector:
     max_features: 500
     # JPEG re-encode quality for the annotated stream.
     jpeg_quality: 80
+    # Frame-to-frame matching: reject matches whose descriptor Hamming
+    # distance (out of 256 bits) exceeds this — a lookalike corner, not
+    # the same physical point. Lower = stricter, fewer green keypoints.
+    match_max_distance: 64
 
 dashboard:
   ros__parameters:

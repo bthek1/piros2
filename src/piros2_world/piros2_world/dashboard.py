@@ -113,6 +113,7 @@ class Dashboard(Node):
         self.totals = {name: 0 for name in PANELS}
         self.last_seen = {name: None for name in PANELS}
         self.keypoint_count = None
+        self.matched_count = None
 
         self.create_subscription(
             CompressedImage, 'image_raw/compressed',
@@ -125,6 +126,8 @@ class Dashboard(Node):
             lambda msg: self.on_image('keypoints', msg), BIG_FRAME_QOS)
         self.create_subscription(
             Int32, 'keypoints/count', self.on_count, BIG_FRAME_QOS)
+        self.create_subscription(
+            Int32, 'keypoints/matched', self.on_matched, BIG_FRAME_QOS)
 
         self.pub = self.create_publisher(
             CompressedImage, 'world/dashboard/compressed', BIG_FRAME_QOS)
@@ -151,6 +154,9 @@ class Dashboard(Node):
 
     def on_count(self, msg):
         self.keypoint_count = msg.data
+
+    def on_matched(self, msg):
+        self.matched_count = msg.data
 
     def on_timer(self):
         now = self.now_sec()
@@ -196,7 +202,10 @@ class Dashboard(Node):
                 (0, 255, 0) if fps[name] > 0 else (0, 0, 255)))
         current = ('-' if self.keypoint_count is None
                    else str(self.keypoint_count))
+        matched = ('-' if self.matched_count is None
+                   else str(self.matched_count))
         lines.append((f'keypoints in frame: {current}', (200, 200, 200)))
+        lines.append((f'matched to prev:    {matched}', (200, 200, 200)))
         for i, (text, colour) in enumerate(lines):
             cv2.putText(grid, text, (x0 + 16, y0 + 34 + 30 * i),
                         FONT, 0.6, colour, 2)
