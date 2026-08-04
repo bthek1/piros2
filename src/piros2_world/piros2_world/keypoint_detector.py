@@ -9,9 +9,15 @@ detector:
   and the dashboard exists to make that gap visible.
 - Descriptors turn detection into *tracking*: each keypoint gets a 256-bit
   binary fingerprint of its neighbourhood, and Hamming-matching against
-  the previous frame's fingerprints separates re-observed points (drawn
-  green) from new ones (drawn yellow). Those matched pairs are the raw
-  material of visual odometry — camera pose falls out of how they move.
+  recent fingerprints separates re-observed points (drawn green) from new
+  ones (drawn yellow). Those matched pairs are the raw material of visual
+  odometry — camera pose falls out of how they move.
+- Matching runs against the last `match_window` frames, not just the
+  previous one. Frame-to-frame matching loses ~25% of keypoints to
+  *detection churn*: rank #95 vs #105 at the feature cap is decided by
+  sensor noise, so features flicker out for a frame and back. A window
+  forgives the flicker — the toy version of what SLAM systems call
+  matching against a local map.
 - One frame can fan out into different *kinds* of topics: an image for
   humans and scalars for stats. The counts ride plain std_msgs/Int32 —
   a custom message would need its own rosidl ament_cmake package, which
@@ -24,6 +30,8 @@ Caveat for anyone reading the matched count as tracking quality: usb_cam's
 Runs on the dev box against the compressed stream already in flight; only
 JPEG ever crosses the Wi-Fi.
 """
+
+from collections import deque
 
 import cv2
 import numpy as np
@@ -58,6 +66,10 @@ class KeypointDetector(Node):
         # Hamming bits (out of 256) above which a match is rejected as a
         # lookalike rather than the same physical point.
         self.declare_parameter('match_max_distance', 64)
+        # How many recent frames' descriptors to match against. 1 = strict
+        # frame-to-frame; longer forgives detection flicker at the feature
+        # cap. Read once at startup — it sizes the deque.
+        self.declare_parameter('match_window', 10)
         self.orb = cv2.ORB_create(
             nfeatures=self.get_parameter('max_features').value)
         # Brute force is fine at <=500 features; NORM_HAMMING because ORB
@@ -65,7 +77,8 @@ class KeypointDetector(Node):
         # keeps only mutual best matches — one-to-one by construction,
         # which prunes most false pairings before any geometry exists.
         self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        self.prev_descriptors = None
+        self.descriptor_window = deque(
+            maxlen=self.get_parameter('match_window').value)
 
         self.sub = self.create_subscription(
             CompressedImage, 'image_raw/compressed',
@@ -96,17 +109,22 @@ class KeypointDetector(Node):
         keypoints, descriptors = self.orb.detectAndCompute(gray, None)
         keypoints = keypoints or ()
 
-        # Match against the previous frame by descriptor, then reject
+        # Match against the pooled descriptors of the window, then reject
         # matches whose Hamming distance says "similar-looking corner",
-        # not "same physical point". queryIdx indexes THIS frame's
-        # keypoints; trainIdx (unused until pose estimation) the previous.
+        # not "same physical point". The same physical feature appears in
+        # the pool once per recent frame; crossCheck still yields at most
+        # one match per current keypoint, which is all "re-observed?"
+        # needs. queryIdx indexes THIS frame's keypoints; trainIdx (unused
+        # until pose estimation) the pool.
         matched_idx = set()
-        if descriptors is not None and self.prev_descriptors is not None:
+        if descriptors is not None and self.descriptor_window:
+            train = np.vstack(self.descriptor_window)
             max_distance = self.get_parameter('match_max_distance').value
-            matches = self.matcher.match(descriptors, self.prev_descriptors)
+            matches = self.matcher.match(descriptors, train)
             matched_idx = {m.queryIdx for m in matches
                            if m.distance <= max_distance}
-        self.prev_descriptors = descriptors
+        if descriptors is not None:
+            self.descriptor_window.append(descriptors)
 
         matched = [kp for i, kp in enumerate(keypoints) if i in matched_idx]
         fresh = [kp for i, kp in enumerate(keypoints)
@@ -146,7 +164,7 @@ class KeypointDetector(Node):
         # prove nothing about the pipeline.
         done = self.get_clock().now()
         self.get_logger().info(
-            f'{len(keypoints)} keypoints ({len(matched)} matched to prev), '
+            f'{len(keypoints)} keypoints ({len(matched)} matched in window), '
             f'{(done - entry).nanoseconds / 1e6:.1f} ms/frame',
             throttle_duration_sec=5.0)
 

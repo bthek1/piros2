@@ -178,6 +178,24 @@ def test_identical_frame_matches_and_draws_green(node):
     assert greenish(decode(node.pub_image.messages[1])).any()
 
 
+def test_window_recovers_a_feature_that_skipped_a_frame(node):
+    """
+    A scene that skips a frame is still matched on return.
+
+    The reason the window exists: strict frame-to-frame matching would
+    find nothing here (the middle frame shares no texture), but the pool
+    still holds the first frame's descriptors when its scene returns.
+    """
+    scene = make_textured_frame(seed=7)
+    node.on_frame(scene)
+    node.on_frame(make_textured_frame(seed=8))
+    node.on_frame(scene)
+
+    total = node.pub_count.messages[2].data
+    matched = node.pub_matched.messages[2].data
+    assert matched > total * 0.8
+
+
 def test_unrelated_frame_matches_little(node):
     """Different texture = different fingerprints: matching collapses."""
     node.on_frame(make_textured_frame(seed=7))

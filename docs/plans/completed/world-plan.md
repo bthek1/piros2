@@ -92,8 +92,11 @@ suite green with the new package counted, style-clean.
 > **Extended 2026-08-04 with frame-to-frame matching** (the first item in
 > "out of scope" below, pulled in as the first step toward tracking camera
 > pose): `detectAndCompute` instead of `detect`, a `BFMatcher`
-> (`NORM_HAMMING`, cross-check) against the previous frame's descriptors,
-> and a `match_max_distance` parameter (Hamming bits, default 64). The
+> (`NORM_HAMMING`, cross-check) against the pooled descriptors of the
+> last `match_window` frames (default 10; strict frame-to-frame matching
+> measured ~75/100 — the loss is mostly detection flicker at the feature
+> cap, which the window forgives), and a `match_max_distance` parameter
+> (Hamming bits, default 64). The
 > overlay now draws re-observed keypoints green and new ones yellow, and
 > `/keypoints/matched` (Int32) joins the count topic; the dashboard shows
 > both. Caveat: usb_cam's duplicate-frame republish (the ~60 msgs/s

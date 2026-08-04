@@ -15,7 +15,12 @@ works before moving on.
 > optional accuracy upgrade. The world dashboard followed:
 > [world-plan.md](../plans/completed/world-plan.md) built `src/piros2_world`
 > (done 2026-08-03) — ORB keypoints plus every feed and its live stats
-> composed into one window (`just world`, the current `just run` target).
+> composed into one window (`just world`, the current `just run` target),
+> extended 2026-08-04 with descriptor matching across a 10-frame window
+> (green = re-observed, yellow = new). Now in progress:
+> [world-3d-plan.md](../plans/in-progress/world-3d-plan.md) — rotation-only
+> camera orientation from those matches plus an accumulated cloud panorama,
+> both in RViz.
 
 ## 0. Environment — *done 2026-07-24*
 

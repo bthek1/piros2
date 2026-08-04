@@ -169,10 +169,13 @@ sweep (`just record 45 sweep1`), `just map bags/sweep1`, tuning loop.
 The world dashboard (done 2026-08-03, the whole
 [world plan](docs/plans/completed/world-plan.md) in one session):
 `src/piros2_world` — `keypoint_detector` (ORB on the compressed stream,
-500 keypoints in ~14 ms/frame, publishes `/keypoints/compressed` +
+~14 ms/frame at the 500-feature cap — briefly cut to 100 on 2026-08-04,
+restored the same day once match colouring made the overlay legible —
+publishes `/keypoints/compressed` +
 `/keypoints/count` as a plain Int32; since 2026-08-04 it also
-Hamming-matches descriptors against the previous frame — matched
-keypoints drawn green, new ones yellow, count on `/keypoints/matched` —
+Hamming-matches descriptors against a 10-frame window — matched
+keypoints drawn green, new ones yellow, count on `/keypoints/matched`,
+shown as a percentage on the dashboard —
 the first step toward tracking camera pose) and `dashboard` (three latest-wins
 RELIABLE subscriptions — deliberately no message_filters sync, the
 contrast with `cloud_projector` is the lesson — composed by a 10 Hz
@@ -187,9 +190,17 @@ reads 42–60 msgs/s, not ~30 — all distinct frames; the C922 genuinely
 exceeds the old "30 fps ceiling" now (see the 720p60 bullet below).
 Throttling is left for the "reduce compute" todo.
 
+**In progress:** the [world 3D plan](docs/plans/in-progress/world-3d-plan.md)
+(authored 2026-08-04, not started) — rotation-only camera orientation from
+the keypoint matches (Kabsch on bearing rays; the essential matrix is
+degenerate under pure rotation) published as `odom → base_link`, then the
+depth clouds accumulated in that frame into an RViz panorama. Phases
+P0–P4; honest scope: orientation without position, drift accepted, reset
+services instead of loop closure.
+
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (46 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (47 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, and pure-function
@@ -403,6 +414,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/info/perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
 | [docs/plans/completed/perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
 | [docs/plans/completed/world-plan.md](docs/plans/completed/world-plan.md) | Build order for `src/piros2_world` — camera/depth/keypoint feeds + live stats in one dashboard window; done 2026-08-03, kept as the build log |
+| [docs/plans/in-progress/world-3d-plan.md](docs/plans/in-progress/world-3d-plan.md) | Camera orientation from keypoint matches + accumulated cloud map, both in RViz — phases P0–P4, not started |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

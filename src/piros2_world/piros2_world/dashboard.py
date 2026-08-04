@@ -202,10 +202,15 @@ class Dashboard(Node):
                 (0, 255, 0) if fps[name] > 0 else (0, 0, 255)))
         current = ('-' if self.keypoint_count is None
                    else str(self.keypoint_count))
-        matched = ('-' if self.matched_count is None
-                   else str(self.matched_count))
+        # Percentage is a display concern: the wire carries raw counts,
+        # and the two slots are latest-wins so a ratio computed here can
+        # briefly pair adjacent frames — fine for a human-facing gauge.
+        if self.keypoint_count and self.matched_count is not None:
+            matched = f'{100.0 * self.matched_count / self.keypoint_count:.0f}%'
+        else:
+            matched = '-'
         lines.append((f'keypoints in frame: {current}', (200, 200, 200)))
-        lines.append((f'matched to prev:    {matched}', (200, 200, 200)))
+        lines.append((f'matched (window):   {matched}', (200, 200, 200)))
         for i, (text, colour) in enumerate(lines):
             cv2.putText(grid, text, (x0 + 16, y0 + 34 + 30 * i),
                         FONT, 0.6, colour, 2)
