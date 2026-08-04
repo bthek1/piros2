@@ -52,6 +52,15 @@ room map:
   (odometry quality ~450–560). The hand-held sweep, the tuning loop, and
   therefore the map itself were not run — the plan records how to resume.
 
+After that, the [world plan](docs/plans/completed/world-plan.md) built
+`src/piros2_world` (**done 2026-08-03**): an ORB keypoint detector plus a
+dashboard node that composes the camera feed, the neural depth preview,
+and the annotated keypoints into one 2×2 mosaic with a live stats panel —
+per-stream rates measured against the node's own clock, cumulative counts,
+and staleness banners — published as a single compressed topic. `just world`
+(the new `just run`) starts the camera on the Pi and opens the one-window
+view in `rqt_image_view`.
+
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.
 
@@ -79,6 +88,7 @@ status.
 | [roadmap.md](docs/info/roadmap.md) | The learning path, milestone by milestone — concluded 2026-07-27 |
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
 | [perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order, phases P0–P4 — closed 2026-07-29, kept as the build log |
+| [world-plan.md](docs/plans/completed/world-plan.md) | Build order for `src/piros2_world`, the one-window dashboard — done 2026-08-03, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

@@ -144,7 +144,7 @@ cloud, verified live. `perception.launch.py` runs both dev-box nodes (the
 estimator via `ExecuteProcess` under the venv python — launch_ros `Node`
 would exec the system-shebang entry point); it deliberately does NOT
 include the camera launch, which would open `/dev/video0` locally —
-`just cloud` (aka `just run`) starts the camera over SSH and opens RViz.
+`just cloud` starts the camera over SSH and opens RViz.
 The RViz check passed 2026-07-28 (live cloud, correctly posed in
 `base_link`, human-confirmed) — which also closed milestone 5's deferred
 RViz checkbox. The one human step still open: the tape-measure scale check
@@ -166,11 +166,31 @@ K) is the plumbing bag. RTAB-Map's `delay=` figure is the bag's age, and its
 pairs — neither is a fault. If mapping resumes: exposure fix, hand-held
 sweep (`just record 45 sweep1`), `just map bags/sweep1`, tuning loop.
 
+The world dashboard (done 2026-08-03, the whole
+[world plan](docs/plans/completed/world-plan.md) in one session):
+`src/piros2_world` — `keypoint_detector` (ORB on the compressed stream,
+500 keypoints in ~14 ms/frame, publishes `/keypoints/compressed` +
+`/keypoints/count` as a plain Int32) and `dashboard` (three latest-wins
+RELIABLE subscriptions — deliberately no message_filters sync, the
+contrast with `cloud_projector` is the lesson — composed by a 10 Hz
+wall-timer into a 2×2 mosaic + stats panel on
+`/world/dashboard/compressed`). All rates and the STALE banners are
+measured against the dashboard's own receipt clock, never `header.stamp`
+(the 0.73 s camera fault). `world.launch.py` follows the
+perception-launch rules (venv `ExecuteProcess` for depth, no camera
+include); `just world` runs it live and is the new `just run` target.
+The live run surfaced a finding, verified 2026-08-04: the camera panel
+reads 42–60 msgs/s, not ~30 — all distinct frames; the C922 genuinely
+exceeds the old "30 fps ceiling" now (see the 720p60 bullet below).
+Throttling is left for the "reduce compute" todo.
+
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (26 tests; `piros2_vision` and `piros2_perception` carry real unit
-tests — the perception ones need no model weights: a fake ONNX session for
-the estimator, synthetic depth planes for the projector) as of 2026-07-29.
+is green (43 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+carry real unit tests — none need hardware or model weights: a fake ONNX
+session for the estimator, synthetic depth planes for the projector,
+synthetic chessboards for the keypoint detector, and pure-function
+`compose_grid`/`rates` tests for the dashboard) as of 2026-08-03.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -230,11 +250,16 @@ this convention and [docs/info/roadmap.md](docs/info/roadmap.md) tracks status.
   `exposure_dynamic_framerate` trades frame rate for exposure in indoor light.
   Fixing the exposure gives a measured 30.00 fps. Never quote a frame-rate figure
   without stating the exposure mode it was measured under.
-- **720p60 does not work**, despite being advertised and negotiating successfully.
-  It measures ~29.7 fps. 30 fps is the ceiling at every resolution.
-- **`usb_cam` needs `framerate:=60` to deliver the camera's real 30 fps.** It
-  grabs frames on a ROS timer at the requested rate, and at 30 that timer beats
-  against the camera's 33 ms cadence — measured 24.0 fps steady while raw V4L2
+- **The "30 fps ceiling" fell on 2026-08-04.** 720p60 measured ~29.7 fps in
+  July, but re-measured under the `just camera-reset` baseline it delivers
+  **42–60 distinct frames/s** at true 1280×720 MJPG (0 duplicate payloads in
+  634 messages), the rate tracking the auto-exposure time. What changed was
+  never isolated; the flip coincides with the baseline clearing the camera's
+  persistent control state. Budget every consumer for up to 60 fps —
+  [docs/info/hardware.md](docs/info/hardware.md#capture-modes).
+- **`usb_cam` needs `framerate:=60` to deliver the camera's real frame rate.**
+  It grabs frames on a ROS timer at the requested rate, and at 30 that timer
+  beats against the camera's cadence — measured 24.0 fps steady while raw V4L2
   capture delivered 30. It also mangles the by-id symlink; pass it through
   `readlink -f` — [docs/info/camera.md](docs/info/camera.md#running-it).
 - **usb_cam's exposure/focus ROS parameters are dead on this kernel** — it uses
@@ -372,7 +397,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/info/roadmap.md](docs/info/roadmap.md) | Milestones and their status |
 | [docs/info/perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
 | [docs/plans/completed/perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
-| [docs/plans/in-progress/world-plan.md](docs/plans/in-progress/world-plan.md) | Planned: `src/piros2_world` — camera/depth/keypoint feeds + live stats composed into one dashboard window |
+| [docs/plans/completed/world-plan.md](docs/plans/completed/world-plan.md) | Build order for `src/piros2_world` — camera/depth/keypoint feeds + live stats in one dashboard window; done 2026-08-03, kept as the build log |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

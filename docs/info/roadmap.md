@@ -12,7 +12,10 @@ works before moving on.
 > per-frame pipeline done and mapping stopped at plumbing-verified. The two
 > checkboxes below still open (RViz eyeball, calibration) carried over
 > there as phase P0; the RViz one closed 2026-07-28, calibration stayed an
-> optional accuracy upgrade.
+> optional accuracy upgrade. The world dashboard followed:
+> [world-plan.md](../plans/completed/world-plan.md) built `src/piros2_world`
+> (done 2026-08-03) — ORB keypoints plus every feed and its live stats
+> composed into one window (`just world`, the current `just run` target).
 
 ## 0. Environment — *done 2026-07-24*
 
@@ -142,7 +145,8 @@ off the executor thread, measuring latency end to end.
       0.0` — static transforms are latched on `/tf_static` and valid at any
       query time
 - [x] The camera frame visible in RViz — done 2026-07-28, via perception
-      P2's `just run` rather than the Image-display route: the TF tree and
+      P2's `just cloud` (the `just run` target at the time) rather than the
+      Image-display route: the TF tree and
       the live point cloud rendered correctly posed in `base_link`,
       human-confirmed. (Getting rviz2 to start at all took two display-stack
       fixes — [troubleshooting.md](troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries).)
@@ -188,7 +192,7 @@ messages keep their original stamps, and stamp-sensitive consumers need
 step that makes the rest of the project pleasant — you stop needing the hardware
 powered on to iterate.
 
-## 7. Perception: a 3D point-cloud map of the room — *chosen 2026-07-27, planned*
+## 7. Perception: a 3D point-cloud map of the room — *chosen 2026-07-27; built P0–P2, plan closed 2026-07-29*
 
 The pick landed on a perception system: camera → neural monocular depth →
 point clouds → a fused 3D map of the room. Design, stages (P0–P4) and honest

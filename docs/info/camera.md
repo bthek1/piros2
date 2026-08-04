@@ -2,8 +2,10 @@
 
 The camera is a Logitech C922 Pro Stream on `/dev/video0`. Its capture modes are
 listed in [hardware.md](hardware.md#capture-modes); the short version is **MJPG
-1280×720 @ 30 fps** as the default. 30 fps is the working ceiling at every
-resolution — the advertised 720p60 mode negotiates but measures ~29.7 fps.
+1280×720** as the default. The long-standing "30 fps ceiling" was overturned on
+re-measurement (2026-08-04): 720p60 delivers 42–60 *distinct* frames/s under
+the camera-reset baseline, the rate tracking the auto-exposure time —
+[hardware.md](hardware.md#capture-modes) has the numbers and caveats.
 
 **Confirmed working (2026-07-23):** a 1280×720 MJPG frame captured over SSH decodes
 to a correct, sharp, well-exposed image, and sustained capture holds exactly
@@ -109,18 +111,21 @@ Three things there are load-bearing, all found the hard way (2026-07-24):
 - **`readlink -f` around the by-id symlink.** `usb_cam` naively splices the
   symlink's relative target into `/dev/../../video0` and then rejects it as
   invalid. Resolve the stable name to the real device before passing it.
-- **`framerate:=60.0`, deliberately above the camera's real 30.** `usb_cam`
+- **`framerate:=60.0`, so the poll never becomes the bottleneck.** `usb_cam`
   polls on a ROS timer at the requested rate, and at 30 the two 33 ms clocks
   (poll timer vs frame cadence) beat against each other: measured **24.0 fps**
   steady, with the camera provably delivering 30 to a raw V4L2 capture at the
   same moment. Polling at 60 (16 ms) catches every real frame: measured
-  **29.72 fps** at 720p MJPG, manual exposure 150. The camera still runs at
-  its ~30 fps ceiling — the parameter only changes how often the node looks.
+  **29.72 fps** at 720p MJPG, manual exposure 150 (2026-07-24). *Since the
+  2026-08-04 re-measurement the camera itself delivers 42–60 fps in this mode
+  (see the header note), so the parameter is no longer "above the real rate" —
+  it is the real rate's ceiling, and every consumer sees whatever the
+  auto-exposure allows.*
 
 Check it from the dev box:
 
 ```bash
-ros2 topic hz /image_raw           # should sit near 30
+ros2 topic hz /image_raw           # 30–60 depending on exposure time (2026-08-04)
 ros2 topic bw /image_raw/compressed
 ros2 run rqt_image_view rqt_image_view
 ```

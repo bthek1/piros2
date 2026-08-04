@@ -241,14 +241,20 @@ on-board, so USB bandwidth stops being the limit:
 Measured with a fixed manual exposure — see [the frame-rate note](#frame-rate-and-auto-exposure)
 below, which matters more in practice than any of these numbers.
 
-**720p60 does not actually deliver 60 fps.** The mode is advertised, and
-`v4l2-ctl --set-parm=60` reports "Frame rate set to 60.000 fps" with `--get-parm`
-confirming `60/1` — but sustained capture measures ~29.7 fps. The cause has not
-been isolated. The camera enumerates on a USB 2.0 bus (`Bus 03`, 480 Mbit/s) while
-the Pi 5's 5 Gbit/s bus (`Bus 04`) has a free port, so moving it to a blue USB 3
-port is the obvious thing to try — though the C922 is itself a UVC 1.00 USB 2.0
-device, so this may change nothing. Treat 30 fps as the working ceiling at every
-resolution until measured otherwise.
+**720p60 delivers real frames above 30 fps — measured otherwise on 2026-08-04.**
+The July measurements said the mode negotiates (`--get-parm` confirms `60/1`)
+but sustains only ~29.7 fps, and "30 fps ceiling" became project lore. A
+re-measurement through the full usb_cam → `/image_raw/compressed` pipeline
+(auto_exposure=3, `exposure_dynamic_framerate=0` — the `just camera-reset`
+baseline of 2026-08-01) found **42.05 msgs/s with an auto exposure of 25 ms,
+and 59.7 msgs/s the previous evening under shorter exposure** — every frame
+distinct (0 identical consecutive payloads or stamps in 634 messages) at a
+verified 1280×720 MJPG. The rate tracks the auto-exposure time, capped at 60.
+What changed since July was never isolated, but the flip coincides with the
+camera-reset baseline clearing the camera's persistent control state. Two
+consequences: downstream consumers must budget for **up to 60 fps, not 30**,
+and no frame-rate figure means anything without the exposure state it was
+measured under.
 
 **`YUYV` (raw 4:2:2)** — uncompressed. Offers larger frames (up to 2304×1536) but
 USB 2.0 bandwidth caps the frame rate hard; 640×480 tops out at 30 fps and the

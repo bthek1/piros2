@@ -88,14 +88,14 @@ camera-reset:
 
 # Points at whatever the project's newest runnable thing is — retarget this
 # as phases land. Args pass through to the underlying recipe.
-# Run the latest project (currently `just cloud` — 3D point cloud, perception P2)
+# Run the latest project (currently `just world` — the composed dashboard)
 [group('test')]
-run *args: (cloud args)
+run *args: (world args)
 
 # Camera on the Pi + the perception nodes here (perception.launch.py) +
 # RViz on the cloud. Closing RViz stops everything. Depth runs on the GPU
 # since 2026-07-30 (~13 fps in-node); the cloud updates at that pace —
-# slower than the camera's 30 fps is the pipeline's pace, not a fault.
+# slower than the camera's 30–60 fps is the pipeline's pace, not a fault.
 #
 # RViz env pin: QT_QPA_PLATFORM=xcb is permanent (OGRE renders via GLX,
 # which is X11-only — a Wayland Qt window can never host it). The mesa
@@ -225,6 +225,46 @@ depth *args:
         sleep 1
     done
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /depth/preview/compressed'
+
+# ORB is cheap enough to eat the full camera rate on CPU (~14 ms/frame) — the
+# deliberate contrast with the ~13 fps neural depth node. The detector
+# subscribes the compressed stream directly, so nothing raw crosses the
+# Wi-Fi and no republisher is needed.
+# Camera on the Pi + ORB keypoint detector here + viewer; closing viewer stops all
+[group('test')]
+keypoints *args:
+    #!/usr/bin/env bash
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    cam_pid=$!
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 run piros2_world keypoint_detector --ros-args --params-file src/piros2_world/config/world.yaml' &
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    # warm-up + health check — see `cloud` for the why
+    for _ in $(seq 6); do
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        sleep 1
+    done
+    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /keypoints/compressed'
+
+# Every feed in one window: camera on the Pi + world.launch.py here (depth
+# estimator under the perception venv, keypoint detector, dashboard) + a
+# stock viewer on the composed mosaic. The stats panel measures arrivals
+# against the dashboard's own clock — expect camera 30–60/s (exposure-
+# dependent since the 2026-08-04 re-measurement) and depth ~13/s;
+# that gap being visible is the point (and feeds the "reduce compute" todo).
+# Camera on the Pi + keypoints + depth + dashboard here + one viewer window
+[group('test')]
+world *args:
+    #!/usr/bin/env bash
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    cam_pid=$!
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world world.launch.py' &
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world/[d]ashboard" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    # warm-up + health check — see `cloud` for the why
+    for _ in $(seq 8); do
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        sleep 1
+    done
+    bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /world/dashboard/compressed'
 
 # No Pi needed: plays a bag ONCE (looping would teleport the odometry back
 # to the start pose and wreck the map), decompresses it to /image_raw, and

@@ -1,0 +1,25 @@
+# Parameters for the world dashboard nodes. Keyed by node name — a mismatch
+# silently applies nothing (same trap as camera.yaml).
+keypoint_detector:
+  ros__parameters:
+    # ORB feature cap: bounds per-frame cost. 500 is comfortable at 30 fps
+    # on the dev box CPU; raise it if the overlay looks sparse.
+    max_features: 500
+    # JPEG re-encode quality for the annotated stream.
+    jpeg_quality: 80
+
+dashboard:
+  ros__parameters:
+    # Each mosaic cell: 640x360 keeps the full 2x2 dashboard at 1280x720.
+    cell_width: 640
+    cell_height: 360
+    # Rates average over this many seconds; short = jumpy, long = slow to
+    # show a stall.
+    rate_window: 5.0
+    # A panel whose newest frame (by receipt time — never header.stamp, the
+    # camera's stamps lag ~0.73 s by fault) is older than this gets a STALE
+    # banner.
+    stale_after: 2.0
+    # Mosaic refresh rate: decoupled from every input rate on purpose.
+    publish_rate: 10.0
+    jpeg_quality: 80

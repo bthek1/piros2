@@ -1,12 +1,12 @@
 # World dashboard build plan — every feed in one window
 
-> **Working document.** Build order for `src/piros2_world`: a package that
+> **Completed 2026-08-03.** Build order for `src/piros2_world`: a package that
 > composes the camera feed, the neural depth estimate, and a new keypoint
 > detector into a single dashboard image with live statistics — frames/sec
 > per stream, keypoints in the current frame, cumulative counts — viewed in
 > one `rqt_image_view` window. Stable phases, each ending with something you
-> can run and check before the next starts. Nothing below exists yet; ✓ marks
-> land here as phases complete.
+> can run and check before the next starts. All four phases landed in one
+> session on 2026-08-03; kept as the build log.
 
 ## Why a composed image, not a window full of widgets
 
@@ -75,7 +75,7 @@ form), package added to `.vscode/tasks.json`'s picker, recipes added to the
 justfile as they appear, parameters in `config/world.yaml` rather than
 `--ros-args` strings.
 
-## P0 — Scaffold
+## P0 — Scaffold ✓ (2026-08-03)
 
 Create the package skeleton with no nodes yet: `package.xml`, `setup.py`,
 empty module, anchored linter tests, `.vscode/tasks.json` picker entry.
@@ -83,7 +83,11 @@ empty module, anchored linter tests, `.vscode/tasks.json` picker entry.
 **Runnable check:** `colcon build --symlink-install` then `just test` —
 suite green with the new package counted, style-clean.
 
-## P1 — Keypoint detector
+## P1 — Keypoint detector ✓ (2026-08-03)
+
+> Landed as planned. Measured on the dev box: 500 keypoints (the cap, on a
+> real scene) at ~14 ms/frame; against `bags/static1` the count topic ran
+> at 14.85 Hz vs the bag's own 14.9 fps — the detector keeps up exactly.
 
 `keypoint_detector.py`: subscribe `/image_raw/compressed` (RELIABLE),
 run OpenCV **ORB** per frame — chosen because it is fast enough for the
@@ -114,7 +118,14 @@ node running; annotated corners visible in `rqt_image_view
 rate. Add a `just keypoints` recipe (camera over SSH + node + viewer,
 `pkill -f` cleanup — never `kill %N`).
 
-## P2 — Dashboard node
+## P2 — Dashboard node ✓ (2026-08-03)
+
+> Landed as planned, plus a STALE banner unit test. Verified against
+> `bags/static1` with the depth estimator and P1 node running: the mosaic
+> published at a measured 10.1 Hz, all three panels live, stats reading
+> camera 14.8/s, depth 14.5/s, keypoints 14.8/s (the bag's own rate is
+> 14.9 fps — on a bag the GPU depth node keeps up; the ~13 fps gap only
+> appears against the live 30 fps camera).
 
 `dashboard.py`: three RELIABLE subscriptions, latest-wins with no
 synchroniser — a dashboard wants "the newest of each", and the streams run
@@ -155,7 +166,17 @@ one `rqt_image_view /world/dashboard/compressed` window shows all four
 panels, rates plausible (camera ≈ bag rate, depth ≈ 13/sec on GPU),
 staleness marker appears when the bag ends. Unit tests green.
 
-## P3 — Launch file, recipe, live run
+## P3 — Launch file, recipe, live run ✓ (2026-08-03)
+
+> Landed as planned; `just run` now points at `just world`. The live run
+> measured the dashboard at 10.1 Hz with depth at ~14/s (GPU) — and the
+> camera panel at **59.7 msgs/s, not ~30**. The duplicate-frame hypothesis
+> written here on the day was tested and refuted on 2026-08-04: every
+> payload is distinct, and the C922 really does deliver 42–60 fps at 720p60
+> under the camera-reset baseline, tracking auto-exposure — the old "30 fps
+> ceiling" fell ([hardware.md](../../info/hardware.md#capture-modes)). The
+> stats panel making that visible is the dashboard doing its job; whether to
+> throttle belongs to the standing "reduce compute" todo, not this plan.
 
 `launch/world.launch.py`, following `perception.launch.py`'s rules: the
 depth estimator via `ExecuteProcess` under the venv interpreter (a
