@@ -1,5 +1,18 @@
 # World 3D build plan — orientation and a cloud map in RViz
 
+> **Completed 2026-08-05.** All four build phases landed 2026-08-04 (P0
+> and P1 live-verified the same day), the P2/P3 live sweep passed
+> 2026-08-05, and P4's bookkeeping moved this file to `completed/`.
+> Kept as the build log; per-phase annotations record what actually
+> happened.
+>
+> *Later the same day, the
+> [world combined plan](world-combined-plan.md) merged this plan's
+> session into `just world`: `world3d.launch.py`, `world.rviz` and the
+> `just world3d` recipe named below no longer exist — their node set
+> lives in `world.launch.py`, their displays in `orient.rviz` and
+> `map.rviz`. References below are historical.*
+
 > Two 3D displays on top of `src/piros2_world`: a live **camera orientation**
 > estimated from the keypoint matches (start at identity; rotate the camera
 > and the displayed axes rotate with it), and a **cloud map** — the depth
@@ -97,7 +110,7 @@ already holds the previous frame's keypoints and descriptors, and shipping
 matched pixel pairs between nodes would need a custom rosidl message — the
 same trade that put the counts on plain Int32.
 
-## P0 — Rotation from matched rays ✓ (2026-08-04, live pan check open)
+## P0 — Rotation from matched rays ✓ (2026-08-04; live pan check passed same day via `just orient`)
 
 > Landed as planned, in `keypoint_detector.py`: CRC dup-skip (also part
 > of the "reduce compute" todo), cached K with the zero-K bag guard, the
@@ -140,7 +153,19 @@ duplicate frame publishes no pose.
 still, sweeping smoothly as it is panned by hand ~90° and roughly returning
 when panned back (drift visible and expected). Reset service re-zeros it.
 
-## P1 — Orientation in 3D: TF + RViz axes
+## P1 — Orientation in 3D: TF + RViz axes ✓ (2026-08-04; live RViz check passed same day — axes track the hand-held camera)
+
+> Landed as planned: a `TransformBroadcaster` in the same node sends the
+> pose's quaternion as `odom → base_link` with zero translation (same
+> own-clock stamp — one estimate, two representations),
+> `config/world.rviz` (fixed frame `odom`, TF axes, the
+> `/keypoints/compressed` panel — the compressed-topic Image display
+> copied from the verified `perception.rviz`), and `just orient` on the
+> `just cloud` recipe pattern (SSH camera + warm-up health check +
+> `pkill -f` cleanup + the `QT_QPA_PLATFORM=xcb` pin). Verified over the
+> `bags/static1` replay: `tf2_echo odom base_link` resolved 11/11
+> lookups, translation zero, rotation identity. Suite at 60 green.
+> Remaining: the RViz axes check below (needs a hand on the camera).
 
 - Broadcast the same rotation as an `odom → base_link` transform
   (`tf2_ros.TransformBroadcaster`, same node).
@@ -154,7 +179,15 @@ when panned back (drift visible and expected). Reset service re-zeros it.
 the default orientation and *tilt and pan live* as the camera is moved by
 hand. `ros2 run tf2_ros tf2_echo odom camera_optical_frame` agrees.
 
-## P2 — The live cloud, oriented
+## P2 — The live cloud, oriented ✓ (2026-08-04; live sweep check passed 2026-08-05)
+
+> Landed as planned: `world3d.launch.py` (detector + venv depth
+> estimator + cloud projector, camera stays with the Pi), `/points` in
+> `world.rviz`, `just world3d` on the same recipe skeleton as `orient`.
+> Bag plumbing check: over the `bags/static1` replay all three nodes ran
+> together — `/points` at 14.9 Hz (the bag's own rate; the GPU estimator
+> keeps up), 41–46k points per cloud in ~6 ms, `odom → base_link`
+> resolving identity throughout. Remaining: the live pan check below.
 
 - `launch/world3d.launch.py`: detector + depth estimator (venv
   `ExecuteProcess`) + `cloud_projector`, no camera include (ownership
@@ -173,7 +206,23 @@ the RViz world instead of staying glued to the view axis, and the wall that
 was ahead stays roughly where it was painted when the camera looks away and
 back (modulo drift).
 
-## P3 — The cloud map: accumulate
+## P3 — The cloud map: accumulate ✓ (2026-08-04; live sweep check passed 2026-08-05 — the panorama widens and persists)
+
+> Remaining slow-pan check passed 2026-08-05: the live cloud swings
+> through the RViz world, the map widens with the pan and persists when
+> the camera looks away and back.
+>
+> Landed as planned: `cloud_mapper.py` — the repo's first TF *consumer*
+> (Buffer + TransformListener, latest-only lookups per the stamp
+> constraint), a pure `VoxelMap` class holding the accumulation
+> semantics, `~/clear`, and all four params in `world.yaml`. The wire
+> format is imported from `cloud_projector` (`POINT_DTYPE`) rather than
+> duplicated — the contract can't drift. Joined `world3d.launch.py` and
+> `world.rviz` (`/world/map_points`); 9 unit tests (suite at 69).
+> Bag check matched the phase's own prediction: static replay → map
+> republishes at 0.999 Hz and converges to 42k voxels against ~45k-point
+> live clouds — camera still, map ≈ live cloud. Remaining: the slow-pan
+> widening check below.
 
 `cloud_mapper.py`, the second requested display:
 
@@ -198,7 +247,7 @@ Joins `world3d.launch.py`; `world.rviz` gains `/world/map_points`.
 a slow 90° pan *widens* it — the painted region persists after the camera
 looks away. `just world3d`, one command.
 
-## P4 — Bookkeeping
+## P4 — Bookkeeping ✓ (2026-08-05)
 
 Docs map + current-state notes in `CLAUDE.md` and `README.md`, a line in
 [roadmap.md](../../info/roadmap.md), `.vscode/tasks.json` already knows the

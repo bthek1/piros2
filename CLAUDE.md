@@ -190,24 +190,43 @@ reads 42–60 msgs/s, not ~30 — all distinct frames; the C922 genuinely
 exceeds the old "30 fps ceiling" now (see the 720p60 bullet below).
 Throttling is left for the "reduce compute" todo.
 
-**In progress:** the [world 3D plan](docs/plans/in-progress/world-3d-plan.md)
-(authored 2026-08-04) — rotation-only camera orientation from
-the keypoint matches (Kabsch on bearing rays; the essential matrix is
-degenerate under pure rotation) published as `odom → base_link`, then the
-depth clouds accumulated in that frame into an RViz panorama. Phases
-P0–P4; honest scope: orientation without position, drift accepted, reset
-services instead of loop closure. **P0 done 2026-08-04**: the detector
-estimates per-frame rotation from strict consecutive-pair matches,
-composes it, and publishes `/camera/orientation` (PoseStamped, base_link
-axes via the canonical optical conjugation) plus the repo's first
-service (`~/reset`); byte-identical usb_cam duplicates are CRC-skipped
-whole (part of the "reduce compute" todo). Verified against
-`bags/static1` — 196 poses within ~0.001° of identity, 19.8 ms/frame —
-with the live hand-pan check still open.
+The world 3D build (done 2026-08-05, the whole
+[world 3D plan](docs/plans/completed/world-3d-plan.md) P0–P4 across two
+days; per-phase build log in the plan): rotation-only camera orientation
+from the keypoint matches, and the depth clouds accumulated into an RViz
+panorama. The detector estimates per-frame rotation from strict
+consecutive-pair matches (Kabsch on bearing rays — the essential matrix
+is degenerate under pure rotation), composes it, and publishes
+`/camera/orientation` plus `odom → base_link` TF in base_link axes via
+the canonical optical conjugation; byte-identical usb_cam duplicates are
+CRC-skipped whole. `cloud_mapper` — the repo's first TF consumer,
+latest-only lookups per the stamp fault — accumulates `/points` into a
+latest-wins voxel dict (5 cm, hard-capped, `max_range` 6 m) and
+republishes `/world/map_points` at 1 Hz in `odom`. The repo's first
+services: `/keypoint_detector/reset` and `/cloud_mapper/clear` — the
+drift strategy in lieu of loop closure; honest scope is orientation
+without position (a panorama, not a walkable map — RTAB-Map keeps that
+job). `just orient` (axes only) runs the lightweight session; the full
+stack runs under `just world` since the combined-plan merge (below). All
+phases were bag-verified against `bags/static1` (orientation within
+~0.001° of identity on a static scene, map ≈ live cloud) and
+live-verified by hand pan/sweep.
+
+The combined session (done 2026-08-05, the
+[world combined plan](docs/plans/completed/world-combined-plan.md) in
+one sitting): `world.launch.py` is now the whole dev-box stack — all
+five nodes — and `just world` (still the `just run` target) opens three
+windows: the dashboard mosaic (the session anchor; closing it tears
+everything down), the orientation RViz graph (`orient.rviz`: TF axes +
+live cloud + keypoint panel) and the map RViz graph (`map.rviz`: the
+panorama alone). The redundant `world3d.launch.py`, `world.rviz` and
+`just world3d` recipe were deleted after the merged session was proven
+live — no new computation anywhere, just fewer overlapping sessions.
+`just orient` survives as the lightweight no-GPU session.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (59 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (69 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, and pure-function
@@ -421,7 +440,8 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/info/perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map, what mono can honestly do |
 | [docs/plans/completed/perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order — phases P0–P4, the `src/piros2_perception` package, per-phase proofs |
 | [docs/plans/completed/world-plan.md](docs/plans/completed/world-plan.md) | Build order for `src/piros2_world` — camera/depth/keypoint feeds + live stats in one dashboard window; done 2026-08-03, kept as the build log |
-| [docs/plans/in-progress/world-3d-plan.md](docs/plans/in-progress/world-3d-plan.md) | Camera orientation from keypoint matches + accumulated cloud map, both in RViz — phases P0–P4, not started |
+| [docs/plans/completed/world-3d-plan.md](docs/plans/completed/world-3d-plan.md) | Camera orientation from keypoint matches + accumulated cloud map, both in RViz — done 2026-08-05, kept as the build log |
+| [docs/plans/completed/world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

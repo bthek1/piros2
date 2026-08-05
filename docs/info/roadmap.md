@@ -17,12 +17,17 @@ works before moving on.
 > (done 2026-08-03) — ORB keypoints plus every feed and its live stats
 > composed into one window (`just world`, the current `just run` target),
 > extended 2026-08-04 with descriptor matching across a 10-frame window
-> (green = re-observed, yellow = new). Now in progress:
-> [world-3d-plan.md](../plans/in-progress/world-3d-plan.md) — rotation-only
-> camera orientation from those matches plus an accumulated cloud panorama,
-> both in RViz. Its P0 (Kabsch on bearing rays → `/camera/orientation`,
-> plus the repo's first service, `~/reset`) landed 2026-08-04, verified
-> against a static bag; the live hand-pan check and phases P1–P4 remain.
+> (green = re-observed, yellow = new). The world 3D build followed:
+> [world-3d-plan.md](../plans/completed/world-3d-plan.md) (done
+> 2026-08-05) — rotation-only camera orientation from those matches
+> (Kabsch on bearing rays → `/camera/orientation` + `odom → base_link`
+> TF) plus the depth clouds accumulated into a voxel panorama on
+> `/world/map_points`; every phase bag- and live-verified. The combined
+> plan ([world-combined-plan.md](../plans/completed/world-combined-plan.md),
+> done 2026-08-05) then merged everything into `world.launch.py`: one
+> command, `just world`, opens the dashboard mosaic plus separate
+> orientation and map RViz graphs (`just orient` stays as the
+> lightweight session; `just world3d` was deleted as redundant).
 
 ## 0. Environment — *done 2026-07-24*
 

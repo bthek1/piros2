@@ -47,6 +47,16 @@ class CapturingPublisher:
         self.messages.append(msg)
 
 
+class CapturingBroadcaster:
+    """Stands in for tf2's TransformBroadcaster; keeps sent transforms."""
+
+    def __init__(self):
+        self.transforms = []
+
+    def sendTransform(self, transform):
+        self.transforms.append(transform)
+
+
 @pytest.fixture
 def node():
     rclpy.init()
@@ -55,6 +65,7 @@ def node():
     node.pub_count = CapturingPublisher()
     node.pub_matched = CapturingPublisher()
     node.pub_pose = CapturingPublisher()
+    node.tf_broadcaster = CapturingBroadcaster()
     yield node
     node.destroy_node()
     rclpy.shutdown()
@@ -383,6 +394,24 @@ def test_in_plane_rotation_is_estimated(node):
     axis = np.array([q.x, q.y, q.z])
     assert abs(axis[0]) > 0.9 * np.linalg.norm(axis)
     assert node.pub_pose.messages[1].header.frame_id == 'odom'
+
+
+def test_orientation_is_also_broadcast_as_tf(node):
+    """The odom → base_link TF mirrors the pose: one estimate, twice."""
+    node.on_camera_info(make_camera_info())
+    scene = make_scene()
+    node.on_frame(encode(scene))
+    warp = cv2.getRotationMatrix2D((320.0, 240.0), 4.0, 1.0)
+    node.on_frame(encode(cv2.warpAffine(scene, warp, (640, 480))))
+
+    assert len(node.tf_broadcaster.transforms) == 2
+    tf = node.tf_broadcaster.transforms[1]
+    assert tf.header.frame_id == 'odom'
+    assert tf.child_frame_id == 'base_link'
+    # Rotation-only odometry: translation must stay exactly zero.
+    assert (tf.transform.translation.x, tf.transform.translation.y,
+            tf.transform.translation.z) == (0.0, 0.0, 0.0)
+    assert tf.transform.rotation == node.pub_pose.messages[1].pose.orientation
 
 
 def test_reset_service_rezeros_orientation(node):

@@ -31,6 +31,7 @@ setup(
         'console_scripts': [
             'keypoint_detector = piros2_world.keypoint_detector:main',
             'dashboard = piros2_world.dashboard:main',
+            'cloud_mapper = piros2_world.cloud_mapper:main',
         ],
     },
 )

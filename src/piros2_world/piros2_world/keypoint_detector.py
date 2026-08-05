@@ -25,7 +25,7 @@ a rotation-only visual odometer. The concepts, in the order they arrived:
   degenerate under zero baseline, and rays through K need no depth at all.
   Per-frame rotations compose into a running orientation on
   /camera/orientation — a compass built from pixels; it drifts, so a
-  ~/reset service re-zeros it (docs/plans/in-progress/world-3d-plan.md).
+  ~/reset service re-zeros it (docs/plans/completed/world-3d-plan.md).
 - One frame can fan out into different *kinds* of topics: an image for
   humans, scalars for stats, a pose for TF-to-be. The counts ride plain
   std_msgs/Int32 — a custom message would need its own rosidl ament_cmake
@@ -44,7 +44,7 @@ from collections import deque
 import zlib
 
 import cv2
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped
 import numpy as np
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -53,6 +53,7 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, CompressedImage
 from std_msgs.msg import Int32
 from std_srvs.srv import Trigger
+from tf2_ros import TransformBroadcaster
 
 # RELIABLE for megabyte-class messages, same reasoning as piros2_vision's
 # edge detector: BEST_EFFORT delivers zero frames once a message fragments
@@ -223,6 +224,12 @@ class KeypointDetector(Node):
             Int32, 'keypoints/matched', BIG_FRAME_QOS)
         self.pub_pose = self.create_publisher(
             PoseStamped, 'camera/orientation', BIG_FRAME_QOS)
+        # A TransformBroadcaster is just a publisher on /tf; tf2 consumers
+        # (RViz included) assemble the tree from everyone's contributions.
+        # This node owns odom → base_link — REP-105's slot for drifting
+        # local odometry — while the static base_link → camera chain stays
+        # with camera.launch.py; neither fights the other.
+        self.tf_broadcaster = TransformBroadcaster(self)
         # The repo's first service: re-zero the orientation without
         # restarting the node — the drift strategy, in lieu of loop
         # closure. '~/reset' resolves to /keypoint_detector/reset.
@@ -386,6 +393,17 @@ class KeypointDetector(Node):
         pose.pose.orientation.z = float(z)
         pose.pose.orientation.w = float(w)
         self.pub_pose.publish(pose)
+
+        # The same rotation again as TF (translation stays zero — this
+        # odometer measures orientation only). One estimate, two
+        # representations: the topic for programs, the transform for the
+        # tf2 tree RViz renders.
+        tf = TransformStamped()
+        tf.header.stamp = pose.header.stamp
+        tf.header.frame_id = 'odom'
+        tf.child_frame_id = 'base_link'
+        tf.transform.rotation = pose.pose.orientation
+        self.tf_broadcaster.sendTransform(tf)
 
 
 def main():

@@ -10,7 +10,13 @@
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros_py</depend>
   <depend>cv_bridge</depend>
+  <!-- cloud_mapper imports the projector's POINT_DTYPE: the wire format
+       is a contract, and importing it makes drift impossible. -->
+  <exec_depend>piros2_perception</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>ros2launch</exec_depend>

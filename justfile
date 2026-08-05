@@ -245,26 +245,50 @@ keypoints *args:
     done
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /keypoints/compressed'
 
-# Every feed in one window: camera on the Pi + world.launch.py here (depth
-# estimator under the perception venv, keypoint detector, dashboard) + a
-# stock viewer on the composed mosaic. The stats panel measures arrivals
-# against the dashboard's own clock — expect camera 30–60/s (exposure-
-# dependent since the 2026-08-04 re-measurement) and depth ~13/s;
-# that gap being visible is the point (and feeds the "reduce compute" todo).
-# Camera on the Pi + keypoints + depth + dashboard here + one viewer window
+# The whole world stack, three windows (world combined plan): camera on
+# the Pi + world.launch.py here (depth estimator under the perception
+# venv, keypoint detector, dashboard, cloud projector, cloud mapper) +
+# the dashboard mosaic in rqt_image_view, the orientation graph (RViz:
+# TF axes + live cloud) and the map graph (RViz: the accumulated
+# panorama) — pan the camera and the axes/cloud turn while the map
+# paints. /keypoint_detector/reset re-zeros the orientation,
+# /cloud_mapper/clear the map. The mosaic window is the session anchor:
+# closing IT stops everything (closing an RViz window just loses that
+# view).
 [group('test')]
 world *args:
     #!/usr/bin/env bash
     ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
     cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world world.launch.py' &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world/[d]ashboard" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world/[d]ashboard" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world/[c]loud_mapper" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world/config" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 8); do
         kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world/config/orient.rviz' &
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world/config/map.rviz' &
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /world/dashboard/compressed'
+
+# The orientation compass in 3D (world 3D plan P1): camera on the Pi +
+# keypoint detector here (it estimates rotation and broadcasts
+# odom → base_link) + RViz with fixed frame odom — the axes tilt and pan
+# live as the camera is moved by hand; /keypoint_detector/reset re-zeros.
+# Closing RViz stops everything.
+[group('test')]
+orient *args:
+    #!/usr/bin/env bash
+    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    cam_pid=$!
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 run piros2_world keypoint_detector --ros-args --params-file src/piros2_world/config/world.yaml' &
+    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    # warm-up + health check — see `cloud` for the why
+    for _ in $(seq 8); do
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        sleep 1
+    done
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world/config/orient.rviz'
 
 # No Pi needed: plays a bag ONCE (looping would teleport the odometry back
 # to the start pose and wreck the map), decompresses it to /image_raw, and

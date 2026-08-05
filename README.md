@@ -62,14 +62,19 @@ and staleness banners — published as a single compressed topic. `just world`
 view in `rqt_image_view`. Since **2026-08-04** the detector also matches
 descriptors against a 10-frame window — re-observed keypoints drawn green,
 new ones yellow, matched rate on the dashboard — feeding the
-[world 3D plan](docs/plans/in-progress/world-3d-plan.md) (**in progress**):
-rotation-only camera orientation from those matches, plus the depth clouds
-accumulated into an RViz panorama. Its **P0 landed the same day**: the
-detector unprojects strict frame-pair matches to bearing rays, solves the
-rotation by Kabsch, and publishes a running orientation on
-`/camera/orientation` (with a `~/reset` service, and usb_cam's duplicate
-frames CRC-skipped) — verified to hold within ~0.001° of identity across a
-static bag replay.
+[world 3D plan](docs/plans/completed/world-3d-plan.md) (**done
+2026-08-05**): rotation-only camera orientation from those matches —
+strict frame-pair matches unprojected to bearing rays, the rotation
+solved by Kabsch, composed and broadcast as `odom → base_link` — plus the
+depth clouds accumulated into a persistent voxel panorama on
+`/world/map_points`. Since the combined-plan merge (**2026-08-05**,
+[world-combined-plan.md](docs/plans/completed/world-combined-plan.md))
+one command — `just world`, the `just run` target — opens all three
+windows: the dashboard mosaic, an RViz orientation graph (axes + live
+cloud turning with the hand-held camera) and a separate RViz map graph
+where a slow pan paints the room; reset/clear services stand in for loop
+closure, and the honest scope is a panorama from one viewpoint, not a
+walkable map.
 
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.
@@ -99,7 +104,8 @@ status.
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
 | [perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order, phases P0–P4 — closed 2026-07-29, kept as the build log |
 | [world-plan.md](docs/plans/completed/world-plan.md) | Build order for `src/piros2_world`, the one-window dashboard — done 2026-08-03, kept as the build log |
-| [world-3d-plan.md](docs/plans/in-progress/world-3d-plan.md) | Camera orientation from keypoint matches + an accumulated cloud map in RViz — in progress, phases P0–P4 |
+| [world-3d-plan.md](docs/plans/completed/world-3d-plan.md) | Camera orientation from keypoint matches + an accumulated cloud map in RViz — done 2026-08-05, kept as the build log |
+| [world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape
