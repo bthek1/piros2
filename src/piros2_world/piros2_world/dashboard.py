@@ -14,8 +14,13 @@ stamps on this camera lag wall clock ~0.73 s by fault
 (docs/info/camera.md#timestamps) — a stamp-age staleness gate would mark
 live panels dead, so staleness too is measured against receipt time only.
 
+The stats cell also rides its own topic (/world/stats/compressed) so an
+RViz Image panel can show the numbers without duplicating the feeds RViz
+already displays full-size — since 2026-08-05 that panel replaced the
+separate mosaic window in `just world`.
+
 Runs on the dev box; subscribes and publishes JPEG only, so the dashboard
-adds one compressed stream to the Wi-Fi, not a raw one.
+adds compressed streams to the Wi-Fi, not raw ones.
 """
 
 from collections import deque
@@ -131,6 +136,11 @@ class Dashboard(Node):
 
         self.pub = self.create_publisher(
             CompressedImage, 'world/dashboard/compressed', BIG_FRAME_QOS)
+        # The stats cell again as its own topic: RViz Image panels can
+        # show it without dragging the whole mosaic along (the mosaic
+        # duplicates feeds RViz already displays full-size).
+        self.pub_stats = self.create_publisher(
+            CompressedImage, 'world/stats/compressed', BIG_FRAME_QOS)
 
         # A wall-timer, not a callback chain: the mosaic refreshes at its
         # own steady pace no matter which feeds are fast, slow, or absent.
@@ -168,17 +178,24 @@ class Dashboard(Node):
         fps = rates(self.arrivals, now, window)
         grid = compose_grid(self.frames, cell)
         self._mark_stale(grid, cell, now, stale_after)
-        self._draw_stats(grid, cell, fps)
+        # One render, two destinations: pasted into the mosaic's fourth
+        # cell and published standalone.
+        stats = self._stats_cell(cell, fps)
+        grid[cell[1]:, cell[0]:] = stats
 
-        out = CompressedImage()
-        # Our own stamp: this image is a composition made now, not any one
-        # camera frame — and the sources' stamps are known-faulty anyway.
-        out.header.stamp = self.get_clock().now().to_msg()
-        out.format = 'jpeg'
+        # Our own stamp: these images are compositions made now, not any
+        # one camera frame — and the sources' stamps are known-faulty
+        # anyway.
+        stamp = self.get_clock().now().to_msg()
         quality = self.get_parameter('jpeg_quality').value
-        out.data = cv2.imencode(
-            '.jpg', grid, [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
-        self.pub.publish(out)
+        for image, publisher in ((grid, self.pub), (stats, self.pub_stats)):
+            out = CompressedImage()
+            out.header.stamp = stamp
+            out.format = 'jpeg'
+            out.data = cv2.imencode(
+                '.jpg', image,
+                [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
+            publisher.publish(out)
 
     def _mark_stale(self, grid, cell, now, stale_after):
         width, height = cell
@@ -192,9 +209,10 @@ class Dashboard(Node):
             cv2.putText(grid, f'STALE {now - last:.1f}s', (x + 8, y + 21),
                         FONT, 0.6, (255, 255, 255), 2)
 
-    def _draw_stats(self, grid, cell, fps):
+    def _stats_cell(self, cell, fps):
+        """Render the stats panel as its own image, drawn at the origin."""
         width, height = cell
-        x0, y0 = width, height  # bottom-right cell
+        panel = np.zeros((height, width, 3), dtype=np.uint8)
         lines = [('world dashboard', (200, 200, 200))]
         for name in PANELS:
             lines.append((
@@ -212,8 +230,9 @@ class Dashboard(Node):
         lines.append((f'keypoints in frame: {current}', (200, 200, 200)))
         lines.append((f'matched (window):   {matched}', (200, 200, 200)))
         for i, (text, colour) in enumerate(lines):
-            cv2.putText(grid, text, (x0 + 16, y0 + 34 + 30 * i),
+            cv2.putText(panel, text, (16, 34 + 30 * i),
                         FONT, 0.6, colour, 2)
+        return panel
 
 
 def main():

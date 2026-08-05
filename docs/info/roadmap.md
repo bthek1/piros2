@@ -25,9 +25,10 @@ works before moving on.
 > `/world/map_points`; every phase bag- and live-verified. The combined
 > plan ([world-combined-plan.md](../plans/completed/world-combined-plan.md),
 > done 2026-08-05) then merged everything into `world.launch.py`: one
-> command, `just world`, opens the dashboard mosaic plus separate
-> orientation and map RViz graphs (`just orient` stays as the
-> lightweight session; `just world3d` was deleted as redundant).
+> command, `just world`, opens a single RViz window — axes, live cloud
+> and the map panorama in one 3D scene, with camera/keypoints/depth/
+> stats panels docked alongside (`just orient` stays as the lightweight
+> session; `just world3d` was deleted as redundant).
 
 ## 0. Environment — *done 2026-07-24*
 

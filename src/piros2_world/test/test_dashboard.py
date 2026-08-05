@@ -114,6 +114,7 @@ def node():
     rclpy.init()
     node = Dashboard()
     node.pub = CapturingPublisher()
+    node.pub_stats = CapturingPublisher()
     yield node
     node.destroy_node()
     rclpy.shutdown()
@@ -146,6 +147,21 @@ def test_timer_publishes_even_with_no_feeds_at_all(node):
     """The dashboard must render its own honesty, not wait for data."""
     node.on_timer()
     assert len(node.pub.messages) == 1
+
+
+def test_stats_cell_is_published_standalone(node):
+    """The stats panel rides its own topic for RViz, cell-sized."""
+    node.on_timer()
+
+    assert len(node.pub_stats.messages) == 1
+    out = node.pub_stats.messages[0]
+    assert bytes(out.data[:2]) == b'\xff\xd8'
+    stats = cv2.imdecode(np.frombuffer(out.data, np.uint8),
+                         cv2.IMREAD_COLOR)
+    assert stats.shape == (node.get_parameter('cell_height').value,
+                           node.get_parameter('cell_width').value, 3)
+    # Not an empty black cell: the rendered text is visible.
+    assert (stats > 0).any()
 
 
 def test_stale_panel_gets_a_banner(node):

@@ -1,10 +1,4 @@
 # TODO
 
-- [ ] reduce compute (partly done 2026-08-04: keypoint_detector CRC-skips
-      usb_cam's byte-identical duplicate frames whole — the depth
-      estimator and dashboard still process them)
-
-- [x] keypoint matching: don't just use the last frame — keep a record of
-      the last 10 frames and match against it (done 2026-08-04:
-      `match_window` parameter, default 10; frame-to-frame was ~75/100,
-      lost mostly to detection flicker at the feature cap)
+- [x] rviz shows keypoints in the orient window (confirmed 2026-08-05;
+      depth preview panel added alongside it the same day)

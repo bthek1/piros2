@@ -215,14 +215,23 @@ live-verified by hand pan/sweep.
 The combined session (done 2026-08-05, the
 [world combined plan](docs/plans/completed/world-combined-plan.md) in
 one sitting): `world.launch.py` is now the whole dev-box stack — all
-five nodes — and `just world` (still the `just run` target) opens three
-windows: the dashboard mosaic (the session anchor; closing it tears
-everything down), the orientation RViz graph (`orient.rviz`: TF axes +
-live cloud + keypoint panel) and the map RViz graph (`map.rviz`: the
-panorama alone). The redundant `world3d.launch.py`, `world.rviz` and
-`just world3d` recipe were deleted after the merged session was proven
-live — no new computation anywhere, just fewer overlapping sessions.
-`just orient` survives as the lightweight no-GPU session.
+five nodes — and `just world` (still the `just run` target) opens one
+RViz window (`world.rviz`, renamed from `orient.rviz` once it became the
+whole session): the Depth3D live cloud + CloudMap panorama + TF axes in
+one 3D scene, each toggleable in Displays, plus raw camera / keypoints /
+depth / stats image panels docked alongside. Closing it tears everything
+down. The stats panel is fed by
+`/world/stats/compressed` — the dashboard renders its stats cell once
+and publishes it both into the mosaic and standalone. The redundant
+`world3d.launch.py`, `world.rviz` and `just world3d` recipe were deleted
+after the merged session was proven live. The layout iterated through
+the day (recorded in the plan): three windows → a rejected
+whole-mosaic-in-RViz variant → the rqt mosaic window retired in favour
+of per-feed panels (stats via `/world/stats/compressed`) → the map
+display merged into the orientation scene and the map window (and
+`map.rviz`) removed. `/world/dashboard/compressed` still publishes for
+anyone who wants the classic mosaic. `just orient` stays as the
+lightweight no-GPU session.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite

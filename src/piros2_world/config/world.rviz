@@ -43,7 +43,7 @@ Visualization Manager:
       Show Names: true
       Value: true
     - Class: rviz_default_plugins/PointCloud2
-      Name: Points
+      Name: Depth3D
       Enabled: true
       Topic:
         Value: /points
@@ -56,11 +56,58 @@ Visualization Manager:
       Size (m): 0.01
       Style: Flat Squares
       Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: CloudMap
+      Enabled: true
+      Topic:
+        Value: /world/map_points
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Color Transformer: RGB8
+      Position Transformer: XYZ
+      Size (m): 0.02
+      Style: Flat Squares
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Name: Camera
+      Enabled: true
+      Topic:
+        Value: /image_raw/compressed
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Normalize Range: true
+      Value: true
     - Class: rviz_default_plugins/Image
       Name: Keypoints
       Enabled: true
       Topic:
         Value: /keypoints/compressed
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Normalize Range: true
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Name: DepthPreview
+      Enabled: true
+      Topic:
+        Value: /depth/preview/compressed
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Normalize Range: true
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Name: Stats
+      Enabled: true
+      Topic:
+        Value: /world/stats/compressed
         Depth: 1
         Durability Policy: Volatile
         History Policy: Keep Last
@@ -97,12 +144,18 @@ Visualization Manager:
       Yaw: 3.4
     Saved: ~
 Window Geometry:
+  Camera:
+    collapsed: false
+  DepthPreview:
+    collapsed: false
   Displays:
     collapsed: false
-  Height: 846
+  Height: 900
   Hide Left Dock: false
   Hide Right Dock: false
   Keypoints:
+    collapsed: false
+  Stats:
     collapsed: false
   Views:
     collapsed: false

@@ -4,6 +4,21 @@
 > landed and were bag- then live-verified (three windows confirmed by
 > hand); the deletions followed the live proof, and P3's bookkeeping
 > moved this file to `completed/`. Kept as the build log.
+>
+> *Two layout revisions later the same day. First a single-window
+> variant (everything in one RViz window, the whole mosaic as a docked
+> Image panel) — tried and reverted within the hour; the squeezed mosaic
+> lost what made it useful. Then the keeper: the orientation window
+> gained its own raw-camera, keypoints, depth and stats image panels
+> (stats via a new `/world/stats/compressed` topic — the dashboard
+> renders its stats cell once, publishes it into the mosaic and
+> standalone), and the separate rqt mosaic window was retired.
+> Finally the map display joined the orientation window's 3D scene
+> (toggleable next to the live cloud) and the separate map window and
+> `map.rviz` were removed: `just world` is one window now — arrived at
+> the right way, by merging scenes rather than shrinking the mosaic.
+> `/world/dashboard/compressed` still publishes for anyone wanting the
+> classic mosaic. The three-window layout below is as built.*
 
 > One session showing everything `src/piros2_world` can do, in three
 > windows: the **2D dashboard mosaic** (the original piros2_world view),

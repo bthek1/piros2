@@ -69,12 +69,12 @@ solved by Kabsch, composed and broadcast as `odom → base_link` — plus the
 depth clouds accumulated into a persistent voxel panorama on
 `/world/map_points`. Since the combined-plan merge (**2026-08-05**,
 [world-combined-plan.md](docs/plans/completed/world-combined-plan.md))
-one command — `just world`, the `just run` target — opens all three
-windows: the dashboard mosaic, an RViz orientation graph (axes + live
-cloud turning with the hand-held camera) and a separate RViz map graph
-where a slow pan paints the room; reset/clear services stand in for loop
-closure, and the honest scope is a panorama from one viewpoint, not a
-walkable map.
+one command — `just world`, the `just run` target — opens one RViz
+window: axes, live cloud and the accumulating map panorama in one 3D
+scene, with raw camera, keypoints, depth and stats image panels docked
+alongside;
+reset/clear services stand in for loop closure, and the honest scope is
+a panorama from one viewpoint, not a walkable map.
 
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.
