@@ -231,17 +231,21 @@ of per-feed panels (stats via `/world/stats/compressed`) → the map
 display merged into the orientation scene and the map window (and
 `map.rviz`) removed. `/world/dashboard/compressed` still publishes for
 anyone who wants the classic mosaic. `just orient` stays as the
-lightweight no-GPU session.
+lightweight no-GPU session — it opens the same `world.rviz`, so its
+Depth3D/CloudMap/DepthPreview/Stats slots sit empty there by design
+(only the detector runs; empty panels are honesty, not a fault).
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (69 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (70 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
-synthetic chessboards for the keypoint detector, and pure-function
-`compose_grid`/`rates` tests for the dashboard, and matching tests on
-seeded greyscale noise — a chessboard's lookalike corners defeat the
-matcher's cross-check by design) as of 2026-08-04.
+synthetic chessboards for the keypoint detector, pure-function
+`compose_grid`/`rates`/stats-cell tests for the dashboard, matching and
+rotation-geometry tests on seeded noise and synthetic ray bundles — a
+chessboard's lookalike corners defeat the matcher's cross-check by
+design — and stubbed-TF voxel-map tests for the mapper) as of
+2026-08-05.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow

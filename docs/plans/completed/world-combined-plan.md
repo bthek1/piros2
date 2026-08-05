@@ -17,8 +17,12 @@
 > (toggleable next to the live cloud) and the separate map window and
 > `map.rviz` were removed: `just world` is one window now — arrived at
 > the right way, by merging scenes rather than shrinking the mosaic.
-> `/world/dashboard/compressed` still publishes for anyone wanting the
-> classic mosaic. The three-window layout below is as built.*
+> The surviving config was then renamed `orient.rviz` → `world.rviz`
+> (it is the whole session now, and both `just world` and `just orient`
+> open it) with its cloud displays named `Depth3D` (live) and `CloudMap`
+> (accumulated). `/world/dashboard/compressed` still publishes for
+> anyone wanting the classic mosaic. The three-window layout below is as
+> built.*
 
 > One session showing everything `src/piros2_world` can do, in three
 > windows: the **2D dashboard mosaic** (the original piros2_world view),
