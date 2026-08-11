@@ -488,3 +488,20 @@ map-headless bag:
     mv ~/.ros/rtabmap_odom.txt "{{ bag }}_odom.txt" 2>/dev/null
     mv ~/.ros/rtabmap_slam.txt "{{ bag }}_slam.txt" 2>/dev/null
     ls -la "{{ bag }}"_*.txt
+
+# Meshes are offline artifacts — `just world` deliberately never publishes
+# them (live session = dashboard; reconstruction stays offline), so this
+# window is how you look at one. Wayland caveat: Open3D's viewer needs
+# X11, hence the unset (troubleshooting.md).
+# View a fused mesh interactively (default: the newest in meshes/)
+[group('recon')]
+view-mesh mesh='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    mesh="{{ mesh }}"
+    if [ -z "$mesh" ]; then
+        mesh=$(ls -t meshes/*.ply | head -1)
+        echo "viewing newest: $mesh"
+    fi
+    env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 ~/.venvs/piros2-perception/bin/python tools/recon/view_mesh.py "$mesh"

@@ -131,10 +131,13 @@ stubbed-TF weighted-fusion tests for the mapper.
 - **Working end to end:** `just world` runs the whole five-node dev-box
   stack against the live camera; the offline pipeline goes bag → mesh →
   room layer without hardware.
-- **Uncommitted (as of 2026-08-11):** the entire fusion-plan day —
-  `se3.py`, the fusing `cloud_mapper`, `tools/recon/`, the pinned
-  `depth_scale`, doc updates — sits in the working tree on top of the
-  2026-08-05 commit `3d5cc8e`.
+- **Committed:** the entire fusion-plan day — `se3.py`, the fusing
+  `cloud_mapper`, `tools/recon/`, the pinned `depth_scale`, doc updates —
+  landed as `bbe8c73` on 2026-08-11. The GitHub repo carries a one-line
+  description and topics (`ros2`, `robotics`, `computer-vision`,
+  `point-cloud`, `raspberry-pi`, `onnx`) as of the same day; "SLAM" is
+  deliberately not among them — the honest scope is rotation-only
+  orientation.
 - **Open items** ([todo.md](../../todo.md)):
   - Per-frame depth-to-TSDF scale alignment — the named next fusion lever
     against the ±4% depth wobble.

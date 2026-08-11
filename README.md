@@ -107,6 +107,7 @@ status.
 | [world-3d-plan.md](docs/plans/completed/world-3d-plan.md) | Camera orientation from keypoint matches + an accumulated cloud map in RViz — done 2026-08-05, kept as the build log |
 | [world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for TSDF fusion, pose graphs and meshing; upgraded the cloud map to weighted fusion, built the offline recon pipeline, pinned the depth scale — done 2026-08-10, kept as the build log |
+| [live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md) | The live pipeline grows a surface: in-session TSDF + timed re-mesh in RViz, per-frame depth alignment, optional 6-DoF live odometry — in progress since 2026-08-11 |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

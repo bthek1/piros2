@@ -52,6 +52,18 @@ cloud_mapper:
     # long-observed surface instead of arguing with its whole history.
     max_weight: 64
 
+mesh_marker:
+  ros__parameters:
+    # Empty = show the newest .glb/.ply in meshes/ at startup; set a
+    # path to pin one. `ros2 service call /mesh_marker/reload` rescans
+    # after a fresh fuse without restarting the session.
+    mesh_path: ""
+    # Display frame for the overlay. The mesh was fused in its
+    # capture's own world frame, which is not this session's odom
+    # origin — it renders as a reference nearby, not aligned with the
+    # live cloud (aligning needs relocalisation, out of scope).
+    frame_id: odom
+
 dashboard:
   ros__parameters:
     # Each mosaic cell: 640x360 keeps the full 2x2 dashboard at 1280x720.

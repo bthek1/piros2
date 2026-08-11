@@ -216,11 +216,16 @@ live-verified by hand pan/sweep.
 The combined session (done 2026-08-05, the
 [world combined plan](docs/plans/completed/world-combined-plan.md) in
 one sitting): `world.launch.py` is now the whole dev-box stack — all
-five nodes — and `just world` (still the `just run` target) opens one
+five nodes, six since 2026-08-11's `mesh_marker` (a latched
+TRANSIENT_LOCAL Marker pointing RViz at the newest offline-fused
+`meshes/*.ply` via `file://` mesh_resource; PLY only — RViz's assimp
+rejects Open3D's GLB export; pinned at the odom origin as a reference
+overlay, not aligned with the live cloud; `~/reload` rescans after a
+fresh fuse) — and `just world` (still the `just run` target) opens one
 RViz window (`world.rviz`, renamed from `orient.rviz` once it became the
-whole session): the Depth3D live cloud + CloudMap panorama + TF axes in
-one 3D scene, each toggleable in Displays, plus raw camera / keypoints /
-depth / stats image panels docked alongside. Closing it tears everything
+whole session): the Depth3D live cloud + CloudMap panorama + FusedMesh
+overlay + TF axes in one 3D scene, each toggleable in Displays, plus raw
+camera / keypoints / depth / stats image panels docked alongside. Closing it tears everything
 down. The stats panel is fed by
 `/world/stats/compressed` — the dashboard renders its stats cell once
 and publishes it both into the mosaic and standalone. The redundant
@@ -473,7 +478,11 @@ rsync -av --delete --exclude build --exclude install --exclude log \
 dev-box-only.)
 
 The Ansible `workspace` role does the same as part of a run. Remote is
-`git@github.com:bthek1/piros2.git`.
+`git@github.com:bthek1/piros2.git`. The GitHub repo carries a one-line
+description and the topics `ros2`, `robotics`, `computer-vision`,
+`point-cloud`, `raspberry-pi`, `onnx` (set 2026-08-11) — "SLAM" is
+deliberately excluded, matching the repo's honest rotation-only scope;
+don't add it.
 
 ## Documentation map
 
@@ -498,6 +507,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/plans/completed/world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 | [docs/plans/completed/world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for `info.md`'s topics — TSDF fusion, pose graphs, meshing, plane fitting — phases P0–P6: weighted cloud-map fusion, the `tools/recon/` offline pipeline, `depth_scale` pinned at 2.69; done 2026-08-10, kept as the build log |
+| [docs/plans/in-progress/live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md) | The live pipeline grows a surface — `tsdf_mesher` (in-session TSDF + timed re-mesh into RViz), P2 lands the per-frame depth-alignment todo, P3 optionally swaps in 6-DoF `rgbd_odometry`; in progress since 2026-08-11 |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update
 [docs/info/hardware.md](docs/info/hardware.md) from real command output and note the date.

@@ -32,6 +32,7 @@ setup(
             'keypoint_detector = piros2_world.keypoint_detector:main',
             'dashboard = piros2_world.dashboard:main',
             'cloud_mapper = piros2_world.cloud_mapper:main',
+            'mesh_marker = piros2_world.mesh_marker:main',
         ],
     },
 )
