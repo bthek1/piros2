@@ -127,6 +127,10 @@ def main():
     parser.add_argument('--depth-max', type=float, default=6.0)
     parser.add_argument('--every', type=int, default=1)
     parser.add_argument('--weight-threshold', type=float, default=3.0)
+    parser.add_argument('--align', action='store_true',
+                        help='per-frame depth scale alignment against '
+                             'the running TSDF — the ±4%% wobble fix '
+                             '(live mesh plan P2)')
     parser.add_argument('--out', type=Path, default=None)
     args = parser.parse_args()
 
@@ -141,10 +145,10 @@ def main():
                          'trajectory file')
     vbg, count, elapsed = tsdf.integrate(
         frames, k_matrix, 1000.0, args.voxel_size, args.trunc_voxels,
-        args.depth_max, device)
+        args.depth_max, device, align=args.align)
     mesh = tsdf.extract_mesh(vbg, args.weight_threshold)
 
-    label = trajectory.stem
+    label = trajectory.stem + ('_aligned' if args.align else '')
     out = args.out or Path('meshes') / (
         f'{args.capture.name}_{label}_{args.voxel_size * 1000:g}mm.ply')
     tsdf.write_mesh(mesh, out, count, elapsed, vbg.hashmap().size())

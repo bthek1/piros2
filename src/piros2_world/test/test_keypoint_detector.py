@@ -396,6 +396,25 @@ def test_orientation_is_also_broadcast_as_tf(node):
     assert tf.transform.rotation == node.pub_pose.messages[1].pose.orientation
 
 
+def test_publish_tf_false_yields_the_frame_but_keeps_the_pose(node):
+    """
+    publish_tf: false silences TF but not the orientation topic.
+
+    REP-105: with rgbd odometry owning odom → base_link, the compass
+    must stop broadcasting — one parent per frame.
+    """
+    node.set_parameters([rclpy.parameter.Parameter('publish_tf',
+                                                   value=False)])
+    node.on_camera_info(make_camera_info())
+    scene = make_scene()
+    node.on_frame(encode(scene))
+    warp = cv2.getRotationMatrix2D((320.0, 240.0), 4.0, 1.0)
+    node.on_frame(encode(cv2.warpAffine(scene, warp, (640, 480))))
+
+    assert node.tf_broadcaster.transforms == []
+    assert len(node.pub_pose.messages) == 2
+
+
 def test_reset_service_rezeros_orientation(node):
     node.orientation = rotation_matrix([0., 0., 1.], 1.0)
     response = node.on_reset(None, Trigger.Response())

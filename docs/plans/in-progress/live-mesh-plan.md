@@ -70,7 +70,22 @@ must lazy-import open3d inside the class, the `depth_estimator`
 pattern — the colcon test run uses the system interpreter and only the
 numpy-pure marker/alignment functions are unit-tested.
 
-## P0 — The mesher node, proven against a bag
+## P0 — The mesher node, proven against a bag ✓ (2026-08-11)
+
+> Landed as planned, one API lesson: `VoxelBlockGrid.integrate` accepts
+> only (float, float) or (uint16, uint8) depth/colour dtype pairs — our
+> float32-metres depth forced the colour to float32 [0,1] (the offline
+> pipeline never hit this because PNG files load as uint16/uint8).
+> Bag check against `bags/static1` (depth estimator + keypoint
+> detector + mesher, 5 s refresh): **115 frames integrated at
+> 52 ms/frame** (decode + transfer + integrate), refreshes of ~51–56k
+> triangles in **630–780 ms** each, and the probe received the latched
+> `/world/mesh_live` marker — 54,743 triangles in `odom`. Below the
+> 60k cap on a single static view, so no capping fired. A teardown
+> race (refresh mid-shutdown publishing into a dead context) got an
+> `rclpy.ok()` guard. 5 new unit tests (cap, marker building, and the
+> lazy-init contract: node constructs and resets on the system
+> interpreter with no open3d); suite at 86 green.
 
 `piros2_world/tsdf_mesher.py`:
 
@@ -101,7 +116,16 @@ standalone RViz roughly coincides with CloudMap, and a second replay
 after `~/reset` rebuilds it. Integration cost logged per frame
 (expect ~10–15 ms GPU); extraction cost logged per refresh.
 
-## P1 — Into `just world`
+## P1 — Into `just world` ✓ (2026-08-11; live hand-pan glance still open)
+
+> Landed as planned: seventh process in `world.launch.py` (venv
+> `ExecuteProcess`), **LiveMesh** display in `world.rviz`, and
+> FusedMesh flipped to default-off — the live surface is the primary
+> now, the offline artifact a toggleable reference. Full-stack bag
+> check: `world.launch.py` + static1 replay → the probe received both
+> latched markers (LiveMesh 58,272 triangles, FusedMesh pointing at
+> the sweep3 PLY). Remaining: the human glance — camera still, the
+> view solidifies; pan, the panorama grows; `~/reset` clears.
 
 - `world.launch.py` gains the mesher as a venv `ExecuteProcess`
   (seventh process; the launch's docstring count updates).
@@ -118,7 +142,40 @@ view solidifies into a surface that matches Depth3D; a slow pan grows
 it into the panorama (with rotation-only smear, stated and expected);
 `~/reset` clears it live. Closing RViz tears everything down.
 
-## P2 — Depth scale alignment (the standing todo, landed)
+## P2 — Depth scale alignment (the standing todo, landed) ✓ (2026-08-11 — with two findings the plan didn't predict)
+
+> Landed, but not as first designed — the build log here matters more
+> than the code:
+>
+> 1. **Conform-to-map is unstable.** The naive loop (scale each frame
+>    to the ray-cast expected depth) made the wall *walk away* at
+>    ~+1%/frame. Cause, isolated by experiment: `VoxelBlockGrid`'s
+>    ray-cast surface reads ~1.25 voxels behind the integrated one
+>    (+1.0% at 2 cm voxels on a 2.5 m scene, +0.5% at 1 cm —
+>    voxel-proportional, truncation-independent), and any constant
+>    error in a conform-to-map loop compounds. A frame-0 bias
+>    calibration failed too — the bias shifts as the map accumulates.
+> 2. **The stable shape is a high-pass**: `ScaleAligner` corrects only
+>    each frame's *deviation* from a rolling median of raw ratios —
+>    wobble is fast, bias is slow, and drift is impossible by
+>    construction (correction factors have median 1 over the window).
+>    Unit-tested on exactly the measured failure mode: constant 1%
+>    renderer bias + ±4% wobble → wobble collapses, no net push.
+> 3. **Honest ceiling, measured**: on the wallcheck capture the
+>    per-frame centre-depth spread drops 4.0% → 2.9% — about half the
+>    variance. The remainder is *spatially structured* depth error (the
+>    model's wobble is not a single global scale), which a global
+>    correction cannot touch; per-pixel/affine alignment is the named
+>    next lever, out of scope. Ray-cast weight_threshold 1/3/8 barely
+>    matters (2.99/2.91/2.92%); 3 kept. The sweep3 re-fuse experiment
+>    was inconclusive *for pose reasons*: 33 keyframes sharing 12
+>    RTAB-Map poses bake in up-to-a-second pose errors that dwarf the
+>    wobble — alignment cannot and should not fix wrong poses.
+>
+> `depth_align.py` (pure numpy: `depth_ratio` + `ScaleAligner`), wired
+> into `tsdf_mesher` (align/min_overlap/max_correction params, scale
+> stats in the log) and `tools/recon/tsdf.py` (`fuse_capture --align`,
+> `_aligned` mesh label). `align: true` by default. todo.md item closed.
 
 The ±4% per-frame wobble is what shingled the offline sweep and what
 would make the live mesh breathe. The fix, per frame, before
@@ -148,7 +205,19 @@ breathing between refreshes. Offline: `just fuse-capture sweep3
 the shingled original — the layered wall collapses toward one
 surface. Update `todo.md`: the alignment item moves to done.
 
-## P3 — 6-DoF live poses (opt-in, gated on it actually tracking)
+## P3 — 6-DoF live poses (opt-in, gated on it actually tracking) *(wiring built and bag-verified 2026-08-11; the live hand-sweep gate needs a hand)*
+
+> Built as planned: `odom:=rgbd` launch arg (default `kp`),
+> `publish_tf` param on the detector (unit test: TF silenced, the
+> orientation topic keeps publishing), and conditioned
+> `image_republisher` + `rgbd_odometry` nodes carrying
+> mapping.launch.py's params including the 30-deep sync queues. Bag
+> check: `world.launch.py odom:=rgbd` + static1 replay → `/tf` is
+> published by **rgbd_odometry and not the keypoint detector** (the
+> REP-105 gate works), 101 odometry-quality updates over the 19 s
+> replay, and the mesher integrates under the 6-DoF poses. Remaining:
+> the live hand-held sweep — walls staying put under real translation
+> — which decides adopted vs "measured, not adopted".
 
 The one wall P2 leaves standing is parallax under rotation-only TF.
 The repo already proved RTAB-Map's `rgbd_odometry` tracks this rig's

@@ -52,6 +52,34 @@ cloud_mapper:
     # long-observed surface instead of arguing with its whole history.
     max_weight: 64
 
+tsdf_mesher:
+  ros__parameters:
+    # 2 cm voxels — the mono-noise resolution the fusion plan measured;
+    # finer meshes the depth model's error, not the room.
+    voxel_size: 0.02
+    # Depth beyond this (metres) is ignored, same reasoning as the
+    # mapper's max_range: far monocular depth is a guess.
+    depth_max: 6.0
+    # Marching cubes runs on this period (seconds) — accumulation at
+    # frame rate, meshing at human rate.
+    refresh_period: 10.0
+    # TSDF voxels observed fewer times than this don't mesh.
+    weight_threshold: 3.0
+    # Marker size cap; a capped refresh logs what it dropped. 60k
+    # triangles ≈ 180k points ≈ tolerable rclpy build time per refresh.
+    max_triangles: 60000
+    # Per-frame depth scale alignment (live mesh plan P2): each frame is
+    # scaled by the median ratio against a TSDF ray-cast from its own
+    # pose — the fix for the depth model's measured ±4% wobble. The
+    # first frame defines the map's scale.
+    align: true
+    # Below this valid-overlap fraction a frame integrates unaligned —
+    # a mostly-new view has nothing to conform to.
+    align_min_overlap: 0.2
+    # Correction clamp: a disagreement beyond this is a wrong pose or a
+    # depth failure, not a wobble; refuse to fold the map.
+    align_max_correction: 0.15
+
 mesh_marker:
   ros__parameters:
     # Empty = show the newest .glb/.ply in meshes/ at startup; set a

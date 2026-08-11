@@ -278,6 +278,30 @@ deterministic 24 odometry updates on the same replay), and
 `rtabmap-export` does not work on these databases — `rtabmap-report
 --poses_raw` (via `just map-headless`) is the pose export that works.
 
+The live mesh plan (in progress, started 2026-08-11 —
+[docs/plans/in-progress/live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md)):
+the live pipeline grew a surface. `tsdf_mesher` (venv `ExecuteProcess`,
+open3d lazy-imported) integrates synced `/depth` + compressed RGB into a
+`VoxelBlockGrid` at 2 cm voxels (~52–78 ms/frame CUDA) and re-meshes on
+a 10 s timer onto `/world/mesh_live` as a latched TRIANGLE_LIST Marker
+(real geometry, dev-box-local only — RViz caches `mesh_resource` by URI
+so files can't refresh; `integrate()` pairs only (float, float) or
+(uint16, uint8) dtypes). `world.rviz` shows it as **LiveMesh**
+(FusedMesh, the offline overlay, now defaults off). P2 landed the
+depth-alignment todo the hard way: conform-to-map is *unstable* —
+VoxelBlockGrid's ray-cast reads ~1.25 voxels far (voxel-proportional,
+measured) and the feedback loop walks walls away — so `depth_align.py`'s
+`ScaleAligner` is a high-pass (correct only the deviation from a
+rolling ratio median; drift impossible by construction). Measured
+benefit: per-frame placement spread 4.0% → 2.9%; the residual is
+spatially structured model error a global scale can't touch (affine
+alignment is the named next lever in todo.md). `fuse_capture --align`
+uses the same code. P3's `odom:=rgbd` launch arg swaps the detector's
+rotation-only TF (new `publish_tf` param — REP-105, one parent per
+frame) for live `rgbd_odometry` + a raw republisher; bag-verified (101
+odometry updates, rgbd owns `/tf`). Open: the P1 live glance and P3's
+live hand-sweep gate.
+
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
 is green (77 tests; `piros2_vision`, `piros2_perception` and `piros2_world`

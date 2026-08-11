@@ -156,6 +156,11 @@ class KeypointDetector(Node):
         # worse mean residual after refits, and no rotation is trusted.
         self.declare_parameter('min_matched_pairs', 8)
         self.declare_parameter('max_residual_rad', 0.03)
+        # REP-105: one parent per frame. When rgbd_odometry owns
+        # odom → base_link (live mesh plan P3, `odom:=rgbd`), this
+        # node's compass must not fight it — the orientation topic
+        # keeps publishing either way.
+        self.declare_parameter('publish_tf', True)
         self.orb = cv2.ORB_create(
             nfeatures=self.get_parameter('max_features').value)
         # Brute force is fine at <=500 features; NORM_HAMMING because ORB
@@ -368,6 +373,8 @@ class KeypointDetector(Node):
         # odometer measures orientation only). One estimate, two
         # representations: the topic for programs, the transform for the
         # tf2 tree RViz renders.
+        if not self.get_parameter('publish_tf').value:
+            return
         tf = TransformStamped()
         tf.header.stamp = pose.header.stamp
         tf.header.frame_id = 'odom'

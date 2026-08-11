@@ -33,6 +33,10 @@ setup(
             'dashboard = piros2_world.dashboard:main',
             'cloud_mapper = piros2_world.cloud_mapper:main',
             'mesh_marker = piros2_world.mesh_marker:main',
+            # Present for symmetry; the launch runs this module via the
+            # perception venv python -m (open3d is PyPI-only), so the
+            # colcon-shebang entry point would miss the import.
+            'tsdf_mesher = piros2_world.tsdf_mesher:main',
         ],
     },
 )

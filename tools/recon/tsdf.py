@@ -14,17 +14,25 @@ import time
 import numpy as np
 import open3d as o3d
 import open3d.core as o3c
+from piros2_world.depth_align import ScaleAligner
 from piros2_world.se3 import invert
 
 
 def integrate(frames, k_matrix, depth_scale, voxel_size, trunc_voxels,
-              depth_max, device, block_count=100000):
+              depth_max, device, block_count=100000, align=False):
     """
     Fuse (rgb_path, depth_path, T_wc) frames into a VoxelBlockGrid.
 
     depth_scale is the PNG's units-per-metre (TUM: 5000, our exports:
     1000). Open3D's extrinsic maps world points into the camera — T_cw —
     so each pose goes through se3.invert, subscripts doing the guarding.
+
+    align=True applies per-frame depth scale alignment (live mesh plan
+    P2 — the neural depth's ±4% wobble fix): each frame after the first
+    ray-casts the TSDF from its own pose and conforms by the median
+    ratio. The aligned path works in float metres (integrate()'s dtype
+    rule pairs float depth with float colour); returns the applied
+    scales for reporting.
     """
     vbg = o3d.t.geometry.VoxelBlockGrid(
         attr_names=('tsdf', 'weight', 'color'),
@@ -36,19 +44,53 @@ def integrate(frames, k_matrix, depth_scale, voxel_size, trunc_voxels,
         device=device)
     intrinsic = o3c.Tensor(k_matrix, o3c.float64)
 
+    def render_expected(metres, extrinsic):
+        probe = o3d.t.geometry.Image(o3c.Tensor(metres)).to(device)
+        blocks = vbg.compute_unique_block_coordinates(
+            probe, intrinsic, extrinsic, 1.0, depth_max,
+            trunc_voxel_multiplier=trunc_voxels)
+        cast = vbg.ray_cast(
+            blocks, intrinsic, extrinsic,
+            metres.shape[1], metres.shape[0],
+            render_attributes=['depth'], depth_scale=1.0,
+            depth_min=0.1, depth_max=depth_max,
+            weight_threshold=3.0)
+        return cast['depth'].cpu().numpy().reshape(metres.shape)
+
     start = time.perf_counter()
     count = 0
+    scales = []
+    aligner = ScaleAligner()
     for rgb_path, depth_path, t_wc in frames:
         depth = o3d.t.io.read_image(str(depth_path)).to(device)
         color = o3d.t.io.read_image(str(rgb_path)).to(device)
         extrinsic = o3c.Tensor(invert(t_wc), o3c.float64)
+        scale = depth_scale
+        if align:
+            # Work in metres so the wobble correction multiplies in.
+            metres = depth.as_tensor().cpu().numpy().astype(
+                np.float32).squeeze() / depth_scale
+            if count:
+                factor, _ = aligner.scale_for(
+                    render_expected(metres, extrinsic), metres)
+                metres = metres * np.float32(factor)
+                scales.append(factor)
+            depth = o3d.t.geometry.Image(o3c.Tensor(metres)).to(device)
+            color = o3d.t.geometry.Image(o3c.Tensor(
+                color.as_tensor().cpu().numpy().astype(
+                    np.float32) / 255.0)).to(device)
+            scale = 1.0
         blocks = vbg.compute_unique_block_coordinates(
-            depth, intrinsic, extrinsic, depth_scale, depth_max,
+            depth, intrinsic, extrinsic, scale, depth_max,
             trunc_voxel_multiplier=trunc_voxels)
         vbg.integrate(blocks, depth, color, intrinsic, intrinsic,
-                      extrinsic, depth_scale, depth_max,
+                      extrinsic, scale, depth_max,
                       trunc_voxel_multiplier=trunc_voxels)
         count += 1
+    if scales:
+        arr = np.array(scales)
+        print(f'align: scale {arr.mean():.3f} ± {arr.std():.3f} over '
+              f'{len(arr)} frames')
     return vbg, count, time.perf_counter() - start
 
 
