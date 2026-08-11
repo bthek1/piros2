@@ -106,6 +106,7 @@ status.
 | [world-plan.md](docs/plans/completed/world-plan.md) | Build order for `src/piros2_world`, the one-window dashboard — done 2026-08-03, kept as the build log |
 | [world-3d-plan.md](docs/plans/completed/world-3d-plan.md) | Camera orientation from keypoint matches + an accumulated cloud map in RViz — done 2026-08-05, kept as the build log |
 | [world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
+| [world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for TSDF fusion, pose graphs and meshing; upgraded the cloud map to weighted fusion, built the offline recon pipeline, pinned the depth scale — done 2026-08-10, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

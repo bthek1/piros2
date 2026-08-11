@@ -201,7 +201,8 @@ is degenerate under pure rotation), composes it, and publishes
 the canonical optical conjugation; byte-identical usb_cam duplicates are
 CRC-skipped whole. `cloud_mapper` — the repo's first TF consumer,
 latest-only lookups per the stamp fault — accumulates `/points` into a
-latest-wins voxel dict (5 cm, hard-capped, `max_range` 6 m) and
+voxel map (5 cm, hard-capped, `max_range` 6 m; weighted-average fusion
+since the world fusion plan's P2, see below) and
 republishes `/world/map_points` at 1 Hz in `odom`. The repo's first
 services: `/keypoint_detector/reset` and `/cloud_mapper/clear` — the
 drift strategy in lieu of loop closure; honest scope is orientation
@@ -235,17 +236,56 @@ lightweight no-GPU session — it opens the same `world.rviz`, so its
 Depth3D/CloudMap/DepthPreview/Stats slots sit empty there by design
 (only the detector runs; empty panels are honesty, not a fault).
 
+The world fusion plan (done 2026-08-10, all in one day —
+[docs/plans/completed/world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md),
+the learning plan for `info.md`'s capture/fusion/output topics, kept as
+the build log): `piros2_world/se3.py` (shared SE(3) pure
+functions — both quaternion conversions, `make_transform`/`invert`/
+`transform_points`, `BASE_FROM_OPTICAL`); **`cloud_mapper`'s VoxelMap
+fuses now** — array-backed running weighted average per voxel (weight =
+clouds observed, capped at `max_weight` so evidence stays displaceable;
+`min_weight: 2` holds one-look noise voxels out of the published map;
+27–30 ms per 45k-point cloud); and a new offline pipeline in
+`tools/recon/` under the perception venv (open3d 0.19, whose pip wheel
+is CUDA-enabled out of the box): `just fetch-tum` / `fuse-tum` (TSDF a
+TUM sequence — fr1/desk fuses 596 frames in 5.9 s at 10 ms/frame on the
+GPU; marching cubes OOMs on the 6 GB card below ~8 mm voxels and falls
+back to CPU), `just export-capture <bag> <name>` (bag → TUM-layout
+keyframes: CRC dup-skip, ONNX depth as 16-bit mm PNGs, rotation-only
+poses in a separate rewritable `groundtruth.txt`), `just fuse-capture`
+(same TSDF over an export; `--trajectory` swaps in RTAB-Map's poses —
+export them with `rtabmap-export --poses_camera --poses_format 1`), and
+`just room-layer <mesh>` (RANSAC planes, floor via the
+scene-above-fraction — largest-horizontal picks the *desk* in fr1/desk —
+Manhattan snap, `room.json` + GLB). `datasets/`, `captures/`, `meshes/`
+are git-ignored. The lit-sweep experiment fused the same 44 s capture
+under both pose files and got two *different* failure signatures:
+rotation-only poses smear radially (RTAB-Map measured 0.9 m of real
+arm-arc translation in the "rotation-only" pan), while RTAB-Map's poses
+reveal layered shingling instead — the neural depth's per-frame ±4%
+scale wobble (measured on a static scene), the named next lever
+(per-frame depth-to-TSDF alignment, out of scope). The tape-measure
+check pinned **`depth_scale: 2.69`** (a 2.50 m wall read 9.30 m at
+scale 10; re-export verification +0.1%) in `perception.yaml`. Also
+hardened along the way: `mapping.launch.py` got 30-deep sync queues
+(exact-sync pairing at the default 5 was a coin toss — 0–6 vs a
+deterministic 24 odometry updates on the same replay), and
+`rtabmap-export` does not work on these databases — `rtabmap-report
+--poses_raw` (via `just map-headless`) is the pose export that works.
+
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (70 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (77 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, pure-function
 `compose_grid`/`rates`/stats-cell tests for the dashboard, matching and
 rotation-geometry tests on seeded noise and synthetic ray bundles — a
 chessboard's lookalike corners defeat the matcher's cross-check by
-design — and stubbed-TF voxel-map tests for the mapper) as of
-2026-08-05.
+design — SE(3) geometry tests driving all four quaternion branches
+(`test_se3.py`), and stubbed-TF weighted-fusion voxel-map tests for the
+mapper: noise averages toward the plane, min_weight holdback, capped
+inertia) as of 2026-08-10.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -443,6 +483,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | File | Contents |
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
+| [docs/info/project-overview.md](docs/info/project-overview.md) | Single-page account of the project and progress so far — packages, timeline, current state |
 | [docs/info/hardware.md](docs/info/hardware.md) | Measured specs of both machines and the camera's capture modes |
 | [docs/info/setup.md](docs/info/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
 | [docs/info/ansible.md](docs/info/ansible.md) | The playbook: inventory, roles, gotchas |
@@ -456,6 +497,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/plans/completed/world-3d-plan.md](docs/plans/completed/world-3d-plan.md) | Camera orientation from keypoint matches + accumulated cloud map, both in RViz — done 2026-08-05, kept as the build log |
 | [docs/plans/completed/world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
+| [docs/plans/completed/world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for `info.md`'s topics — TSDF fusion, pose graphs, meshing, plane fitting — phases P0–P6: weighted cloud-map fusion, the `tools/recon/` offline pipeline, `depth_scale` pinned at 2.69; done 2026-08-10, kept as the build log |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update
 [docs/info/hardware.md](docs/info/hardware.md) from real command output and note the date.

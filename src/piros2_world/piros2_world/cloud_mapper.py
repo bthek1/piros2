@@ -1,7 +1,7 @@
 """
 Subscribe /points, accumulate a voxel map in odom, publish /world/map_points.
 
-World 3D plan P3 — the panorama accumulator. Three concepts:
+World 3D plan P3, upgraded by the world fusion plan's P2. The concepts:
 
 - The *consumer* side of TF: a Buffer + TransformListener assembles the
   tree other nodes broadcast, and one lookup_transform composes the whole
@@ -13,7 +13,15 @@ World 3D plan P3 — the panorama accumulator. Three concepts:
   At hand-rotation speeds the smear is small; the plan says so honestly.
 - A dict keyed by voxel index is a *bounded* map: revisited space updates
   in place instead of duplicating, so memory scales with scene volume,
-  not runtime. Latest wins per voxel — no averaging, no forgetting.
+  not runtime.
+- Fusion (P2): each voxel keeps a **running weighted average** of the
+  points that land in it — the TSDF lesson applied to the structure we
+  already had. Averaging is what kills depth noise: latest-wins kept one
+  noisy sample per voxel forever, so surfaces sat a full sample's error
+  off true and shimmered on every revisit. The weight is capped so a
+  scene change can still displace stale evidence, and voxels seen fewer
+  than min_weight times (noise at surface edges, usually) are held back
+  from the published map — observations, not one-off guesses.
 - The map admits its limits out loud: points beyond max_range are dropped
   (monocular depth degrades with distance — far guesses would smear the
   panorama), and at max_voxels it stops growing and logs once. No silent
@@ -25,6 +33,11 @@ viewpoint, not a walkable map — see the plan's honest-scope section.
 
 import numpy as np
 from piros2_perception.cloud_projector import POINT_DTYPE, POINT_FIELDS
+from piros2_world.se3 import (
+    make_transform,
+    rotation_from_quaternion,
+    transform_points,
+)
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -41,29 +54,52 @@ BIG_FRAME_QOS = QoSProfile(
     depth=1)
 
 
-def rotation_from_quaternion(x, y, z, w):
-    """Quaternion → rotation matrix; the detector's conversion, inverted."""
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+def unpack_rgb(packed):
+    """0x00RRGGBB float32 bit patterns -> Nx3 float (r, g, b) in 0-255."""
+    bits = np.ascontiguousarray(packed).view(np.uint32)
+    return np.column_stack([(bits >> 16) & 255,
+                            (bits >> 8) & 255,
+                            bits & 255]).astype(np.float64)
+
+
+def pack_rgb(rgb):
+    """Nx3 (r, g, b) floats -> 0x00RRGGBB float32 bit patterns."""
+    r, g, b = np.clip(np.round(rgb), 0, 255).astype(np.uint32).T
+    return ((r << 16) | (g << 8) | b).view(np.float32)
 
 
 class VoxelMap:
     """
-    A dict from voxel index to the latest point seen in that voxel.
+    Voxel index -> running weighted average of the points seen there.
 
-    Pure Python + numpy, no ROS — the accumulation semantics live here so
-    the tests can exercise them without a graph. The plain insertion loop
-    IS the latest-wins rule (later points overwrite earlier); ~25 ms per
-    50k-point cloud, acceptable at the cloud rates this repo sees.
+    Pure Python + numpy, no ROS — the fusion semantics live here so the
+    tests can exercise them without a graph. Per add(), each touched
+    voxel gains ONE observation (a cloud's points falling in it are
+    averaged first): the weight counts independent looks, exactly the
+    TSDF weight's semantics, so min_weight thresholds mean "confirmed by
+    N clouds", not "hit by N pixels of one frame".
+
+    Storage is array-backed with a dict from voxel key to row: dict
+    membership stays O(1) while the per-voxel arithmetic runs vectorised
+    over each cloud's unique voxels (numpy per-point loops would cost
+    microseconds each, hundreds of ms per cloud). The mean update is the
+    standard running form, mean += (new - mean) / (w + 1), with w capped
+    at max_weight so accumulated evidence never becomes immovable — a
+    moved chair should eventually win the argument.
     """
 
-    def __init__(self, voxel_size, max_voxels):
+    def __init__(self, voxel_size, max_voxels, max_weight=64):
         self.voxel_size = voxel_size
         self.max_voxels = max_voxels
-        self.voxels = {}
+        self.max_weight = max_weight
+        self.index = {}
+        # x y z r g b per row; rows are assigned once and never move.
+        self.mean = np.zeros((max_voxels, 6))
+        self.weight = np.zeros(max_voxels)
         self.saturated = False
+
+    def __len__(self):
+        return len(self.index)
 
     def add(self, points):
         """
@@ -72,25 +108,54 @@ class VoxelMap:
         Returns True exactly once: the first add that hits the voxel cap.
         After that, known voxels keep updating; new ones are dropped.
         """
-        keys = np.floor(np.column_stack(
-            [points['x'], points['y'], points['z']])
-            / self.voxel_size).astype(np.int64)
+        xyz = np.column_stack([points['x'], points['y'], points['z']])
+        values = np.column_stack([xyz, unpack_rgb(points['rgb'])])
+        keys = np.floor(xyz / self.voxel_size).astype(np.int64)
+
+        # Collapse this cloud to one mean value per touched voxel.
+        unique_keys, inverse = np.unique(keys, axis=0, return_inverse=True)
+        sums = np.zeros((len(unique_keys), 6))
+        np.add.at(sums, inverse, values)
+        counts = np.bincount(inverse, minlength=len(unique_keys))
+        cloud_mean = sums / counts[:, None]
+
+        # The only per-voxel Python work: dict lookup / row assignment.
+        rows = np.empty(len(unique_keys), dtype=np.int64)
+        known = np.ones(len(unique_keys), dtype=bool)
         first_saturation = False
-        for key, point in zip(map(tuple, keys.tolist()), points):
-            if key in self.voxels or len(self.voxels) < self.max_voxels:
-                self.voxels[key] = point
-            elif not self.saturated:
-                self.saturated = True
-                first_saturation = True
+        for i, key in enumerate(map(tuple, unique_keys.tolist())):
+            row = self.index.get(key)
+            if row is None:
+                if len(self.index) < self.max_voxels:
+                    row = len(self.index)
+                    self.index[key] = row
+                else:
+                    known[i] = False
+                    if not self.saturated:
+                        self.saturated = True
+                        first_saturation = True
+                    continue
+            rows[i] = row
+
+        rows = rows[known]
+        w = np.minimum(self.weight[rows], self.max_weight)[:, None]
+        self.mean[rows] = (self.mean[rows] * w + cloud_mean[known]) / (w + 1)
+        self.weight[rows] += 1
         return first_saturation
 
-    def as_array(self):
-        if not self.voxels:
-            return np.empty(0, dtype=POINT_DTYPE)
-        return np.array(list(self.voxels.values()), dtype=POINT_DTYPE)
+    def as_array(self, min_weight=0):
+        """Return POINT_DTYPE rows for voxels seen >= min_weight times."""
+        used = len(self.index)
+        rows = np.flatnonzero(self.weight[:used] >= min_weight)
+        out = np.empty(len(rows), dtype=POINT_DTYPE)
+        mean = self.mean[rows]
+        out['x'], out['y'], out['z'] = mean[:, :3].T.astype(np.float32)
+        out['rgb'] = pack_rgb(mean[:, 3:])
+        return out
 
     def clear(self):
-        self.voxels.clear()
+        self.index.clear()
+        self.weight[:] = 0.0
         self.saturated = False
 
 
@@ -109,10 +174,19 @@ class CloudMapper(Node):
         # Beyond this range (metres, from the camera) monocular depth is
         # more guess than measurement — drop it before it smears the map.
         self.declare_parameter('max_range', 6.0)
+        # Fusion (world fusion plan P2): publish only voxels confirmed by
+        # at least this many clouds — a one-look voxel is usually depth
+        # noise at a surface edge, not furniture.
+        self.declare_parameter('min_weight', 2)
+        # Running-average inertia cap: evidence older than this many
+        # observations weighs no more than this, so a changed scene can
+        # still displace it.
+        self.declare_parameter('max_weight', 64)
 
         self.map = VoxelMap(
             self.get_parameter('voxel_size').value,
-            self.get_parameter('max_voxels').value)
+            self.get_parameter('max_voxels').value,
+            self.get_parameter('max_weight').value)
 
         # The listener feeds every /tf and /tf_static message into the
         # buffer; lookups then interpolate/compose from what arrived.
@@ -149,11 +223,14 @@ class CloudMapper(Node):
         near = np.linalg.norm(xyz, axis=1) <= \
             self.get_parameter('max_range').value
 
+        # The lookup is T_wc in se3.py's notation: odom ← optical, i.e.
+        # it maps camera-frame points into the map frame.
         q = tf.transform.rotation
         t = tf.transform.translation
-        world = (xyz[near]
-                 @ rotation_from_quaternion(q.x, q.y, q.z, q.w).T
-                 + np.array([t.x, t.y, t.z]))
+        t_wc = make_transform(
+            rotation_from_quaternion(q.x, q.y, q.z, q.w),
+            [t.x, t.y, t.z])
+        world = transform_points(t_wc, xyz[near])
 
         points = np.empty(world.shape[0], dtype=POINT_DTYPE)
         points['x'], points['y'], points['z'] = world.T.astype(np.float32)
@@ -164,7 +241,7 @@ class CloudMapper(Node):
                 f'stops growing; call ~/clear to start over')
 
     def on_timer(self):
-        merged = self.map.as_array()
+        merged = self.map.as_array(self.get_parameter('min_weight').value)
         out = PointCloud2()
         # Our own stamp and the map's own frame: this cloud is an
         # accumulation made now, not any single camera frame.
@@ -180,7 +257,8 @@ class CloudMapper(Node):
         out.data = merged.tobytes()
         self.pub_map.publish(out)
         self.get_logger().info(
-            f'map holds {merged.size} voxels',
+            f'map holds {len(self.map)} voxels, '
+            f'{merged.size} credible published',
             throttle_duration_sec=10.0)
 
     def on_clear(self, request, response):

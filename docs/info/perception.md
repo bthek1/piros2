@@ -102,8 +102,16 @@ the projection against a synthetic wall (flat, 2 m, pinhole-exact). The RViz
 eyeball passed the same day — live cloud, correctly posed in `base_link`,
 human-confirmed (after the display-stack fixes in
 [troubleshooting.md](troubleshooting.md#rviz2-crashes-unable-to-create-the-rendering-window-glxcontext-100-tries)).
-Only the tape-measure scale check remains — a lit room, a wall at a known
-distance, and `depth_scale` tuned to match.
+The tape-measure scale check **passed 2026-08-10** (run during the
+[world fusion plan](../plans/completed/world-fusion-plan.md)): a door
+face at a measured 2.50 m read a median 9.30 m over 35 keyframes at
+`depth_scale: 10`, so the scale is now pinned at
+**`10 × 2.50 / 9.30 = 2.69`** in `perception.yaml`. Two honest caveats,
+both measured in the same session: the model's output on a *static*
+scene wobbles ±4% frame to frame (the scale is right on average; single
+frames jitter ~±10 cm at 2.5 m), and monocular scale is scene-dependent
+— 2.69 is calibrated for this room's kind of geometry, not a constant
+of the camera.
 
 ### P3 — From clouds to a map
 

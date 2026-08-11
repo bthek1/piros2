@@ -15,81 +15,115 @@
 """
 Unit tests for the cloud mapper: pure accumulation first, then the node.
 
-VoxelMap and rotation_from_quaternion take plain arrays on purpose — the
-semantics tests need no ROS graph. The node-level tests stub the tf2
-buffer (a lookup is just a method call) and reuse the capturing-publisher
-trick, so the whole file runs without a camera, TF tree, or discovery.
+VoxelMap takes plain arrays on purpose — the semantics tests need no ROS
+graph. The node-level tests stub the tf2 buffer (a lookup is just a
+method call) and reuse the capturing-publisher trick, so the whole file
+runs without a camera, TF tree, or discovery.
 """
 
-import cv2
 from geometry_msgs.msg import TransformStamped
 import numpy as np
 from piros2_perception.cloud_projector import POINT_DTYPE
 from piros2_world.cloud_mapper import (
     CloudMapper,
-    rotation_from_quaternion,
+    pack_rgb,
+    unpack_rgb,
     VoxelMap,
 )
-from piros2_world.keypoint_detector import quaternion_from_rotation
 import pytest
 import rclpy
 from sensor_msgs.msg import PointCloud2
 from std_srvs.srv import Trigger
 
 
-def structured(xyz, colour=1.0):
-    """Build a POINT_DTYPE array from an Nx3 list of coordinates."""
-    xyz = np.asarray(xyz, dtype=np.float32)
+def structured(xyz, colour=(128, 128, 128)):
+    """Build a POINT_DTYPE array from an Nx3 list, one (r, g, b) colour."""
+    xyz = np.asarray(xyz, dtype=np.float32).reshape(-1, 3)
     points = np.empty(len(xyz), dtype=POINT_DTYPE)
     points['x'], points['y'], points['z'] = xyz.T
-    points['rgb'] = colour
+    points['rgb'] = pack_rgb(np.tile(colour, (len(xyz), 1)))
     return points
 
 
-# --- rotation_from_quaternion -------------------------------------------
-
-def test_quaternion_round_trip():
-    """The mapper's conversion must invert the detector's exactly."""
-    assert np.allclose(rotation_from_quaternion(0., 0., 0., 1.), np.eye(3))
-    truth = cv2.Rodrigues(np.array([0.3, -0.5, 0.8]))[0]
-    back = rotation_from_quaternion(*quaternion_from_rotation(truth))
-    assert np.allclose(back, truth, atol=1e-12)
+def published_colours(vmap, min_weight=0):
+    """Map as {(r, g, b) rows} for order-free comparison."""
+    return unpack_rgb(vmap.as_array(min_weight)['rgb'])
 
 
 # --- VoxelMap -----------------------------------------------------------
+
+def test_rgb_pack_round_trip():
+    colours = np.array([[0, 0, 0], [255, 128, 1], [10, 200, 255]])
+    assert np.array_equal(unpack_rgb(pack_rgb(colours)), colours)
+
 
 def test_overlapping_clouds_merge_to_the_voxel_union():
     vmap = VoxelMap(voxel_size=0.1, max_voxels=1000)
     # Two clouds sharing one voxel (the origin region), each bringing one
     # voxel of its own.
-    vmap.add(structured([[0.01, 0.01, 0.01], [0.51, 0.0, 0.0]], colour=1.0))
-    vmap.add(structured([[0.02, 0.02, 0.02], [0.0, 0.51, 0.0]], colour=2.0))
+    vmap.add(structured([[0.01, 0.01, 0.01], [0.51, 0.0, 0.0]],
+                        colour=(100, 0, 0)))
+    vmap.add(structured([[0.02, 0.02, 0.02], [0.0, 0.51, 0.0]],
+                        colour=(200, 0, 0)))
 
-    assert len(vmap.voxels) == 3
-    # The shared voxel took the later cloud's point: latest wins.
-    assert vmap.voxels[(0, 0, 0)]['rgb'] == 2.0
-    assert vmap.voxels[(5, 0, 0)]['rgb'] == 1.0
+    assert len(vmap) == 3
+    reds = sorted(published_colours(vmap)[:, 0])
+    # Own voxels keep their cloud's colour; the shared one averaged.
+    assert reds == [100, 150, 200]
 
 
-def test_revisited_voxel_updates_instead_of_duplicating():
-    vmap = VoxelMap(voxel_size=0.1, max_voxels=1000)
-    for colour in (1.0, 2.0, 3.0):
-        vmap.add(structured([[0.05, 0.05, 0.05]], colour=colour))
-    assert len(vmap.voxels) == 1
-    assert vmap.as_array()['rgb'][0] == 3.0
+def test_fusion_averages_noise_toward_the_surface():
+    """The doc's core claim: averaging distances is what denoises."""
+    rng = np.random.default_rng(3)
+    vmap = VoxelMap(voxel_size=0.1, max_voxels=10)
+    sigma = 0.01
+    samples = 1.05 + rng.normal(0.0, sigma, size=30)
+    for z in samples:
+        vmap.add(structured([[0.05, 0.05, z]]))
+    assert len(vmap) == 1
+    fused_error = abs(vmap.as_array()['z'][0] - 1.05)
+    # The fused surface sits far closer to truth than a lone sample
+    # would on average — sigma/sqrt(n) against sigma.
+    assert fused_error < sigma / 2
+    assert fused_error < np.abs(samples - 1.05).max()
+
+
+def test_min_weight_holds_back_single_observations():
+    vmap = VoxelMap(voxel_size=0.1, max_voxels=10)
+    vmap.add(structured([[0.05, 0.0, 0.0]]))            # seen once
+    twice = structured([[0.55, 0.0, 0.0]])
+    vmap.add(twice)
+    vmap.add(twice)                                     # seen twice
+    assert len(vmap) == 2
+    assert vmap.as_array(min_weight=0).size == 2
+    assert vmap.as_array(min_weight=2).size == 1
+    assert np.isclose(vmap.as_array(min_weight=2)['x'][0], 0.55)
+
+
+def test_weight_cap_lets_new_evidence_displace_old():
+    """A moved chair must win: capped inertia, not a full history."""
+    vmap = VoxelMap(voxel_size=0.1, max_voxels=10, max_weight=4)
+    for _ in range(20):
+        vmap.add(structured([[0.05, 0.05, 0.05]], colour=(100, 100, 100)))
+    for _ in range(20):
+        vmap.add(structured([[0.05, 0.05, 0.05]], colour=(200, 200, 200)))
+    # With inertia capped at 4, twenty new looks pull the mean almost
+    # all the way to the new colour; uncapped it would sit near 150.
+    assert published_colours(vmap)[0, 0] > 190
 
 
 def test_cap_stops_growth_loudly_but_keeps_updating():
     vmap = VoxelMap(voxel_size=0.1, max_voxels=2)
-    first = structured([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], colour=1.0)
+    first = structured([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                       colour=(100, 0, 0))
     assert vmap.add(first) is False          # under the cap: silent
-    overflow = structured([[2.0, 0.0, 0.0]], colour=2.0)
+    overflow = structured([[2.0, 0.0, 0.0]])
     assert vmap.add(overflow) is True        # the one loud moment
     assert vmap.add(overflow) is False       # said once, not repeatedly
-    assert len(vmap.voxels) == 2
-    # Known voxels still take updates after saturation.
-    vmap.add(structured([[0.05, 0.0, 0.0]], colour=9.0))
-    assert vmap.voxels[(0, 0, 0)]['rgb'] == 9.0
+    assert len(vmap) == 2
+    # Known voxels still fuse new evidence after saturation.
+    vmap.add(structured([[0.05, 0.0, 0.0]], colour=(200, 0, 0)))
+    assert sorted(published_colours(vmap)[:, 0]) == [100, 150]
 
 
 def test_clear_resets_map_and_saturation():
@@ -97,7 +131,7 @@ def test_clear_resets_map_and_saturation():
     vmap.add(structured([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
     assert vmap.saturated
     vmap.clear()
-    assert len(vmap.voxels) == 0
+    assert len(vmap) == 0
     assert not vmap.saturated
     assert vmap.as_array().size == 0
 
@@ -159,11 +193,17 @@ def node():
 
 
 def test_clouds_accumulate_and_republish_in_odom(node):
-    node.on_cloud(cloud_msg(structured([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]])))
+    cloud = cloud_msg(structured([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]]))
+    node.on_cloud(cloud)
     node.on_timer()
+    # One look is below the default min_weight — nothing credible yet.
+    first = np.frombuffer(node.pub_map.messages[0].data, dtype=POINT_DTYPE)
+    assert first.size == 0
 
-    assert len(node.pub_map.messages) == 1
-    out = node.pub_map.messages[0]
+    node.on_cloud(cloud)
+    node.on_timer()
+    assert len(node.pub_map.messages) == 2
+    out = node.pub_map.messages[1]
     assert out.header.frame_id == 'odom'
     merged = np.frombuffer(out.data, dtype=POINT_DTYPE)
     assert merged.size == 2
@@ -180,16 +220,16 @@ def test_two_orientations_widen_the_map(node):
     node.tf_buffer.transform = transform(qy=half, qw=half)
     node.on_cloud(cloud_msg(ahead))
 
-    assert len(node.map.voxels) == 2
+    assert len(node.map) == 2
 
 
 def test_far_points_are_dropped(node):
     node.on_cloud(cloud_msg(structured([[0.0, 0.0, 2.0], [0.0, 0.0, 50.0]])))
-    assert len(node.map.voxels) == 1
+    assert len(node.map) == 1
 
 
 def test_clear_service_empties_the_map(node):
     node.on_cloud(cloud_msg(structured([[0.0, 0.0, 1.0]])))
     response = node.on_clear(None, Trigger.Response())
     assert response.success
-    assert len(node.map.voxels) == 0
+    assert len(node.map) == 0

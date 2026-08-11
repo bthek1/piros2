@@ -1,0 +1,153 @@
+# Project overview and progress
+
+*Written 2026-08-11. A single-page account of what piros2 is, what has been
+built, and where it stands. The detailed logs live in
+[roadmap.md](roadmap.md) and the plans under
+[docs/plans/completed/](../plans/completed/); this page is the map.*
+
+## What this project is
+
+A **learning project for ROS 2 Jazzy on real hardware**: a Raspberry Pi 5
+with a Logitech C922 webcam publishing over Wi-Fi to an Ubuntu dev box that
+runs the heavy compute and visualisation. The value is understanding ROS 2 —
+QoS, TF, launch composition, transports — not shipping a product. Every
+stage ended with something runnable and verified before moving on.
+
+| Role | Host | Runs |
+| --- | --- | --- |
+| Sensor node | Pi 5 (`192.168.2.17`, Wi-Fi, headless) | `usb_cam`, anything touching hardware |
+| Dev / viz | dev box (`192.168.2.109`, GNOME, GTX 1660 SUPER) | depth inference, RViz, rqt, builds |
+
+Both machines run Jazzy natively from apt on Ubuntu 24.04, provisioned by
+the Ansible tree in `ansible/` (five roles, idempotent on both hosts),
+talking over CycloneDDS on domain 42 with interfaces pinned per host.
+Day-to-day commands are `just` recipes; `just world` is the current
+`just run` target.
+
+## The packages
+
+All in `src/`, built with colcon (`--symlink-install`); the repo doubles as
+the workspace.
+
+| Package | What it is |
+| --- | --- |
+| `piros2_hello` | Hand-written talker/listener pair — the first node, verified across the LAN |
+| `piros2_camera` | The camera launch + YAML: usb_cam on the Pi, static TF chain `base_link → camera_link → camera_optical_frame`, approximate intrinsics on `/camera_info` |
+| `piros2_vision` | Canny edge detector (`cv_bridge`), the first processing node; its QoS and timestamp findings shaped everything after it |
+| `piros2_perception` | `depth_estimator` (Depth Anything V2 Small, ONNX on the dev box GPU, 72–79 ms/frame) and `cloud_projector` (`/depth` + image → `PointCloud2` through K); plus `mapping.launch.py` for the RTAB-Map route |
+| `piros2_world` | `keypoint_detector` (ORB + descriptor matching → rotation-only camera orientation via Kabsch on bearing rays, published as TF), `cloud_mapper` (voxel map with weighted-average fusion → `/world/map_points`), `dashboard` (2×2 mosaic + stats), and `se3.py` (shared SE(3) pure functions) |
+
+Outside `src/`: `tools/recon/` is an offline reconstruction pipeline under
+the perception venv (open3d) — bag → TUM-layout capture export → TSDF
+fusion → mesh → RANSAC room layer (`room.json` + GLB).
+
+## How it got here
+
+### The roadmap — milestones 0–6, 2026-07-23 → 2026-07-27
+
+Concluded in five days ([roadmap.md](roadmap.md)):
+
+- **M0 Environment** — Pi reflashed to Ubuntu Server 24.04 arm64 (the only
+  platform with Jazzy arm64 binaries), Ansible roles written, `/chatter`
+  crossed the LAN.
+- **M1 First node** — `piros2_hello`, built on both machines, `just hello`.
+- **M2 Camera** — usb_cam at a measured ~30 fps over compressed transport,
+  after fixing the C922's `exposure_dynamic_framerate` frame-rate thief.
+- **M3 Launch files** — camera config moved to launch + YAML, arguments
+  passing end to end; caught the dead `camera_frame_id` parameter.
+- **M4 Image processing** — the edge detector. Two load-bearing findings:
+  the camera's **~0.73 s header-stamp fault** (never gate freshness on
+  `header.stamp`), and **BEST_EFFORT delivers zero large frames** (a 2.7 MB
+  frame fragments into ~1800 datagrams; only RELIABLE reassembles).
+- **M5 TF** — the static frame chain, verified with `tf2_echo`; RViz check
+  closed 2026-07-28. Checkerboard calibration remains the one open box —
+  spec-derived approximate intrinsics (fx ≈ 907 px) released its gate, so
+  it is an accuracy upgrade, not a blocker.
+- **M6 Record/replay** — MCAP bags recorded on the Pi, fetched, and replayed
+  through the pipeline entirely on the dev box; hardware no longer needed to
+  iterate.
+
+### Perception — 2026-07-27 → 2026-07-29
+
+[perception-plan.md](../plans/completed/perception-plan.md) built
+camera → neural monocular depth → point clouds. P1's depth node runs the
+ONNX model (GPU since 2026-07-30, ~13 fps; the venv escape hatch for
+PyPI-only onnxruntime is documented in the package README). P2's projector
+hand-builds `PointCloud2` and was verified live in RViz. P3 (RTAB-Map
+mapping) reached plumbing-verified — the full chain ran against a static
+bag — and the plan was then **closed by decision before the room map was
+built**; `just map` remains runnable if mapping resumes.
+
+### The world stack — 2026-08-03 → 2026-08-05
+
+Three plans in three days built and then unified `piros2_world`:
+
+- **[world-plan.md](../plans/completed/world-plan.md)** (done 2026-08-03) —
+  the dashboard: ORB keypoints plus every feed and its live stats in one
+  mosaic, deliberately using latest-wins subscriptions as the contrast to
+  `cloud_projector`'s exact sync. The live run re-measured the camera at
+  **42–60 distinct frames/s** — the old "30 fps ceiling" is gone.
+- **[world-3d-plan.md](../plans/completed/world-3d-plan.md)** (done
+  2026-08-05) — rotation-only camera orientation from keypoint matches
+  (the essential matrix is degenerate under pure rotation, hence Kabsch on
+  bearing rays) publishing `odom → base_link` TF, and the depth clouds
+  accumulated into a voxel panorama. Honest scope: orientation without
+  position — a panorama, not a walkable map.
+- **[world-combined-plan.md](../plans/completed/world-combined-plan.md)**
+  (done 2026-08-05) — everything merged into `world.launch.py`: `just world`
+  opens one RViz window with the live cloud, the map panorama and TF axes in
+  one 3D scene, image panels docked alongside. `just orient` stays as the
+  lightweight no-GPU session.
+
+### Fusion — 2026-08-10
+
+[world-fusion-plan.md](../plans/completed/world-fusion-plan.md), all in one
+day — the learning plan for `info.md`'s capture/fusion/output topics:
+
+- `cloud_mapper` now **fuses**: a running weighted average per voxel with
+  capped weight and a `min_weight` holdback, replacing latest-wins.
+- `tools/recon/` — TSDF fusion via Open3D's `VoxelBlockGrid` (fr1/desk:
+  596 frames in 5.9 s on the GPU), bag → TUM-layout capture export,
+  fuse-capture with swappable pose files, and a RANSAC room layer with
+  Manhattan snapping.
+- The tape-measure scale check pinned **`depth_scale: 2.69`** (a 2.50 m
+  wall had read 9.30 m).
+- The lit-sweep experiment fused one capture under two pose files and got
+  two different failure signatures: rotation-only poses smear radially
+  (RTAB-Map measured 0.9 m of real arm-arc translation in the "pure"
+  pan), while RTAB-Map's poses reveal shingling from the neural depth's
+  per-frame ±4% scale wobble — which names the next lever.
+
+## Testing
+
+`just test` (or the VSCode Testing sidebar — identical results): **77 tests
+green** as of 2026-08-10, all style-clean, none needing hardware or model
+weights — fake ONNX sessions, synthetic depth planes and chessboards,
+seeded-noise rotation geometry, SE(3) quaternion-branch coverage, and
+stubbed-TF weighted-fusion tests for the mapper.
+
+## Where it stands now
+
+- **Working end to end:** `just world` runs the whole five-node dev-box
+  stack against the live camera; the offline pipeline goes bag → mesh →
+  room layer without hardware.
+- **Uncommitted (as of 2026-08-11):** the entire fusion-plan day —
+  `se3.py`, the fusing `cloud_mapper`, `tools/recon/`, the pinned
+  `depth_scale`, doc updates — sits in the working tree on top of the
+  2026-08-05 commit `3d5cc8e`.
+- **Open items** ([todo.md](../../todo.md)):
+  - Per-frame depth-to-TSDF scale alignment — the named next fusion lever
+    against the ±4% depth wobble.
+  - Checkerboard calibration — optional accuracy upgrade over the
+    approximate intrinsics.
+  - The "reduce compute" throttle for consumers now that the camera
+    delivers up to 60 fps.
+
+## Recurring lessons worth knowing before touching anything
+
+The traps that shaped the code (full list in
+[troubleshooting.md](troubleshooting.md)): the ~0.73 s stamp fault, the
+BEST_EFFORT/large-frame inversion, V4L2 controls persisting inside the
+camera (`just camera-reset`), the PlatformIO venv shadowing `python3`,
+Wayland vs Qt5/rviz2 pins, `pkill -f` not `kill %N` in justfile traps, and
+non-interactive SSH not reading the ROS environment.

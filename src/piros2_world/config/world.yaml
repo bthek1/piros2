@@ -43,6 +43,14 @@ cloud_mapper:
     # monocular depth degrades with distance and would smear the
     # panorama.
     max_range: 6.0
+    # Fusion (world fusion plan P2): a voxel joins the published map
+    # only once this many clouds have observed it — one look is usually
+    # depth noise at a surface edge. Raise for a stiller, sparser map.
+    min_weight: 2
+    # Cap on a voxel's averaging inertia, in observations: evidence
+    # never weighs more than this, so a moved object can displace a
+    # long-observed surface instead of arguing with its whole history.
+    max_weight: 64
 
 dashboard:
   ros__parameters:

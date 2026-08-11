@@ -46,6 +46,7 @@ import zlib
 import cv2
 from geometry_msgs.msg import PoseStamped, TransformStamped
 import numpy as np
+from piros2_world.se3 import BASE_FROM_OPTICAL, quaternion_from_rotation
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -64,16 +65,6 @@ BIG_FRAME_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     history=HistoryPolicy.KEEP_LAST,
     depth=1)
-
-# The canonical optical rotation (the −90/0/−90 that camera.launch.py
-# publishes statically): optical +z (forward) → base +x, optical +x
-# (right) → base −y, optical +y (down) → base −z. The estimator works in
-# optical axes; conjugating by this matrix re-expresses its rotations in
-# base_link axes, so a pan comes out as yaw-about-z-up, not
-# pitch-about-y-down.
-BASE_FROM_OPTICAL = np.array([[0., 0., 1.],
-                              [-1., 0., 0.],
-                              [0., -1., 0.]])
 
 
 def rays_from_pixels(pixels, k_matrix):
@@ -142,27 +133,6 @@ def estimate_rotation(prev_rays, curr_rays, min_pairs=8,
     if len(prev) < min_pairs or float(residuals.mean()) > max_residual_rad:
         return None
     return rotation
-
-
-def quaternion_from_rotation(rotation):
-    """Rotation matrix → (x, y, z, w), the message field order."""
-    r = rotation
-    trace = np.trace(r)
-    if trace > 0:
-        s = 2.0 * np.sqrt(trace + 1.0)
-        return ((r[2, 1] - r[1, 2]) / s, (r[0, 2] - r[2, 0]) / s,
-                (r[1, 0] - r[0, 1]) / s, 0.25 * s)
-    if r[0, 0] > r[1, 1] and r[0, 0] > r[2, 2]:
-        s = 2.0 * np.sqrt(1.0 + r[0, 0] - r[1, 1] - r[2, 2])
-        return (0.25 * s, (r[0, 1] + r[1, 0]) / s,
-                (r[0, 2] + r[2, 0]) / s, (r[2, 1] - r[1, 2]) / s)
-    if r[1, 1] > r[2, 2]:
-        s = 2.0 * np.sqrt(1.0 + r[1, 1] - r[0, 0] - r[2, 2])
-        return ((r[0, 1] + r[1, 0]) / s, 0.25 * s,
-                (r[1, 2] + r[2, 1]) / s, (r[0, 2] - r[2, 0]) / s)
-    s = 2.0 * np.sqrt(1.0 + r[2, 2] - r[0, 0] - r[1, 1])
-    return ((r[0, 2] + r[2, 0]) / s, (r[1, 2] + r[2, 1]) / s,
-            0.25 * s, (r[1, 0] - r[0, 1]) / s)
 
 
 class KeypointDetector(Node):

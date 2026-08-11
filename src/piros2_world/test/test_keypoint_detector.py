@@ -24,11 +24,9 @@ features on one.
 import cv2
 import numpy as np
 from piros2_world.keypoint_detector import (
-    BASE_FROM_OPTICAL,
     estimate_rotation,
     kabsch,
     KeypointDetector,
-    quaternion_from_rotation,
     rays_from_pixels,
 )
 import pytest
@@ -305,22 +303,6 @@ def test_kabsch_reflection_guard_on_coplanar_rays():
     estimate = kabsch(prev, prev @ truth.T)
     assert np.isclose(np.linalg.det(estimate), 1.0)
     assert np.allclose(prev @ truth.T, prev @ estimate.T, atol=1e-9)
-
-
-def test_quaternion_from_rotation():
-    assert np.allclose(quaternion_from_rotation(np.eye(3)), [0, 0, 0, 1])
-    quarter = quaternion_from_rotation(
-        rotation_matrix([0., 0., 1.], np.pi / 2))
-    assert np.allclose(quarter,
-                       [0., 0., np.sin(np.pi / 4), np.cos(np.pi / 4)])
-
-
-def test_optical_pan_conjugates_to_base_yaw():
-    """A pan about optical y (down) must become base yaw about z (up)."""
-    pan = rotation_matrix([0., 1., 0.], np.deg2rad(30))
-    base = BASE_FROM_OPTICAL @ pan @ BASE_FROM_OPTICAL.T
-    assert np.allclose(base, rotation_matrix([0., 0., -1.], np.deg2rad(30)),
-                       atol=1e-12)
 
 
 # --- the node's P0 behaviour --------------------------------------------

@@ -40,9 +40,17 @@ RTABMAP_COMMON = {
     'frame_id': 'base_link',
     # The depth node copies the RGB header verbatim, so RGB/depth stamps
     # match exactly — exact sync, no approximation window needed. Only
-    # frames that got a depth estimate (~3 fps of the 30) pair up, and
-    # that is the intended mapping rate.
+    # frames that got a depth estimate (~10 fps of the up-to-60) pair
+    # up, and that is the intended mapping rate.
     'approx_sync': False,
+    # Exact sync can only pair messages still in the queue: at the
+    # camera's 42-60 fps a depth that arrives ~100 ms after its RGB
+    # needs the RGB to survive ~6 newer frames, and the default queue
+    # of 5 made pairing a coin toss (measured: 0-6 odometry updates on
+    # identical replays). Deep queues cost a few MB and make it
+    # deterministic.
+    'topic_queue_size': 30,
+    'sync_queue_size': 30,
 }
 
 

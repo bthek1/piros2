@@ -6,9 +6,12 @@ depth_estimator:
     # (fetched by `just fetch-model`); set it here only to override.
     #
     # Monocular depth is relative — this scale maps the model's inverse-depth
-    # output to metres-ish (z = depth_scale / output). Arbitrary until P2's
-    # tape-measure check; tune, don't trust.
-    depth_scale: 10.0
+    # output to metres-ish (z = depth_scale / output). Pinned 2026-08-10 by
+    # the tape-measure check: a wall (door face) at a measured 2.50 m read
+    # 9.30 m at scale 10, so 10 * 2.50 / 9.30 = 2.69. Valid for this room's
+    # scale of scene; the model's per-frame output still wobbles ~4%
+    # (measured, static scene) — the scale is honest, the jitter remains.
+    depth_scale: 2.69
 
 cloud_projector:
   ros__parameters:
