@@ -90,6 +90,15 @@ high-pass scale aligner halves the depth model's per-frame wobble, and
 `just run odom:=rgbd` optionally swaps the rotation-only compass for
 RTAB-Map's live 6-DoF odometry.
 
+Reliability groundwork
+([wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md),
+**done 2026-08-12** after the Pi's Wi-Fi died twice while the OS ran on):
+the Ansible `wifi` role gives the Pi an escalation-ladder watchdog
+(reassociate → driver reload → guarded reboot — drilled to unaided
+recovery in ~7 min against the mesh's real `status_code=16` rejection),
+and a dead link now reaps the camera session instead of orphaning it
+against `/dev/video0`. `just wifi` shows link health.
+
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.
 
@@ -122,6 +131,7 @@ status.
 | [world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for TSDF fusion, pose graphs and meshing; upgraded the cloud map to weighted fusion, built the offline recon pipeline, pinned the depth scale — done 2026-08-10, kept as the build log |
 | [live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md) | The live pipeline grows a surface: in-session TSDF + timed re-mesh in RViz, per-frame depth alignment, optional 6-DoF live odometry — in progress since 2026-08-11 |
+| [wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link: escalation-ladder watchdog, outage-reaped camera sessions, `just wifi` — done 2026-08-12, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

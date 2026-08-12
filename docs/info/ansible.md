@@ -1,9 +1,11 @@
 # Provisioning with Ansible
 
-> **Status: built and working (2026-07-24).** All five roles and `site.yml`
-> exist; the playbook has provisioned both machines and is idempotent on both
-> (`changed=0` on a clean rerun) — milestone 0's cross-LAN talker/listener
-> passed. [ansible-plan.md](../plans/completed/ansible-plan.md) records how this was built.
+> **Status: built and working (2026-07-24; `wifi` role added 2026-08-12).**
+> All six roles and `site.yml` exist; the playbook has provisioned both
+> machines and is idempotent on both — milestone 0's cross-LAN
+> talker/listener passed. (One cosmetic exception: the workspace role's
+> colcon-build task always reports `changed`.)
+> [ansible-plan.md](../plans/completed/ansible-plan.md) records how this was built.
 
 Both machines run the same native ROS 2 Jazzy install, so both are provisioned by
 the same playbook. The dev box is the control node; the Pi is a managed host.

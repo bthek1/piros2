@@ -65,6 +65,11 @@ tsdf_mesher:
     refresh_period: 10.0
     # TSDF voxels observed fewer times than this don't mesh.
     weight_threshold: 3.0
+    # Small gaps default to connected: interior holes up to this radius
+    # (metres — 3 voxels' worth) are triangulated closed at extraction.
+    # The scan's open outer boundary is far larger than this and stays
+    # open; the volume itself is untouched. 0 disables.
+    fill_hole_radius: 0.06
     # Marker size cap; a capped refresh logs what it dropped. 60k
     # triangles ≈ 180k points ≈ tolerable rclpy build time per refresh.
     max_triangles: 60000

@@ -290,7 +290,11 @@ open3d lazy-imported) integrates synced `/depth` + compressed RGB into a
 a 10 s timer onto `/world/mesh_live` as a latched TRIANGLE_LIST Marker
 (real geometry, dev-box-local only — RViz caches `mesh_resource` by URI
 so files can't refresh; `integrate()` pairs only (float, float) or
-(uint16, uint8) dtypes). `world.rviz` shows it as **LiveMesh**
+(uint16, uint8) dtypes; since 2026-08-12 `fill_hole_radius: 0.06`
+triangulates small interior gaps closed at extraction — the radius
+bound keeps the scan's open outer boundary open, and the 60k triangle
+cap is the other, louder source of visible holes — its warning says
+what was dropped). `world.rviz` shows it as **LiveMesh**
 (FusedMesh, the offline overlay via `mesh_marker`, defaulted off once
 LiveMesh landed and was removed outright 2026-08-12). P2 landed the
 depth-alignment todo the hard way: conform-to-map is *unstable* —
@@ -304,8 +308,11 @@ alignment is the named next lever in todo.md). `fuse_capture --align`
 uses the same code. P3's `odom:=rgbd` launch arg swaps the detector's
 rotation-only TF (new `publish_tf` param — REP-105, one parent per
 frame) for live `rgbd_odometry` + a raw republisher; bag-verified (101
-odometry updates, rgbd owns `/tf`). Open: the P1 live glance and P3's
-live hand-sweep gate.
+odometry updates, rgbd owns `/tf`). P1's live glance closed 2026-08-12
+— the live sessions watched the surface and their "triangles have
+gaps" observation fed straight back into `fill_hole_radius` and the
+cap finding. Open: P3's live hand-sweep gate (and one live click of
+`~/reset`, bag-proven only).
 
 The Wi-Fi watchdog (done 2026-08-12, the whole
 [watchdog plan](docs/plans/completed/wifi-watchdog-plan.md) planned,
@@ -325,7 +332,7 @@ released in ~60 s) instead of orphaning it.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (77 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (90 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, pure-function
@@ -333,9 +340,10 @@ synthetic chessboards for the keypoint detector, pure-function
 rotation-geometry tests on seeded noise and synthetic ray bundles — a
 chessboard's lookalike corners defeat the matcher's cross-check by
 design — SE(3) geometry tests driving all four quaternion branches
-(`test_se3.py`), and stubbed-TF weighted-fusion voxel-map tests for the
+(`test_se3.py`), stubbed-TF weighted-fusion voxel-map tests for the
 mapper: noise averages toward the plane, min_weight holdback, capped
-inertia) as of 2026-08-10.
+inertia — and pure-function marker/alignment tests for the live mesh)
+as of 2026-08-12.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow

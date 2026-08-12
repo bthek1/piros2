@@ -6,6 +6,13 @@
 > **live mesh** — a TSDF integrated in-session, re-meshed on a timer,
 > visible in the same RViz window and updating as the camera looks
 > around. No more offline crank-turning to see a surface.
+>
+> **Status 2026-08-12:** P0–P2 done, including P1's human glance
+> (closed by the day's live sessions, which also fed back
+> `fill_hole_radius` and the cap finding — see the P1 notes). The one
+> substantive open item is **P3's live hand-sweep gate** (`odom:=rgbd`
+> under real translation — needs a hand and a lit room); then P4's
+> bookkeeping moves this file to `completed/`.
 
 This supersedes the fusion plan's scope line "fusion heavier than
 weighted voxels stays offline" — deliberately, with eyes open: the
@@ -117,7 +124,7 @@ standalone RViz roughly coincides with CloudMap, and a second replay
 after `~/reset` rebuilds it. Integration cost logged per frame
 (expect ~10–15 ms GPU); extraction cost logged per refresh.
 
-## P1 — Into `just world` ✓ (2026-08-11; live hand-pan glance still open)
+## P1 — Into `just world` ✓ (2026-08-11; glance closed 2026-08-12)
 
 > Landed as planned: seventh process in `world.launch.py` (venv
 > `ExecuteProcess`), **LiveMesh** display in `world.rviz`, and
@@ -127,6 +134,26 @@ after `~/reset` rebuilds it. Integration cost logged per frame
 > latched markers (LiveMesh 58,272 triangles, FusedMesh pointing at
 > the sweep3 PLY). Remaining: the human glance — camera still, the
 > view solidifies; pan, the panorama grows; `~/reset` clears.
+>
+> **2026-08-12: the human glance happened, and it paid.** The live
+> sessions ran the surface for real and the observation that came back
+> — "the mesh has triangles with gaps" — drove the day's two findings
+> below (hole-filling landed, the 60k cap caught red-handed at 229k
+> extracted triangles). A watched live surface producing a measured
+> follow-up is the glance check doing exactly its job. Not yet
+> exercised live: the `~/reset` service clearing the mesh mid-session
+> (bag-proven only) — one click next session closes it.
+>
+> **2026-08-12: small gaps default to connected.** `fill_hole_radius`
+> (0.06 m — three voxels) triangulates interior holes closed at
+> extraction via `TriangleMesh.fill_holes`, whose radius bound leaves
+> the scan's room-sized open boundary alone — unseen space is never
+> invented, and the volume itself is untouched. Measured: colours and
+> vertex count preserved, ~16 ms at 80k triangles, bag-verified on
+> static1 (51,511-triangle mesh, refresh 0.8–1.1 s). The same run
+> measured the extraction at **229k triangles against the 60k cap** —
+> on real scenes the cap, not the threshold, may be the biggest source
+> of visible holes; the cap warning is the tell.
 >
 > **2026-08-12: FusedMesh retired entirely.** With the live surface
 > proven, the unaligned offline overlay earned no keep — `mesh_marker`

@@ -1,6 +1,6 @@
 # Project overview and progress
 
-*Written 2026-08-11. A single-page account of what piros2 is, what has been
+*Written 2026-08-11, updated 2026-08-12. A single-page account of what piros2 is, what has been
 built, and where it stands. The detailed logs live in
 [roadmap.md](roadmap.md) and the plans under
 [docs/plans/completed/](../plans/completed/); this page is the map.*
@@ -19,7 +19,7 @@ stage ended with something runnable and verified before moving on.
 | Dev / viz | dev box (`192.168.2.109`, GNOME, GTX 1660 SUPER) | depth inference, RViz, rqt, builds |
 
 Both machines run Jazzy natively from apt on Ubuntu 24.04, provisioned by
-the Ansible tree in `ansible/` (five roles, idempotent on both hosts),
+the Ansible tree in `ansible/` (six roles, idempotent on both hosts),
 talking over CycloneDDS on domain 42 with interfaces pinned per host.
 Day-to-day commands are `just` recipes; `just world` is the current
 `just run` target.
@@ -118,19 +118,57 @@ day — the learning plan for `info.md`'s capture/fusion/output topics:
   pan), while RTAB-Map's poses reveal shingling from the neural depth's
   per-frame ±4% scale wobble — which names the next lever.
 
+### The live mesh — 2026-08-11 → in progress
+
+[live-mesh-plan.md](../plans/in-progress/live-mesh-plan.md) — the live
+pipeline grows a surface:
+
+- `tsdf_mesher` (the sixth `just world` node, venv-run like the depth
+  estimator) integrates synced depth + RGB into a `VoxelBlockGrid`
+  in-session and re-meshes every ~10 s onto `/world/mesh_live` — the
+  **LiveMesh** display in the same RViz window, shipped as real triangle
+  geometry because RViz caches `mesh_resource` files by URI.
+- A high-pass `ScaleAligner` lands the depth-alignment todo: per-frame
+  placement spread 4.0% → 2.9% (conform-to-map feedback proved
+  *unstable* — the ray-cast reads ~1.25 voxels far and walks walls away).
+- `odom:=rgbd` optionally swaps the rotation-only compass for RTAB-Map's
+  live 6-DoF odometry.
+- A `mesh_marker` node (RViz overlay of the newest offline mesh) lived
+  one day — added 2026-08-11, removed 2026-08-12 once LiveMesh made it
+  redundant.
+
+### The Wi-Fi watchdog — 2026-08-12
+
+[wifi-watchdog-plan.md](../plans/completed/wifi-watchdog-plan.md), planned,
+built and drilled in one day after the Pi's link died twice while the OS
+ran on (the AP rejecting re-association with `status_code=16`; incident
+record in [networking.md](networking.md#wi-fi-link-reliability)):
+
+- The Ansible `wifi` role (the sixth role): radio power-save off, an
+  escalation-ladder watchdog on a 60 s timer — reassociate → `brcmfmac`
+  reload → guarded reboot — and sshd ClientAlive.
+- The drill reproduced the `status_code=16` rejection under control and
+  recovered unaided at T+426 s via the driver-reload rung; every rung and
+  both reboot guards carry live journal evidence
+  (`journalctl -t wifi-watchdog`).
+- Outages now reap camera sessions (`ssh -tt` + keepalives on every
+  launcher) instead of orphaning them against `/dev/video0`; `just wifi`
+  is the link-health view.
+
 ## Testing
 
-`just test` (or the VSCode Testing sidebar — identical results): **77 tests
-green** as of 2026-08-10, all style-clean, none needing hardware or model
+`just test` (or the VSCode Testing sidebar — identical results): **90 tests
+green** as of 2026-08-12, all style-clean, none needing hardware or model
 weights — fake ONNX sessions, synthetic depth planes and chessboards,
-seeded-noise rotation geometry, SE(3) quaternion-branch coverage, and
-stubbed-TF weighted-fusion tests for the mapper.
+seeded-noise rotation geometry, SE(3) quaternion-branch coverage,
+stubbed-TF weighted-fusion tests for the mapper, and pure-function
+marker/alignment tests for the live mesh.
 
 ## Where it stands now
 
-- **Working end to end:** `just world` runs the whole five-node dev-box
+- **Working end to end:** `just world` runs the whole six-node dev-box
   stack against the live camera; the offline pipeline goes bag → mesh →
-  room layer without hardware.
+  room layer without hardware; the Pi repairs its own Wi-Fi link.
 - **Committed:** the entire fusion-plan day — `se3.py`, the fusing
   `cloud_mapper`, `tools/recon/`, the pinned `depth_scale`, doc updates —
   landed as `bbe8c73` on 2026-08-11. The GitHub repo carries a one-line

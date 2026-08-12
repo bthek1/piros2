@@ -107,7 +107,7 @@ wifi:
     gw=$(ip route show default | awk '{print $3; exit}')
     if [ -n "$gw" ]; then ping -c 3 -W 1 "$gw" | tail -2; else echo "no default route"; fi
     echo "── power-save ──"
-    iw dev wlan0 get power_save 2>/dev/null || echo "unknown (iw not installed — watchdog plan P1)"
+    iw dev wlan0 get power_save 2>/dev/null || echo "unknown (iw not installed — run 'just deploy-pi'; the wifi role installs it)"
     exit 0
     EOF
 
