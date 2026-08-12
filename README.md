@@ -125,7 +125,7 @@ status.
 | [networking.md](docs/info/networking.md) | DDS discovery across the LAN, domain IDs, and the Docker-bridge gotcha |
 | [camera.md](docs/info/camera.md) | Driver choice, capture modes, image transport, calibration |
 | [troubleshooting.md](docs/info/troubleshooting.md) | Symptoms → causes for the failures you are most likely to hit |
-| [just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — dataflow, deployment, TF tree, lifecycle (open in a browser; mermaid renders via CDN) |
+| [just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — dataflow, deployment, TF tree, lifecycle — plus topic/service/cost reference tables (open in a browser; mermaid renders via CDN) |
 | [roadmap.md](docs/info/roadmap.md) | The learning path, milestone by milestone — concluded 2026-07-27 |
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
 | [perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order, phases P0–P4 — closed 2026-07-29, kept as the build log |

@@ -602,7 +602,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
 | [docs/info/project-overview.md](docs/info/project-overview.md) | Single-page account of the project and progress so far — packages, timeline, current state |
-| [docs/info/just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle. Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes or topics change |
+| [docs/info/just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle — plus reference tables of every topic, service, and per-node measured cost. Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes, topics, or measured figures change |
 | [docs/info/hardware.md](docs/info/hardware.md) | Measured specs of both machines and the camera's capture modes |
 | [docs/info/setup.md](docs/info/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
 | [docs/info/ansible.md](docs/info/ansible.md) | The playbook: inventory, roles, gotchas |
