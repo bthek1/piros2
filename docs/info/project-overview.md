@@ -35,7 +35,7 @@ the workspace.
 | `piros2_camera` | The camera launch + YAML: usb_cam on the Pi, static TF chain `base_link → camera_link → camera_optical_frame`, approximate intrinsics on `/camera_info` |
 | `piros2_vision` | Canny edge detector (`cv_bridge`), the first processing node; its QoS and timestamp findings shaped everything after it |
 | `piros2_perception` | `depth_estimator` (Depth Anything V2 Small, ONNX on the dev box GPU, 72–79 ms/frame) and `cloud_projector` (`/depth` + image → `PointCloud2` through K); plus `mapping.launch.py` for the RTAB-Map route |
-| `piros2_world` | `keypoint_detector` (ORB + descriptor matching → rotation-only camera orientation via Kabsch on bearing rays, published as TF), `cloud_mapper` (voxel map with weighted-average fusion → `/world/map_points`), `dashboard` (2×2 mosaic + stats), and `se3.py` (shared SE(3) pure functions) |
+| `piros2_world` | `keypoint_detector` (ORB + descriptor matching → rotation-only camera orientation via Kabsch on bearing rays, published as TF), `cloud_mapper` (voxel map with weighted-average fusion → `/world/map_points`), `dashboard` (live stats panel on `/world/stats/compressed`; its 2×2 mosaic retired 2026-08-12), and `se3.py` (shared SE(3) pure functions) |
 
 Outside `src/`: `tools/recon/` is an offline reconstruction pipeline under
 the perception venv (open3d) — bag → TUM-layout capture export → TSDF
@@ -85,7 +85,8 @@ Three plans in three days built and then unified `piros2_world`:
 - **[world-plan.md](../plans/completed/world-plan.md)** (done 2026-08-03) —
   the dashboard: ORB keypoints plus every feed and its live stats in one
   mosaic, deliberately using latest-wins subscriptions as the contrast to
-  `cloud_projector`'s exact sync. The live run re-measured the camera at
+  `cloud_projector`'s exact sync (the mosaic itself was removed
+  2026-08-12; the latest-wins stats panel is the surviving output). The live run re-measured the camera at
   **42–60 distinct frames/s** — the old "30 fps ceiling" is gone.
 - **[world-3d-plan.md](../plans/completed/world-3d-plan.md)** (done
   2026-08-05) — rotation-only camera orientation from keypoint matches

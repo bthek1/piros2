@@ -15,7 +15,7 @@
 """
 Unit tests for the dashboard: pure functions first, then the node.
 
-compose_grid and rates take plain arrays and deques on purpose — most of
+rates and stats_lines take plain dicts and deques on purpose — most of
 this file needs no ROS graph at all, matching how the perception tests keep
 onnxruntime out. The node-level tests reuse the capturing-publisher trick.
 """
@@ -24,48 +24,26 @@ from collections import deque
 
 import cv2
 import numpy as np
-from piros2_world.dashboard import compose_grid, Dashboard, rates
+from piros2_world.dashboard import Dashboard, rates, stats_lines
 import pytest
 import rclpy
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Int32
 
-CELL = (160, 90)
 
-
-def solid(colour, size=(120, 200)):
-    """Build a solid-colour BGR frame — input size is arbitrary on purpose."""
-    frame = np.zeros((size[0], size[1], 3), dtype=np.uint8)
-    frame[:] = colour
-    return frame
-
-
-# --- compose_grid ---------------------------------------------------------
-
-def test_grid_geometry_and_placement():
-    frames = {'camera': solid((255, 0, 0)),
-              'depth': solid((0, 255, 0)),
-              'keypoints': solid((0, 0, 255))}
-    grid = compose_grid(frames, CELL)
-
-    width, height = CELL
-    assert grid.shape == (2 * height, 2 * width, 3)
-    # Each source lands in its own quadrant, resized to the cell.
-    assert tuple(grid[height // 2, width // 2]) == (255, 0, 0)
-    assert tuple(grid[height // 2, width + width // 2]) == (0, 255, 0)
-    assert tuple(grid[height + height // 2, width // 2]) == (0, 0, 255)
-    # Bottom-right is the stats cell — black until the node draws on it.
-    assert tuple(grid[height + height // 2, width + width // 2]) == (0, 0, 0)
-
-
-def test_missing_feed_gets_placeholder_not_crash():
-    grid = compose_grid({'camera': solid((255, 255, 255))}, CELL)
-    width, height = CELL
-    # The absent depth quadrant is a placeholder: mostly dark, but labelled
-    # (some non-black pixels from the "waiting for depth" text).
-    quadrant = grid[:height, width:]
-    assert quadrant.mean() < 32
-    assert (quadrant > 0).any()
+def make_lines(**overrides):
+    """Call stats_lines with a healthy one-feed baseline, then overrides."""
+    args = {
+        'fps': {'camera': 30.0, 'depth': 0.0, 'keypoints': 0.0},
+        'totals': {'camera': 150, 'depth': 0, 'keypoints': 0},
+        'last_seen': {'camera': 99.9, 'depth': None, 'keypoints': None},
+        'now': 100.0,
+        'stale_after': 2.0,
+        'keypoint_count': None,
+        'matched_count': None,
+    }
+    args.update(overrides)
+    return stats_lines(**args)
 
 
 # --- rates ----------------------------------------------------------------
@@ -97,6 +75,40 @@ def test_rate_handles_empty_and_singleton():
     assert fps == {'a': 0.0, 'b': 0.0}
 
 
+# --- stats_lines ----------------------------------------------------------
+
+def test_live_feed_line_shows_rate():
+    camera = next(text for text, _ in make_lines() if 'camera' in text)
+    assert '30.0/s' in camera
+    assert 'STALE' not in camera
+
+
+def test_stale_feed_gets_flagged_on_receipt_time_only():
+    """A feed that stops must be flagged — measured on receipt time only."""
+    # The newest arrival is 10 s old; nothing here ever reads a header
+    # stamp (the camera's stamps are faulty).
+    lines = make_lines(last_seen={'camera': 90.0, 'depth': None,
+                                  'keypoints': None})
+    text, colour = next(line for line in lines if 'camera' in line[0])
+    assert 'STALE 10.0s' in text
+    assert colour == (0, 0, 255), 'a stale feed must read as red'
+
+
+def test_never_seen_feed_shows_zero_rate_not_a_fake_age():
+    depth = next(text for text, _ in make_lines() if 'depth' in text)
+    assert 'STALE' not in depth
+    assert '0.0/s' in depth
+
+
+def test_matched_percentage_is_a_display_ratio():
+    lines = make_lines(keypoint_count=200, matched_count=150)
+    matched = next(text for text, _ in lines if 'matched' in text)
+    assert '75%' in matched
+    # No counts yet: dashes, never a division by zero.
+    lines = make_lines()
+    assert any('-' in text for text, _ in lines if 'matched' in text)
+
+
 # --- the node -------------------------------------------------------------
 
 class CapturingPublisher:
@@ -113,48 +125,27 @@ class CapturingPublisher:
 def node():
     rclpy.init()
     node = Dashboard()
-    node.pub = CapturingPublisher()
     node.pub_stats = CapturingPublisher()
     yield node
     node.destroy_node()
     rclpy.shutdown()
 
 
-def make_image(colour=(128, 128, 128)) -> CompressedImage:
-    msg = CompressedImage()
-    msg.format = 'jpeg'
-    msg.data = cv2.imencode('.jpg', solid(colour))[1].tobytes()
-    return msg
+def test_timer_publishes_even_with_no_feeds_at_all(node):
+    """The dashboard must render its own honesty, not wait for data."""
+    node.on_timer()
+    assert len(node.pub_stats.messages) == 1
 
 
-def test_timer_publishes_a_jpeg_mosaic(node):
-    node.on_image('camera', make_image())
+def test_stats_panel_is_a_cell_sized_jpeg(node):
+    node.on_feed('camera', CompressedImage())
     count = Int32()
     count.data = 42
     node.on_count(count)
     node.on_timer()
 
-    assert len(node.pub.messages) == 1
-    out = node.pub.messages[0]
-    assert out.format == 'jpeg'
-    assert bytes(out.data[:2]) == b'\xff\xd8'
-    grid = cv2.imdecode(np.frombuffer(out.data, np.uint8), cv2.IMREAD_COLOR)
-    assert grid.shape == (2 * node.get_parameter('cell_height').value,
-                          2 * node.get_parameter('cell_width').value, 3)
-
-
-def test_timer_publishes_even_with_no_feeds_at_all(node):
-    """The dashboard must render its own honesty, not wait for data."""
-    node.on_timer()
-    assert len(node.pub.messages) == 1
-
-
-def test_stats_cell_is_published_standalone(node):
-    """The stats panel rides its own topic for RViz, cell-sized."""
-    node.on_timer()
-
-    assert len(node.pub_stats.messages) == 1
     out = node.pub_stats.messages[0]
+    assert out.format == 'jpeg'
     assert bytes(out.data[:2]) == b'\xff\xd8'
     stats = cv2.imdecode(np.frombuffer(out.data, np.uint8),
                          cv2.IMREAD_COLOR)
@@ -164,28 +155,10 @@ def test_stats_cell_is_published_standalone(node):
     assert (stats > 0).any()
 
 
-def test_stale_panel_gets_a_banner(node):
-    """A feed that stops must be flagged — measured on receipt time only."""
-    node.on_image('camera', make_image((30, 30, 30)))
-    # Rewind the receipt record far past the threshold; the header stamp is
-    # deliberately irrelevant (the camera's stamps are faulty).
-    node.last_seen['camera'] -= 10.0
-    node.on_timer()
-
-    grid = cv2.imdecode(np.frombuffer(node.pub.messages[0].data, np.uint8),
-                        cv2.IMREAD_COLOR)
-    banner = grid[:20, :node.get_parameter('cell_width').value]
-    # The STALE banner is drawn in pure red (BGR 0,0,160); through JPEG it
-    # stays strongly red-dominant, which a dark grey frame cannot be.
-    reddish = (banner[:, :, 2].astype(int)
-               - banner[:, :, 1].astype(int)) > 80
-    assert reddish.mean() > 0.3, 'no STALE banner on a dead feed'
-
-
 def test_arrivals_are_recorded_per_stream(node):
     for _ in range(3):
-        node.on_image('camera', make_image())
-    node.on_image('depth', make_image())
+        node.on_feed('camera', CompressedImage())
+    node.on_feed('depth', CompressedImage())
 
     assert node.totals == {'camera': 3, 'depth': 1, 'keypoints': 0}
     assert len(node.arrivals['camera']) == 3

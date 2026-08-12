@@ -145,7 +145,7 @@ flowchart LR
     subgraph DEV["Dev box"]
         KP["keypoint_detector&lt;br/&gt;ORB · rotation compass"]
         DEPTH["depth_estimator&lt;br/&gt;Depth Anything V2 · venv · GPU"]
-        DASH["dashboard&lt;br/&gt;latest-wins · 10 Hz wall timer"]
+        DASH["dashboard&lt;br/&gt;arrival stats · 10 Hz wall timer"]
         PROJ["cloud_projector&lt;br/&gt;exact sync by header stamp"]
         MAPPER["cloud_mapper&lt;br/&gt;weighted voxel fusion"]
         MESH["tsdf_mesher&lt;br/&gt;TSDF · venv · GPU"]
@@ -153,7 +153,6 @@ flowchart LR
         TDEPTH(["/depth&lt;br/&gt;32FC1 · ~13 fps"])
         TTF(["/tf&lt;br/&gt;odom → base_link"])
         TPTS(["/points&lt;br/&gt;33–57k points"])
-        TDASHT(["/world/dashboard/compressed&lt;br/&gt;classic 2×2 mosaic, for anyone"])
     end
 
     CAM --> TIMG
@@ -165,6 +164,7 @@ flowchart LR
     TIMG --> DASH
     TIMG --> PROJ
     TIMG --> MESH
+    TIMG --> RVIZ
     TINFO --> KP
     TINFO --> PROJ
     TINFO --> MESH
@@ -173,9 +173,11 @@ flowchart LR
     TDEPTH --> PROJ
     TDEPTH --> MESH
     DEPTH -- "/depth/preview/compressed" --> DASH
+    DEPTH -- "/depth/preview/compressed" --> RVIZ
 
     KP -- "/keypoints/compressed&lt;br/&gt;/keypoints/count · /keypoints/matched" --> DASH
     KP --> TTF
+    KP -- "/keypoints/compressed" --> RVIZ
     KP -- "/camera/orientation" --> RVIZ
 
     PROJ --> TPTS
@@ -192,17 +194,20 @@ flowchart LR
     MAPPER -- "/world/map_points · 1 Hz" --> RVIZ
     MESH -- "/world/mesh_live&lt;br/&gt;latched Marker · re-mesh every 10 s" --> RVIZ
     DASH -- "/world/stats/compressed" --> RVIZ
-    DASH --> TDASHT
 
     classDef topic fill:#b9651822,stroke:#b96518,stroke-width:1px;
-    class TIMG,TINFO,TTFS,TDEPTH,TTF,TPTS,TDASHT topic;
+    class TIMG,TINFO,TTFS,TDEPTH,TTF,TPTS topic;
 </pre>
     </div>
     <figcaption><strong>What to notice</strong> — <code>/image_raw/compressed</code> fans out to
-    five consumers and <code>/depth</code> to two more, then everything reconverges in RViz.
+    six consumers and <code>/depth</code> to two more, then everything reconverges in RViz —
+    whose image panels subscribe to the camera, keypoint and depth-preview feeds directly
+    (since the mosaic's removal they are those feeds' only viewers).
     Three different consumption strategies coexist on the same topics: the projector and
     mesher pair messages by exact header stamp (<code>message_filters</code>), the dashboard
-    deliberately keeps only the latest of each feed and composes on its own 10&nbsp;Hz clock,
+    deliberately syncs nothing — it counts arrivals per feed and renders the stats panel on
+    its own 10&nbsp;Hz clock (since 2026-08-12 that panel is its only output; the 2×2 mosaic
+    topic was removed as a publisher without subscribers),
     and the mapper/mesher pose their data by latest-only TF lookup — the honest answer to
     the camera's 0.73&nbsp;s stamp fault. Rates matter: a 42–60&nbsp;fps camera feeding a
     ~13&nbsp;fps depth model is why the sync queues are 30 deep.</figcaption>

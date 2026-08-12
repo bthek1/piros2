@@ -179,9 +179,13 @@ keypoints drawn green, new ones yellow, count on `/keypoints/matched`,
 shown as a percentage on the dashboard —
 the first step toward tracking camera pose) and `dashboard` (three latest-wins
 RELIABLE subscriptions — deliberately no message_filters sync, the
-contrast with `cloud_projector` is the lesson — composed by a 10 Hz
-wall-timer into a 2×2 mosaic + stats panel on
-`/world/dashboard/compressed`). All rates and the STALE banners are
+contrast with `cloud_projector` is the lesson — rendered by a 10 Hz
+wall-timer into the stats panel on `/world/stats/compressed`; its
+original 2×2 mosaic on `/world/dashboard/compressed` was removed
+2026-08-12 after sitting subscriber-less since the RViz per-feed panels
+took over, and with it went the only reason to decode incoming frames —
+the node now counts arrivals without decoding anything). All rates and
+the STALE lines are
 measured against the dashboard's own receipt clock, never `header.stamp`
 (the 0.73 s camera fault). `world.launch.py` follows the
 perception-launch rules (venv `ExecuteProcess` for depth, no camera
@@ -231,16 +235,18 @@ whole session): the Depth3D live cloud + CloudMap panorama + LiveMesh
 surface + TF axes in one 3D scene, each toggleable in Displays, plus raw
 camera / keypoints / depth / stats image panels docked alongside. Closing it tears everything
 down. The stats panel is fed by
-`/world/stats/compressed` — the dashboard renders its stats cell once
-and publishes it both into the mosaic and standalone. The redundant
+`/world/stats/compressed` — since 2026-08-12 the dashboard's only
+output (the mosaic removal, below). The redundant
 `world3d.launch.py`, `world.rviz` and `just world3d` recipe were deleted
 after the merged session was proven live. The layout iterated through
 the day (recorded in the plan): three windows → a rejected
 whole-mosaic-in-RViz variant → the rqt mosaic window retired in favour
 of per-feed panels (stats via `/world/stats/compressed`) → the map
 display merged into the orientation scene and the map window (and
-`map.rviz`) removed. `/world/dashboard/compressed` still publishes for
-anyone who wants the classic mosaic. `just orient` stays as the
+`map.rviz`) removed. `/world/dashboard/compressed` outlived its window
+as a courtesy topic until 2026-08-12, when a check found it publishing
+2×2 mosaics to nobody at 10 Hz and it was removed outright — the
+dashboard now renders only the stats panel. `just orient` stays as the
 lightweight no-GPU session — it opens the same `world.rviz`, so its
 Depth3D/CloudMap/DepthPreview/Stats slots sit empty there by design
 (only the detector runs; empty panels are honesty, not a fault).
@@ -336,7 +342,7 @@ is green (90 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, pure-function
-`compose_grid`/`rates`/stats-cell tests for the dashboard, matching and
+`rates`/`stats_lines` tests for the dashboard, matching and
 rotation-geometry tests on seeded noise and synthetic ray bundles — a
 chessboard's lookalike corners defeat the matcher's cross-check by
 design — SE(3) geometry tests driving all four quaternion branches
@@ -596,6 +602,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
 | [docs/info/project-overview.md](docs/info/project-overview.md) | Single-page account of the project and progress so far — packages, timeline, current state |
+| [docs/info/just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle. Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes or topics change |
 | [docs/info/hardware.md](docs/info/hardware.md) | Measured specs of both machines and the camera's capture modes |
 | [docs/info/setup.md](docs/info/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
 | [docs/info/ansible.md](docs/info/ansible.md) | The playbook: inventory, roles, gotchas |

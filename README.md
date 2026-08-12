@@ -59,7 +59,9 @@ and the annotated keypoints into one 2×2 mosaic with a live stats panel —
 per-stream rates measured against the node's own clock, cumulative counts,
 and staleness banners — published as a single compressed topic. `just world`
 (the new `just run`) starts the camera on the Pi and opens the one-window
-view in `rqt_image_view`. Since **2026-08-04** the detector also matches
+view in `rqt_image_view`. (The mosaic retired in stages: its window on
+2026-08-05, the topic itself on 2026-08-12 — the stats panel lives on as
+the dashboard's output, in RViz.) Since **2026-08-04** the detector also matches
 descriptors against a 10-frame window — re-observed keypoints drawn green,
 new ones yellow, matched rate on the dashboard — feeding the
 [world 3D plan](docs/plans/completed/world-3d-plan.md) (**done
@@ -123,6 +125,7 @@ status.
 | [networking.md](docs/info/networking.md) | DDS discovery across the LAN, domain IDs, and the Docker-bridge gotcha |
 | [camera.md](docs/info/camera.md) | Driver choice, capture modes, image transport, calibration |
 | [troubleshooting.md](docs/info/troubleshooting.md) | Symptoms → causes for the failures you are most likely to hit |
+| [just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — dataflow, deployment, TF tree, lifecycle (open in a browser; mermaid renders via CDN) |
 | [roadmap.md](docs/info/roadmap.md) | The learning path, milestone by milestone — concluded 2026-07-27 |
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
 | [perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order, phases P0–P4 — closed 2026-07-29, kept as the build log |
