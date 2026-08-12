@@ -56,7 +56,7 @@ BIG_FRAME_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=1)
 
-# Latched, like mesh_marker: one refresh serves a late-joining RViz.
+# Latched: one refresh serves a late-joining RViz.
 LATCHED_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,

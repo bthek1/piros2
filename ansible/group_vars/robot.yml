@@ -5,6 +5,18 @@ ros_metapackage: ros-jazzy-ros-base
 # The Pi has NO Ethernet cable attached; eth0 is NO-CARRIER. Wi-Fi only.
 dds_interface: wlan0
 
+# The wifi role's interface — the same physical radio as dds_interface, but
+# a separate concern (link-keeping vs DDS pinning), so a separate name.
+wifi_interface: wlan0
+
+# Watchdog ladder tuning (wifi role). One rung per `threshold` consecutive
+# minute-spaced gateway-ping failures: reassociate at 3, driver reload at 6,
+# reboot at 9 — the reboot never within `min_uptime` s of boot and at most
+# one per `cooldown` s (a watchdog, not a boot loop).
+wifi_fail_threshold: 3
+wifi_reboot_min_uptime: 600
+wifi_reboot_cooldown: 3600
+
 # demo_nodes_cpp ships with `desktop` but not with `ros-base`. Installed here so
 # the talker/listener checkpoint works in both directions.
 install_demo_nodes: true

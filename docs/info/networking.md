@@ -161,3 +161,58 @@ old view otherwise. This alone explains a lot of "I fixed it but nothing changed
 Raw 1280×720 RGB8 at 30 fps is roughly **83 MB/s** — well beyond what the link
 should be asked to carry, and it will stall the pipeline. Always stream compressed
 between the machines; see [camera.md](camera.md#image-transport).
+
+## Wi-Fi link reliability
+
+The Pi's `wlan0` link has died twice without the OS going down
+(measured 2026-08-12 from the Pi's own journals; power and thermals
+ruled out — `throttled=0x0`, no undervoltage events, load ~0.03):
+
+- **Incident 1** (ended by reboot, 2026-08-11): the mesh node
+  `…:d6:83` rejected re-association **100 times**
+  (`CTRL-EVENT-ASSOC-REJECT status_code=16`, `auth_failures=87`),
+  with wpa_supplicant cycling through 5-minute `SSID-TEMP-DISABLED`
+  loops for hours. The reboot reconnected in seconds.
+- **Incident 2** (ended by power cycle, 2026-08-12): the link died
+  *silently* ~10 min after the last camera session — no deauth, no
+  driver error, 15 hours of nothing but NTP timeouts — and never
+  re-associated. The journal was written continuously throughout: the
+  machine was healthy, unreachable, and still streaming the camera
+  locally (the lit LED is the tell).
+
+Signal strength is not the cause — RSSI measured **−45 dBm** at
+433 Mbps on 5 GHz at diagnosis time. The suspect pairing is the Pi's
+`brcmfmac` driver against the mesh's client steering (the same boot
+logged `brcmf_set_channel … fail, reason -52` scan spam), a
+combination with a long public rap sheet.
+
+Triage order for an unreachable Pi: `ping 192.168.2.17`; check the
+ARP table (`ip neigh`) — during incident 2 the Pi still answered ARP
+intermittently while dropping everything else, so an ARP entry is not
+reachability; after recovery read `journalctl -b -1`, where the
+previous boot's last minutes hold the truth. Do **not** start from
+"the Pi crashed" — twice now it hadn't.
+
+Mitigations, in order of standing:
+
+- **Fast-fail ssh (2026-08-12):** every session-recipe ssh carries
+  `-o BatchMode=yes -o ConnectTimeout=5`, so a dead link fails in
+  seconds instead of hanging recipes and cleanup traps for ~2 minutes.
+- **The watchdog (built and drilled 2026-08-12):** the Ansible `wifi`
+  role puts an escalation ladder on a 60 s systemd timer — reassociate
+  after 3 failed gateway pings, reload `brcmfmac` after 6, reboot
+  after 9 (never within 10 min of boot, at most once an hour). Radio
+  power-save is off (a boot-persistent unit). In the live drill the
+  mesh rejected the reassociation rung with `status_code=16` —
+  incident 1's signature, reproduced — and the driver-reload rung
+  recovered the link unaided at T+426 s. Flight recorder:
+  `journalctl -t wifi-watchdog`; thresholds in `group_vars/robot.yml`;
+  build log in [the Wi-Fi watchdog plan](../plans/completed/wifi-watchdog-plan.md).
+- **Mid-session outages reap, not limp (2026-08-12):** camera
+  launchers use `ssh -tt` + `ServerAlive 5×3` (dev side notices in
+  ~15 s) and the Pi's sshd runs `ClientAlive 15×4`, so a dead session
+  HUPs the remote launch — camera released, LED off, no orphan
+  holding `/dev/video0`. Drill-verified end to end.
+- **The real fix is still a cable:** `eth0` sits unused; Ethernet would
+  retire this whole failure class. Router-side, exempting the Pi from
+  band-steering may also help and can only be done from the mesh's UI.

@@ -76,6 +76,20 @@ alongside;
 reset/clear services stand in for loop closure, and the honest scope is
 a panorama from one viewpoint, not a walkable map.
 
+The [world fusion plan](docs/plans/completed/world-fusion-plan.md)
+(**done 2026-08-10**) turned that map into real fusion — per-voxel
+weighted averages live, plus an offline pipeline (`tools/recon/`,
+Open3D under the perception venv) from bag to TSDF mesh to a
+plane-labelled `room.json`, with the depth scale pinned by tape measure
+(`depth_scale: 2.69`, +0.1% on verification). The
+[live mesh plan](docs/plans/in-progress/live-mesh-plan.md) (**in
+progress, 2026-08-11**) then brought the surface live: `tsdf_mesher`
+integrates depth in-session and re-meshes onto `/world/mesh_live`
+every ~10 s (the LiveMesh display in the same RViz window), a
+high-pass scale aligner halves the depth model's per-frame wobble, and
+`just run odom:=rgbd` optionally swaps the rotation-only compass for
+RTAB-Map's live 6-DoF odometry.
+
 Groundwork before all of it: the Pi was **reflashed to Ubuntu Server 24.04 on
 2026-07-23**, which is what makes the native `apt` install possible.
 

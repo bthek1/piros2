@@ -432,12 +432,27 @@ the wrapper orphans the actual ros2-run grandchildren. The orphans sit silent
 haunt the terminal they were started from. Hit twice on 2026-07-27: a
 republisher and an edge detector leaked from a `just replay`.
 
-The `calibrate` and `replay` traps now `pkill -f` the node patterns instead.
-Diagnose and clear survivors with:
+The `calibrate` and `replay` traps now `pkill -f` the node patterns instead,
+and the fix hardened into a repo-wide rule (2026-08-12, CLAUDE.md
+Conventions): **every session recipe must tear down everything it started,
+on both machines, when its window closes or on Ctrl-C — no stragglers.**
+The shape all the session recipes share: the viewer is the recipe's
+foreground process, so closing its window ends the recipe, and a
+`trap … EXIT` `pkill -f`s every node the recipe started — bash fires the
+EXIT trap on Ctrl-C too, so one trap covers both exits. A session that
+gains a node gets its pattern added to the trap in the same change.
 
-```bash
-pgrep -af 'republish|edge_detector|cameracalibrator'
-```
+The rule covers ad-hoc runs too — a camera or node started by hand (or by
+Claude while verifying something) has no trap, so it must be bounded with
+`timeout -s INT` up front or `pkill -f`'d when done, and the hands-on work
+ends with a `just stragglers` check. The stray scratch node in the
+RViz-flicker entry below is what skipping this looks like; a leaked
+usb_cam additionally blocks every later session (exclusive capture —
+[camera.md#handling-rules](camera.md#handling-rules), rule 10).
+
+Diagnose survivors with `just stragglers` — it sweeps both machines and
+prints `clean` per host when there are none — and clear them with
+`pkill -f` on the printed patterns (`ssh pi 'pkill -f …'` for the Pi's).
 
 ## An RViz cloud flickers between two different shapes or sizes
 
@@ -481,3 +496,141 @@ Two causes stack (hit both on 2026-07-30):
 The failure is *silent* at the API level: with a CPU fallback in the
 providers list, the session simply runs slow. Always log
 `session.get_providers()[0]` rather than assuming — the depth node does.
+
+## `rtabmap-export` aborts: "The are no odometry poses!?"
+
+Symptom: every `--opt` mode of `rtabmap-export` opens the database and
+aborts (`Loaded 0 odometry poses`), even though `rtabmap-info` shows
+nodes and odometry length.
+
+The databases this repo produces (rtabmap 0.22.1, `-d` fresh-start,
+bag-replay sessions) don't carry whatever table that tool reads. The
+export that works is **`rtabmap-report --poses_raw ~/.ros/rtabmap.db`**,
+which writes `rtabmap_odom.txt` and `rtabmap_slam.txt` next to the
+database in TUM form (`t x y z qx qy qz qw` + a trailing node-id
+column). `just map-headless <bag>` wraps the whole run and moves the
+files next to the bag. Two facts to hold onto (2026-08-10): the poses
+are **base_link**, not optical (`fuse_capture --poses-frame base`
+converts), and their stamps are on the replay's clock, days away from
+the capture's — `fuse_capture` removes the constant offset by median
+difference.
+
+## Exact-sync subscribers pair rarely, or not at all
+
+Symptom: `rgbd_odometry` (or any exact-stamp `message_filters`
+consumer of `/image_raw` + `/depth`) logs "Did not receive data since
+5 seconds" while both topics demonstrably flow; odometry updates vary
+run to run on identical input — 0 on one replay, 6 on the next.
+
+Exact sync can only pair messages still in its queue. The depth node
+publishes ~100 ms after its source frame, and at the camera's real
+42–60 fps that means the matching RGB must survive ~6 newer arrivals —
+a coin toss against the default queue of 5. Set
+`topic_queue_size`/`sync_queue_size` ~30 (done in `mapping.launch.py`
+and the `odom:=rgbd` mode, 2026-08-11): the same replay went from 0–6
+to a deterministic 24 odometry updates. The 5-second watchdog warnings
+themselves are normal at ~1–2 Hz paired rates (see the mapping notes in
+CLAUDE.md) — the symptom is *variance* between identical runs, not the
+warnings.
+
+## RViz Marker: "Could not load resource … GLTF: Buffer view … out of range"
+
+Symptom: a `mesh_resource` Marker pointing at a `.glb` written by
+Open3D errors in the RViz log and renders nothing; the same mesh as
+`.ply` loads cleanly.
+
+RViz's assimp cannot parse Open3D's GLB layout (measured 2026-08-11).
+Point `mesh_resource` at the PLY; keep `.glb` for external viewers
+(Blender, web viewers). Related trap, and the reason the *live* mesh is
+published as a TRIANGLE_LIST Marker instead of a file at all: RViz
+caches `mesh_resource` by URI, so rewriting a file and re-publishing
+the same path shows the stale mesh forever, and unique-name-per-refresh
+grows RViz memory without bound.
+
+## Open3D viewer window fails: "Failed to initialize GLEW"
+
+Symptom: `o3d.visualization.draw_geometries` prints a GLFW Wayland
+warning, "Failed to initialize GLEW", "Failed creating OpenGL window",
+and returns without a window.
+
+Same family as the rviz2/Qt entries: the dev-box session is Wayland and
+this GL path needs X11. For GLFW (Open3D bundles it) unsetting
+`WAYLAND_DISPLAY` is *not enough* — it still picks the Wayland backend
+— it additionally needs `XDG_SESSION_TYPE=x11` to fall back to
+Xwayland. `just view-mesh` carries both pins.
+
+## `VoxelBlockGrid.integrate`: "Unsupported input data type combination"
+
+Symptom: `Expected (float, float) or (uint16, uint8), but received
+(Float32 UInt8)` — integration works from PNG files but crashes on
+live images.
+
+Open3D pairs depth/colour dtypes strictly. File-based fusion reads
+uint16 depth + uint8 colour and matches; a live float32-metres depth
+image forces the colour to float32 in [0, 1] (`tsdf_mesher` converts).
+
+## TSDF surfaces drift away when depth alignment is fed back
+
+Symptom: with per-frame depth-to-map scale alignment enabled, a wall
+at a fixed distance walks outward (~+1%/frame) and fused surfaces get
+*thicker*, not thinner.
+
+`VoxelBlockGrid.ray_cast` reads the surface ~1.25 voxels behind where
+`integrate` put it (measured 2026-08-11: +1.0% at 2 cm voxels on a
+2.5 m scene, +0.5% at 1 cm — voxel-proportional, truncation-
+independent, and it shifts as the map accumulates, so a one-shot bias
+calibration fails too). Any constant error compounds in a
+conform-to-map loop. The stable design is the high-pass in
+`piros2_world/depth_align.py`: correct only each frame's *deviation*
+from a rolling median of ratios — wobble is fast, bias is slow, and the
+correction stream has median 1 by construction, so it cannot push the
+map anywhere.
+
+## The Pi vanishes from the network after replugging the camera
+
+Symptom: `ssh pi` → `No route to host`, ARP `FAILED`; moments earlier
+only the camera USB was touched.
+
+The Pi 5's USB-C power sits next to the USB-A ports and unseats
+easily — the board reboots (check `uptime -s` once it returns, ~60 s).
+Knock-on effects of the power cycle: the C922 reverts to
+`exposure_dynamic_framerate=1` and `gain=0` territory again, so run
+`just camera-reset` (and re-raise gain in a dim room) before trusting
+any frames — see camera.md's persistent-state rules.
+
+## The Pi is unreachable but the camera LED is still on
+
+Symptom: `ping 192.168.2.17` gets nothing, `ssh pi` times out, yet the
+C922's LED is lit — and possibly has been for hours.
+
+The Wi-Fi link died while the OS kept running. This is a different
+fault from the power-unseat entry above: there the board reboots
+(`uptime -s` resets, ARP goes `FAILED`); here uptime is long, the
+journal never stops, and the orphaned camera session keeps streaming
+to nobody — the LED is the proof the Pi is alive, not a sign it is
+healthy. Seen twice (2026-08-11/12); the full incident record and
+triage order live in
+[networking.md#wi-fi-link-reliability](networking.md#wi-fi-link-reliability).
+
+Since 2026-08-12 the watchdog (Ansible `wifi` role) repairs this
+unaided — reassociate → driver reload → guarded reboot, drilled at
+T+426 s to recovery — so first read its flight recorder:
+`journalctl -t wifi-watchdog`. A Pi that is *still* unreachable after
+~10 minutes means the ladder is losing: power cycle it and read the
+journal for which rungs fired. Orphaned camera sessions are reaped
+automatically since the same date (sshd ClientAlive + the recipes'
+`ssh -tt`); if `just stragglers` still shows one, clear it before the
+next launch — a held device dies with the next entry's `char*` abort.
+
+## usb_cam dies at startup: `terminate called after throwing an instance of 'char*'`
+
+Symptom: the camera launch on the Pi prints the device's full format
+list, then usb_cam aborts (exit code −6) and the launch shuts down.
+
+That `char*` throw is usb_cam failing to negotiate the video format,
+and the two observed causes are both *state*, not code: the device is
+already held by an orphaned usb_cam from an earlier session (check
+`just stragglers`, or `fuser /dev/video0` on the Pi), or the camera is
+in a transient bad state shortly after a Pi reboot (seen 2026-08-11;
+the identical launch succeeded on retry minutes later). Clear any
+holder, retry once, and only then treat it as a real bug.

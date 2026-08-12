@@ -1,0 +1,75 @@
+---
+# Robot-only: keep the Wi-Fi link alive. The link died twice in two days
+# while the OS ran on undisturbed (networking.md#wi-fi-link-reliability) —
+# once with the mesh AP rejecting re-association 100 times, once silently
+# for 15 hours. This role removes one known cause (radio power-save) and
+# installs the escalation-ladder watchdog that repairs the link when it
+# dies anyway. Design and drill record: the Wi-Fi watchdog plan.
+
+- name: Install wireless tooling
+  become: true
+  ansible.builtin.apt:
+    name: iw # Ubuntu Server ships without it — the same gap as v4l-utils
+    state: present
+
+# Power-save is a documented contributor to brcmfmac links dying silently —
+# exactly incident 2's signature. The setting does not survive a reboot, so
+# it is a boot-time unit rather than a one-off command.
+- name: Install the power-save-off unit
+  become: true
+  ansible.builtin.template:
+    src: wifi-powersave.service.j2
+    dest: /etc/systemd/system/wifi-powersave.service
+    mode: "0644"
+  notify: Restart the power-save unit
+
+# enabled only, no `state: started`: the unit is a plain oneshot (no
+# RemainAfterExit — the device re-trigger needs it restartable), so it
+# always reads inactive and a `started` here would re-fire every run,
+# breaking idempotency. Boot and device-appearance start it; the handler
+# covers first install and template changes.
+- name: Enable the power-save-off unit
+  become: true
+  ansible.builtin.systemd_service:
+    name: wifi-powersave.service
+    enabled: true
+    daemon_reload: true
+
+# The escalation ladder: gateway ping every minute, then reassociate →
+# driver reload → guarded reboot. All thresholds in group_vars/robot.yml;
+# the script documents the ladder and its guards.
+- name: Install the watchdog script
+  become: true
+  ansible.builtin.template:
+    src: wifi-watchdog.sh.j2
+    dest: /usr/local/sbin/wifi-watchdog.sh
+    mode: "0755"
+
+- name: Install the watchdog service and timer
+  become: true
+  ansible.builtin.template:
+    src: "wifi-watchdog.{{ item }}.j2"
+    dest: "/etc/systemd/system/wifi-watchdog.{{ item }}"
+    mode: "0644"
+  loop: [service, timer]
+  notify: Reload systemd units
+
+- name: Enable the watchdog timer
+  become: true
+  ansible.builtin.systemd_service:
+    name: wifi-watchdog.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# Without this, a silent link death leaves ssh-launched camera sessions
+# orphaned for hours (sshd waits on dead TCP); with it they are reaped in
+# ~60 s. The dev-box half of the same contract (-tt + ServerAlive) lives on
+# the justfile's camera launchers.
+- name: Reap dead ssh sessions promptly (ClientAlive)
+  become: true
+  ansible.builtin.template:
+    src: sshd-clientalive.conf.j2
+    dest: /etc/ssh/sshd_config.d/50-piros2-clientalive.conf
+    mode: "0644"
+  notify: Reload sshd

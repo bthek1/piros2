@@ -86,6 +86,46 @@ camera:
 camera-reset:
     ssh pi 'set -e; for c in auto_exposure=3 exposure_dynamic_framerate=0 focus_automatic_continuous=1 white_balance_automatic=1 gain=0 brightness=128 contrast=128 saturation=128 sharpness=128 zoom_absolute=100 pan_absolute=0 tilt_absolute=0; do v4l2-ctl -d /dev/video0 --set-ctrl=$c; done; echo "camera baseline restored"'
 
+# The layer below `just status`: an unreachable Pi is invisible to DDS no
+# matter what the ROS env says, and the link has died twice while the OS
+# ran on (networking.md#wi-fi-link-reliability). Reads association state,
+# signal, this boot's ASSOC-REJECT damage count, gateway reachability and
+# power-save — the numbers to quote before blaming ROS for silence.
+# Wi-Fi link health on the Pi (association, signal, rejects, gateway, power-save)
+[group('status')]
+wifi:
+    #!/usr/bin/env bash
+    ssh -o BatchMode=yes -o ConnectTimeout=5 pi 'bash -s' <<'EOF' || echo "pi unreachable"
+    echo "── association ──"
+    sudo wpa_cli -i wlan0 status | grep -E "^(wpa_state|ssid|bssid|freq)="
+    echo "── signal ──"
+    sudo wpa_cli -i wlan0 signal_poll
+    echo "── this boot ──"
+    echo "assoc rejects: $(journalctl -b --no-pager | grep -c ASSOC-REJECT)"
+    journalctl -b --no-pager | grep TEMP-DISABLED | tail -1
+    echo "── gateway ──"
+    gw=$(ip route show default | awk '{print $3; exit}')
+    if [ -n "$gw" ]; then ping -c 3 -W 1 "$gw" | tail -2; else echo "no default route"; fi
+    echo "── power-save ──"
+    iw dev wlan0 get power_save 2>/dev/null || echo "unknown (iw not installed — watchdog plan P1)"
+    exit 0
+    EOF
+
+# Every session recipe must leave nothing behind — window close and Ctrl-C
+# both fire its EXIT trap (CLAUDE.md Conventions). This sweeps both machines
+# for survivors; "clean" per host means none. Clear leftovers with
+# `pkill -f` on the printed patterns (and `ssh pi 'pkill -f …'` for the Pi).
+# List session processes still alive on either machine (should print clean)
+[group('status')]
+stragglers:
+    #!/usr/bin/env bash
+    pat='usb_cam|static_transform_publisher|ros2 launch|ros2 bag|image_transport/republish|piros2_vision|piros2_perception|piros2_world|rgbd_odometry|rtabmap|cameracalibrator|rviz2|rqt_image_view'
+    echo "── dev box ──"
+    pgrep -af "$pat" || echo "clean"
+    echo "── pi ──"
+    out=$(ssh -o BatchMode=yes -o ConnectTimeout=5 pi 'pgrep -af "usb_[c]am|static_transform_[p]ublisher|ros2 [l]aunch|ros2 [b]ag"'); rc=$?
+    if [ $rc -eq 0 ]; then echo "$out"; elif [ $rc -eq 1 ]; then echo "clean"; else echo "pi unreachable"; fi
+
 # Points at whatever the project's newest runnable thing is — retarget this
 # as phases land. Args pass through to the underlying recipe.
 # Run the latest project (currently `just world` — the composed dashboard)
@@ -97,6 +137,13 @@ run *args: (world args)
 # since 2026-07-30 (~13 fps in-node); the cloud updates at that pace —
 # slower than the camera's 30–60 fps is the pipeline's pace, not a fault.
 #
+# The camera ssh carries -tt + keepalives, with stdin from /dev/null so the
+# tty games stay remote: a dead link kills the local ssh in ~15 s
+# (ServerAlive 5x3) instead of TCP-forever, and the forced pty means sshd
+# HUPs the remote launch when the session dies — camera released, LED off,
+# no orphan holding /dev/video0. Silent link deaths are caught server-side
+# by sshd ClientAlive (wifi role). Same options on every camera launcher.
+#
 # RViz env pin: QT_QPA_PLATFORM=xcb is permanent (OGRE renders via GLX,
 # which is X11-only — a Wayland Qt window can never host it). The mesa
 # software-rendering stopgap for the 2026-07-28 NVIDIA driver mismatch was
@@ -107,16 +154,16 @@ run *args: (world args)
 [group('test')]
 cloud *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch piros2_perception perception.launch.py' &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_perception" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_perception" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # Warm-up doubles as a health check: camera.launch.py exits nonzero when
     # the C922 is missing (pre-flight in the launch file), so if the ssh job
     # dies during these seconds, bail loudly instead of opening a viewer on
     # nothing. Same pattern in cam/edges/depth.
     for _ in $(seq 8); do
-        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_perception/config/perception.rviz'
@@ -129,12 +176,12 @@ cloud *args:
 [group('test')]
 cam *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 4); do
-        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
     # PATH override: rqt tools use `#!/usr/bin/env python3`, and the PlatformIO
@@ -154,12 +201,12 @@ pipeline *args:
 [group('test')]
 edges *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_vision vision.launch.py {{ args }}'" &
+    ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_vision vision.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_vision\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[e]dge_detector\"; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_vision\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[e]dge_detector\"; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 6); do
-        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /image_processed/compressed'
@@ -215,13 +262,13 @@ calibrate:
 [group('test')]
 depth *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ~/.venvs/piros2-perception/bin/python -m piros2_perception.depth_estimator --ros-args --params-file src/piros2_perception/config/perception.yaml' &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 6); do
-        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /depth/preview/compressed'
@@ -234,13 +281,13 @@ depth *args:
 [group('test')]
 keypoints *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 run piros2_world keypoint_detector --ros-args --params-file src/piros2_world/config/world.yaml' &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 6); do
-        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
     bash -lc 'source /opt/ros/jazzy/setup.bash && PATH="/usr/bin:$PATH" ros2 run rqt_image_view rqt_image_view /keypoints/compressed'
@@ -259,13 +306,13 @@ keypoints *args:
 [group('test')]
 world *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world world.launch.py' &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world/[d]ashboard" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world/[c]loud_mapper" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world/config" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'pkill -f "ros2 [l]aunch piros2_world" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world/[d]ashboard" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world/[c]loud_mapper" 2>/dev/null; pkill -f "piros2_world.[t]sdf_mesher" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world/config" 2>/dev/null; ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 8); do
-        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world/config/world.rviz'
@@ -278,13 +325,13 @@ world *args:
 [group('test')]
 orient *args:
     #!/usr/bin/env bash
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" &
+    ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 run piros2_world keypoint_detector --ros-args --params-file src/piros2_world/config/world.yaml' &
-    trap 'ssh pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 8); do
-        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
+        kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world/config/world.rviz'
@@ -326,7 +373,7 @@ map bag='bags/static1':
 [group('test')]
 record secs='20' name='session1':
     ssh pi 'pgrep -f usb_cam_[n]ode_exe >/dev/null' || { echo "no camera running on the Pi — start 'just cam' or 'just pipeline' first (an empty bag would record silently otherwise)" >&2; exit 1; }
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && mkdir -p ~/bags && rm -rf ~/bags/{{ name }} && timeout -s INT {{ secs }} ros2 bag record -o ~/bags/{{ name }} /image_raw/compressed /camera_info /tf_static'" || true
+    ssh -o BatchMode=yes -o ConnectTimeout=5 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && mkdir -p ~/bags && rm -rf ~/bags/{{ name }} && timeout -s INT {{ secs }} ros2 bag record -o ~/bags/{{ name }} /image_raw/compressed /camera_info /tf_static'" || true
     rsync -a pi:~/bags/{{ name }} "{{ justfile_directory() }}/bags/"
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 bag info "{{ justfile_directory() }}/bags/{{ name }}"'
 
@@ -356,7 +403,7 @@ hello:
     #!/usr/bin/env bash
     bash -lc 'source /opt/ros/jazzy/setup.bash && source "{{ justfile_directory() }}/install/setup.bash" && timeout 20 ros2 run piros2_hello talker >/dev/null 2>&1' &
     sleep 3
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && timeout 10 ros2 run piros2_hello listener' 2>&1" | grep heard
+    ssh -o BatchMode=yes -o ConnectTimeout=5 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && timeout 10 ros2 run piros2_hello listener' 2>&1" | grep heard
     wait
 
 # Milestone 0 in one command: talker on the Pi, one message received here
@@ -369,7 +416,7 @@ chatter:
 [group('test')]
 daemon-restart:
     bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 daemon stop && ros2 daemon start'
-    ssh pi "bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 daemon stop && ros2 daemon start'"
+    ssh -o BatchMode=yes -o ConnectTimeout=5 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 daemon stop && ros2 daemon start'"
 
 # Checksum-pinned and idempotent: verifies and skips when the file is
 # already good. Weights are git-ignored; the depth node resolves them from

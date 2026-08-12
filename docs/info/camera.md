@@ -47,6 +47,16 @@ learned the hard way, detail in the linked sections:
 9. **Never quote a frame rate without stating the exposure mode**, and run
    usb_cam at `framerate:=60` to get the camera's real 30
    ([Running it](#running-it)).
+10. **A hand-started camera is yours to stop.** Ad-hoc runs outside the
+    recipes — debugging one-offs, Claude's verification runs — have no
+    EXIT trap, so bound them up front
+    (`ssh pi 'timeout -s INT 30 bash -lc "…"'`) or kill them by pattern
+    when done
+    (`ssh pi 'pkill -f "ros2 [l]aunch piros2_camera"; pkill -f usb_cam_[n]ode_exe'`),
+    and finish with `just stragglers` — clean on both hosts — before
+    reporting a result. A leaked usb_cam is worse than noise: it holds the
+    exclusive capture (rule 2), so every later session dies with
+    `Device or resource busy`.
 
 ## Driver choice
 

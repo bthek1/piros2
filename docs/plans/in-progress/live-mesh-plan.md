@@ -45,7 +45,8 @@ the depth-alignment todo where it pays off most**.
   shows stale geometry (and unique-name churn leaks disk). The live
   mesh therefore ships as a `TRIANGLE_LIST` Marker — actual triangles
   in the message — sidestepping files entirely. `mesh_marker` keeps
-  the offline-artifact job; the two displays coexist.
+  the offline-artifact job; the two displays coexist. *(They did until
+  2026-08-12 — mesh_marker has since been removed; see the P1 note.)*
 
 ## Changes at a glance
 
@@ -126,6 +127,15 @@ after `~/reset` rebuilds it. Integration cost logged per frame
 > latched markers (LiveMesh 58,272 triangles, FusedMesh pointing at
 > the sweep3 PLY). Remaining: the human glance — camera still, the
 > view solidifies; pan, the panorama grows; `~/reset` clears.
+>
+> **2026-08-12: FusedMesh retired entirely.** With the live surface
+> proven, the unaligned offline overlay earned no keep — `mesh_marker`
+> (node, config, RViz display, test) was removed from the stack a day
+> after it landed. Its measured findings stay recorded here (assimp
+> loads PLY, rejects Open3D GLB; RViz caches `mesh_resource` by URI)
+> and in troubleshooting.md; offline meshes in `meshes/` remain
+> viewable in external viewers, and the `tools/recon/` pipeline that
+> produces them is untouched.
 
 - `world.launch.py` gains the mesher as a venv `ExecuteProcess`
   (seventh process; the launch's docstring count updates).

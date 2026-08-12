@@ -117,14 +117,6 @@ def generate_launch_description():
             name='cloud_mapper',
             parameters=[world_config],
             output='screen'),
-        # Latched Marker pointing RViz at the newest offline-fused mesh
-        # (file:// mesh_resource — RViz loads it from disk itself).
-        Node(
-            package='piros2_world',
-            executable='mesh_marker',
-            name='mesh_marker',
-            parameters=[world_config],
-            output='screen'),
         # Live TSDF + timed re-mesh (live mesh plan P0/P1). Venv
         # ExecuteProcess for the same reason as the depth estimator:
         # open3d is PyPI-only and colcon's shebang misses the venv.

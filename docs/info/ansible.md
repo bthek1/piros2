@@ -79,8 +79,16 @@ ansible/
     ├── ros2_install/     # metapackage + colcon/rosdep/vcstool
     ├── ros2_env/         # .bashrc block, cyclonedds.xml template
     ├── camera/           # v4l-utils, video group  (robot only)
-    └── workspace/        # repo sync, rosdep install, colcon build
+    ├── workspace/        # repo sync, rosdep install, colcon build
+    └── wifi/             # power-save off, link watchdog, sshd ClientAlive  (robot only)
 ```
+
+The `wifi` role (added 2026-08-12) exists because the Pi's link died twice
+while the OS ran on — incident record in
+[networking.md](networking.md#wi-fi-link-reliability), design and drill
+log in [the Wi-Fi watchdog plan](../plans/completed/wifi-watchdog-plan.md).
+Its ladder thresholds live in `group_vars/robot.yml` (`wifi_*`); the
+watchdog's journal tag is `wifi-watchdog`.
 
 ### Inventory
 

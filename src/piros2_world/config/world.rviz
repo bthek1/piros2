@@ -71,16 +71,6 @@ Visualization Manager:
       Style: Flat Squares
       Value: true
     - Class: rviz_default_plugins/Marker
-      Name: FusedMesh
-      Enabled: false
-      Topic:
-        Value: /world/mesh
-        Depth: 1
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Value: true
-    - Class: rviz_default_plugins/Marker
       Name: LiveMesh
       Enabled: true
       Topic:
