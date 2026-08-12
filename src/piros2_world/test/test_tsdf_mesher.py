@@ -26,6 +26,7 @@ import numpy as np
 from piros2_world.tsdf_mesher import (
     cap_triangles,
     marker_from_mesh,
+    ply_from_mesh,
     TsdfMesher,
 )
 import pytest
@@ -73,6 +74,35 @@ def test_marker_from_mesh_flattens_triangles():
     assert marker.colors[1].g == 0.0
 
 
+def test_ply_serialises_geometry_and_colour():
+    vertices = np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]])
+    triangles = np.array([[0, 1, 2]])
+    colours = np.array([[1., 0., 0.], [0., 0.5, 0.], [0., 0., 2.]])
+    lines = ply_from_mesh(vertices, triangles, colours).decode().splitlines()
+
+    assert lines[0] == 'ply'
+    assert 'element vertex 3' in lines
+    assert 'element face 1' in lines
+    body = lines[lines.index('end_header') + 1:]
+    assert len(body) == 3 + 1
+    # Colours land as uint8: full red, rounded half green, and the
+    # out-of-range blue clamps instead of wrapping.
+    assert body[0].endswith('255 0 0')
+    assert body[1].endswith('0 128 0')
+    assert body[2].endswith('0 0 255')
+    assert body[3] == '3 0 1 2'
+
+
+def test_ply_coordinates_round_trip():
+    vertices = np.array([[0.123456, -4.5, 2.0], [1., 0., 0.],
+                         [0., 1., 0.]])
+    triangles = np.array([[0, 1, 2]])
+    colours = np.zeros((3, 3))
+    lines = ply_from_mesh(vertices, triangles, colours).decode().splitlines()
+    first = lines[lines.index('end_header') + 1].split()
+    assert [float(v) for v in first[:3]] == pytest.approx(vertices[0])
+
+
 # --- the node, before any open3d exists ---------------------------------
 
 @pytest.fixture
@@ -94,3 +124,10 @@ def test_reset_before_first_frame_succeeds(node):
     response = node.on_reset(None, Trigger.Response())
     assert response.success
     assert node.volume is None
+
+
+def test_save_before_first_frame_fails_cleanly(node):
+    """~/save with nothing integrated reports failure, writes nothing."""
+    response = node.on_save(None, Trigger.Response())
+    assert not response.success
+    assert 'nothing' in response.message

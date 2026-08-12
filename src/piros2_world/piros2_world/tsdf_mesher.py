@@ -26,7 +26,17 @@ stamp fault rule, same as cloud_mapper), and under the default
 rotation-only odometry a hand pan's real translation smears the mesh
 exactly as it smears CloudMap. P2 aligns depth scale; P3 offers real
 6-DoF poses; this phase pretends neither.
+
+The surface can outlive the session (world mesh plan P3): `~/save`
+extracts now and writes meshes/live_<stamp>.ply — full detail, the
+Marker's triangle cap is an rclpy build-cost concern that does not
+apply to a file. The PLY is hand-written ASCII, the projector's
+hand-built-PointCloud2 lesson again, which also keeps the path free of
+open3d and unit-testable on the system interpreter.
 """
+
+import os
+import time
 
 import cv2
 from geometry_msgs.msg import Point
@@ -110,6 +120,37 @@ def marker_from_mesh(vertices, triangles, colours, frame_id, stamp):
     return marker
 
 
+def ply_from_mesh(vertices, triangles, colours):
+    """
+    Serialise mesh arrays to ASCII PLY bytes.
+
+    vertices Nx3 float, triangles Mx3 int (indices into vertices),
+    colours Nx3 float in [0,1], clamped here. Hand-written for the same
+    reason cloud_projector hand-builds PointCloud2 — the format is the
+    lesson — and RViz's assimp, open3d and `just view-mesh` all read it.
+    """
+    rgb = np.clip(np.round(np.asarray(colours, dtype=float) * 255.0),
+                  0, 255).astype(np.uint8)
+    header = [
+        'ply',
+        'format ascii 1.0',
+        f'element vertex {len(vertices)}',
+        'property float x',
+        'property float y',
+        'property float z',
+        'property uchar red',
+        'property uchar green',
+        'property uchar blue',
+        f'element face {len(triangles)}',
+        'property list uchar int vertex_indices',
+        'end_header',
+    ]
+    vertex_lines = [f'{x:.6f} {y:.6f} {z:.6f} {r} {g} {b}'
+                    for (x, y, z), (r, g, b) in zip(vertices, rgb)]
+    face_lines = [f'3 {a} {b} {c}' for a, b, c in triangles]
+    return '\n'.join(header + vertex_lines + face_lines + ['']).encode()
+
+
 class TsdfMesher(Node):
 
     def __init__(self, **node_kwargs):
@@ -132,6 +173,10 @@ class TsdfMesher(Node):
         self.declare_parameter('align', True)
         self.declare_parameter('align_min_overlap', 0.2)
         self.declare_parameter('align_max_correction', 0.15)
+        # ~/save writes PLYs here (relative to the CWD, which the session
+        # recipes pin to the repo root); git-ignored like the offline
+        # pipeline's meshes.
+        self.declare_parameter('save_dir', 'meshes')
 
         # open3d state, created lazily on the first synced pair.
         self.o3d = None
@@ -164,6 +209,7 @@ class TsdfMesher(Node):
         self.create_timer(
             self.get_parameter('refresh_period').value, self.on_refresh)
         self.create_service(Trigger, '~/reset', self.on_reset)
+        self.create_service(Trigger, '~/save', self.on_save)
 
     def ensure_volume(self):
         """Create the (lazy) open3d state; returns False if unavailable."""
@@ -284,18 +330,21 @@ class TsdfMesher(Node):
             f'(last {len(scales)})',
             throttle_duration_sec=10.0)
 
-    def on_refresh(self):
-        if self.volume is None or self.integrated == 0:
-            return
-        entry = self.get_clock().now()
+    def extract_mesh_arrays(self):
+        """
+        Extract the current surface as (vertices, triangles, colours).
+
+        Shared by the timed refresh and ~/save; returns None while the
+        volume meshes to nothing. Small interior gaps are closed by
+        triangulating boundary edges — the radius bound keeps this
+        honest: pinholes from noise or held-back low-weight voxels get
+        bridged, while the scan's open outer boundary (a "hole" of
+        room-sized radius) stays open — unseen space is never invented.
+        Measured ~16 ms at 80k triangles; colours and vertex count are
+        preserved. fill_hole_radius 0 disables.
+        """
         mesh = self.volume.extract_triangle_mesh(
             weight_threshold=self.get_parameter('weight_threshold').value)
-        # Close small interior gaps by triangulating boundary edges. The
-        # radius bound keeps this honest: pinholes from noise or held-back
-        # low-weight voxels get bridged, while the scan's open outer
-        # boundary (a "hole" of room-sized radius) stays open — unseen
-        # space is never invented. Measured ~16 ms at 80k triangles;
-        # colours and vertex count are preserved. 0 disables.
         fill_radius = self.get_parameter('fill_hole_radius').value
         if fill_radius > 0:
             mesh = mesh.fill_holes(hole_size=fill_radius)
@@ -304,7 +353,17 @@ class TsdfMesher(Node):
         triangles = np.asarray(legacy.triangles)
         colours = np.asarray(legacy.vertex_colors)
         if len(triangles) == 0:
+            return None
+        return vertices, triangles, colours
+
+    def on_refresh(self):
+        if self.volume is None or self.integrated == 0:
             return
+        entry = self.get_clock().now()
+        extracted = self.extract_mesh_arrays()
+        if extracted is None:
+            return
+        vertices, triangles, colours = extracted
         triangles, dropped = cap_triangles(
             triangles, self.get_parameter('max_triangles').value)
         if dropped:
@@ -334,6 +393,32 @@ class TsdfMesher(Node):
         self.aligner = None
         response.success = True
         response.message = 'TSDF volume cleared'
+        return response
+
+    def on_save(self, request, response):
+        """~/save: the surface outlives the session as a PLY."""
+        if self.volume is None or self.integrated == 0:
+            response.success = False
+            response.message = 'nothing integrated yet — nothing to save'
+            return response
+        extracted = self.extract_mesh_arrays()
+        if extracted is None:
+            response.success = False
+            response.message = 'volume meshes to zero triangles'
+            return response
+        vertices, triangles, colours = extracted
+        save_dir = self.get_parameter('save_dir').value
+        os.makedirs(save_dir, exist_ok=True)
+        path = os.path.join(
+            save_dir, time.strftime('live_%Y%m%d-%H%M%S.ply'))
+        # Full detail on purpose: max_triangles caps the Marker (an
+        # rclpy message-build cost), not the artifact.
+        with open(path, 'wb') as f:
+            f.write(ply_from_mesh(vertices, triangles, colours))
+        response.success = True
+        response.message = (f'{path}: {len(vertices)} vertices, '
+                            f'{len(triangles)} triangles')
+        self.get_logger().info(f'saved {response.message}')
         return response
 
 

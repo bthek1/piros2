@@ -50,6 +50,11 @@ def generate_launch_description():
     odom = LaunchConfiguration('odom')
     rgbd_mode = IfCondition(
         PythonExpression(["'", odom, "' == 'rgbd'"]))
+    # A second params file layered over the ones above — lets a wrapper
+    # launch (world_mesh.launch.py) override per-session without editing
+    # the shared yamls. Defaults to world.yaml itself: loading the same
+    # file twice is a no-op, so a plain `just world` is unchanged.
+    extra_params = LaunchConfiguration('extra_params')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -57,15 +62,22 @@ def generate_launch_description():
             description='odom → base_link source: kp = the keypoint '
                         'detector rotation-only compass, rgbd = '
                         'RTAB-Map rgbd_odometry (6-DoF)'),
+        DeclareLaunchArgument(
+            'extra_params', default_value=world_config,
+            description='session overlay params file, applied after the '
+                        'per-node configs (later files win)'),
         ExecuteProcess(
             cmd=[VENV_PYTHON, '-m', 'piros2_perception.depth_estimator',
-                 '--ros-args', '--params-file', perception_config],
+                 '--ros-args', '--params-file', perception_config,
+                 '--params-file', extra_params],
             output='screen'),
         Node(
             package='piros2_world',
             executable='keypoint_detector',
             name='keypoint_detector',
-            parameters=[world_config, {
+            # The overlay sits between the base config and the computed
+            # publish_tf: the odom argument stays authoritative for TF.
+            parameters=[world_config, extra_params, {
                 'publish_tf': ParameterValue(
                     PythonExpression(["'", odom, "' != 'rgbd'"]),
                     value_type=bool)}],
@@ -79,7 +91,7 @@ def generate_launch_description():
             name='image_republisher',
             condition=rgbd_mode,
             parameters=[{'in_transport': 'compressed',
-                         'out_transport': 'raw'}],
+                         'out_transport': 'raw'}, extra_params],
             remappings=[('in/compressed', '/image_raw/compressed'),
                         ('out', '/image_raw')],
             output='screen'),
@@ -94,7 +106,7 @@ def generate_launch_description():
                 'topic_queue_size': 30,
                 'sync_queue_size': 30,
                 'Odom/ResetCountdown': '1',
-            }],
+            }, extra_params],
             remappings=[('rgb/image', '/image_raw'),
                         ('rgb/camera_info', '/camera_info'),
                         ('depth/image', '/depth')],
@@ -103,25 +115,26 @@ def generate_launch_description():
             package='piros2_world',
             executable='dashboard',
             name='dashboard',
-            parameters=[world_config],
+            parameters=[world_config, extra_params],
             output='screen'),
         Node(
             package='piros2_perception',
             executable='cloud_projector',
             name='cloud_projector',
-            parameters=[perception_config],
+            parameters=[perception_config, extra_params],
             output='screen'),
         Node(
             package='piros2_world',
             executable='cloud_mapper',
             name='cloud_mapper',
-            parameters=[world_config],
+            parameters=[world_config, extra_params],
             output='screen'),
         # Live TSDF + timed re-mesh (live mesh plan P0/P1). Venv
         # ExecuteProcess for the same reason as the depth estimator:
         # open3d is PyPI-only and colcon's shebang misses the venv.
         ExecuteProcess(
             cmd=[VENV_PYTHON, '-m', 'piros2_world.tsdf_mesher',
-                 '--ros-args', '--params-file', world_config],
+                 '--ros-args', '--params-file', world_config,
+                 '--params-file', extra_params],
             output='screen'),
     ])

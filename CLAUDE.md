@@ -320,6 +320,26 @@ gaps" observation fed straight back into `fill_hole_radius` and the
 cap finding. Open: P3's live hand-sweep gate (and one live click of
 `~/reset`, bag-proven only).
 
+The world mesh session (in progress, started 2026-08-12 —
+[docs/plans/in-progress/world-mesh-plan.md](docs/plans/in-progress/world-mesh-plan.md)):
+`just world_mesh` — aliased **`just dev`**, the session under active
+change while `just run` stays the stable baseline — is the world stack
+re-posed for the surface. `world_mesh.launch.py` *includes*
+`world.launch.py` (which grew an `extra_params` overlay argument,
+default `world.yaml` itself = a no-op for plain `just world`) and flips
+the defaults: `odom:=rgbd` (6-DoF, eight processes; the recipe trap
+carries the two extra pkill patterns), a quality-biased `tsdf_mesher`
+overlay in `world_mesh.yaml` (1.5 cm / 120k triangles / 15 s —
+provisional until the sweep measures them), and `world_mesh.rviz` with
+CloudMap defaulted off. `tsdf_mesher` grew `~/save` (`just mesh-save`):
+the surface outlives the session as `meshes/live_<stamp>.ply`,
+hand-written ASCII PLY so the path stays open3d-free and unit-testable.
+P0–P3 built and tested same-day; the live gates (hand sweep — shared
+with live-mesh P3 — and an in-session save) are open. Found while
+building: `just world` passes args to the camera launch only, so
+`just world odom:=rgbd` never actually reached `world.launch.py`;
+`world_mesh` routes args to both launches.
+
 The Wi-Fi watchdog (done 2026-08-12, the whole
 [watchdog plan](docs/plans/completed/wifi-watchdog-plan.md) planned,
 built and drilled in one day, after the Pi's link died twice in two
@@ -338,7 +358,7 @@ released in ~60 s) instead of orphaning it.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (90 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
+is green (93 tests; `piros2_vision`, `piros2_perception` and `piros2_world`
 carry real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, pure-function
@@ -348,8 +368,8 @@ chessboard's lookalike corners defeat the matcher's cross-check by
 design — SE(3) geometry tests driving all four quaternion branches
 (`test_se3.py`), stubbed-TF weighted-fusion voxel-map tests for the
 mapper: noise averages toward the plane, min_weight holdback, capped
-inertia — and pure-function marker/alignment tests for the live mesh)
-as of 2026-08-12.
+inertia — and pure-function marker/alignment/PLY-serialisation tests
+for the live mesh and its `~/save`) as of 2026-08-12.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -618,6 +638,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 | [docs/plans/completed/world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for `info.md`'s topics — TSDF fusion, pose graphs, meshing, plane fitting — phases P0–P6: weighted cloud-map fusion, the `tools/recon/` offline pipeline, `depth_scale` pinned at 2.69; done 2026-08-10, kept as the build log |
 | [docs/plans/in-progress/live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md) | The live pipeline grows a surface — `tsdf_mesher` (in-session TSDF + timed re-mesh into RViz), P2 lands the per-frame depth-alignment todo, P3 optionally swaps in 6-DoF `rgbd_odometry`; in progress since 2026-08-11 |
+| [docs/plans/in-progress/world-mesh-plan.md](docs/plans/in-progress/world-mesh-plan.md) | Duplicate the `just world` session as `just world_mesh` (aliased `just dev`) and diverge it mesh-first — `odom:=rgbd` default, quality-biased TSDF params, mesh-centric RViz, a `~/save` PLY export; in progress since 2026-08-12 |
 | [docs/plans/completed/wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link — `just wifi` visibility, power-save off, an escalation-ladder watchdog (reassociate → driver reload → guarded reboot) via the Ansible `wifi` role, and outages reap camera sessions instead of orphaning them; planned, built and drilled 2026-08-12 after two link-death incidents (kept as the build log) |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update
