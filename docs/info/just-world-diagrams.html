@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How `just world` works</title>
+<style>
+  :root {
+    --bg: #f2f3f3;
+    --surface: #fbfbfa;
+    --ink: #21262b;
+    --muted: #5c6670;
+    --hairline: #d5dade;
+    --accent: #b96518;
+    --accent-soft: #b9651822;
+    --mono: ui-monospace, "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+    --sans: system-ui, "Ubuntu", "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181b;
+      --surface: #1c2024;
+      --ink: #d7dbdf;
+      --muted: #8d959d;
+      --hairline: #2d3339;
+      --accent: #e0913f;
+      --accent-soft: #e0913f22;
+    }
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    margin: 0;
+    padding: 3rem 1.25rem 5rem;
+  }
+  main { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 3.5rem; }
+
+  header.page { max-width: 68ch; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    margin: 0 0 0.75rem;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.5rem, 3.5vw, 2.1rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+  header.page p { color: var(--muted); margin: 0 0 0.75rem; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--accent-soft);
+    border-radius: 3px;
+    padding: 0.08em 0.32em;
+  }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 1rem; }
+  .fig-head { max-width: 68ch; }
+  .fig-head h2 {
+    font-family: var(--mono);
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0.35rem 0 0.6rem;
+    text-wrap: balance;
+  }
+  .fig-head p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+  .canvas {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 1.25rem;
+    overflow-x: auto;
+  }
+  .canvas pre.mermaid {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    background: transparent;
+    font-family: var(--mono);
+  }
+  .canvas pre.mermaid svg { max-width: 100%; height: auto; }
+
+  figcaption {
+    max-width: 68ch;
+    font-size: 0.95rem;
+    color: var(--ink);
+    border-left: 2px solid var(--accent);
+    padding-left: 0.9rem;
+  }
+  figcaption strong { font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+
+  footer {
+    max-width: 68ch;
+    font-size: 0.85rem;
+    color: var(--muted);
+    border-top: 1px solid var(--hairline);
+    padding-top: 1.25rem;
+  }
+  footer code { background: none; padding: 0; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<main>
+  <header class="page">
+    <p class="eyebrow">piros2 · session anatomy</p>
+    <h1>How <code>just world</code> works</h1>
+    <p>One recipe, two machines, six processes (eight with <code>odom:=rgbd</code>), one RViz
+    window whose closing tears everything down. The four diagrams below are four different
+    cuts through the same session: what data flows where, what crosses the Wi-Fi link,
+    how the TF tree is owned, and how the recipe starts and stops it all.</p>
+  </header>
+
+  <figure>
+    <div class="fig-head">
+      <p class="eyebrow">Figure 1 · dataflow</p>
+      <h2>The node-and-topic graph — a diamond, not a chain</h2>
+      <p>Boxes are processes; rounded pills are the high-fan-out topics. Every image topic
+      runs RELIABLE / KEEP_LAST&nbsp;1 (<code>BIG_FRAME_QOS</code>) — BEST_EFFORT delivers
+      zero large frames over this link.</p>
+    </div>
+    <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+    subgraph PI["Raspberry Pi"]
+        CAM["usb_cam&lt;br/&gt;C922 · 1280×720 MJPG"]
+        STF["static_transform_publisher ×2"]
+    end
+
+    TIMG(["/image_raw/compressed&lt;br/&gt;JPEG · 42–60 fps"])
+    TINFO(["/camera_info&lt;br/&gt;approx K, fx≈907 px"])
+    TTFS(["/tf_static"])
+
+    subgraph DEV["Dev box"]
+        KP["keypoint_detector&lt;br/&gt;ORB · rotation compass"]
+        DEPTH["depth_estimator&lt;br/&gt;Depth Anything V2 · venv · GPU"]
+        DASH["dashboard&lt;br/&gt;latest-wins · 10 Hz wall timer"]
+        PROJ["cloud_projector&lt;br/&gt;exact sync by header stamp"]
+        MAPPER["cloud_mapper&lt;br/&gt;weighted voxel fusion"]
+        MESH["tsdf_mesher&lt;br/&gt;TSDF · venv · GPU"]
+        RVIZ["rviz2&lt;br/&gt;world.rviz · fixed frame odom"]
+        TDEPTH(["/depth&lt;br/&gt;32FC1 · ~13 fps"])
+        TTF(["/tf&lt;br/&gt;odom → base_link"])
+        TPTS(["/points&lt;br/&gt;33–57k points"])
+        TDASHT(["/world/dashboard/compressed&lt;br/&gt;classic 2×2 mosaic, for anyone"])
+    end
+
+    CAM --> TIMG
+    CAM --> TINFO
+    STF --> TTFS
+
+    TIMG --> DEPTH
+    TIMG --> KP
+    TIMG --> DASH
+    TIMG --> PROJ
+    TIMG --> MESH
+    TINFO --> KP
+    TINFO --> PROJ
+    TINFO --> MESH
+
+    DEPTH --> TDEPTH
+    TDEPTH --> PROJ
+    TDEPTH --> MESH
+    DEPTH -- "/depth/preview/compressed" --> DASH
+
+    KP -- "/keypoints/compressed&lt;br/&gt;/keypoints/count · /keypoints/matched" --> DASH
+    KP --> TTF
+    KP -- "/camera/orientation" --> RVIZ
+
+    PROJ --> TPTS
+    TPTS --> MAPPER
+    TPTS --> RVIZ
+
+    TTF --> MAPPER
+    TTF --> MESH
+    TTF --> RVIZ
+    TTFS --> MAPPER
+    TTFS --> MESH
+    TTFS --> RVIZ
+
+    MAPPER -- "/world/map_points · 1 Hz" --> RVIZ
+    MESH -- "/world/mesh_live&lt;br/&gt;latched Marker · re-mesh every 10 s" --> RVIZ
+    DASH -- "/world/stats/compressed" --> RVIZ
+    DASH --> TDASHT
+
+    classDef topic fill:#b9651822,stroke:#b96518,stroke-width:1px;
+    class TIMG,TINFO,TTFS,TDEPTH,TTF,TPTS,TDASHT topic;
+</pre>
+    </div>
+    <figcaption><strong>What to notice</strong> — <code>/image_raw/compressed</code> fans out to
+    five consumers and <code>/depth</code> to two more, then everything reconverges in RViz.
+    Three different consumption strategies coexist on the same topics: the projector and
+    mesher pair messages by exact header stamp (<code>message_filters</code>), the dashboard
+    deliberately keeps only the latest of each feed and composes on its own 10&nbsp;Hz clock,
+    and the mapper/mesher pose their data by latest-only TF lookup — the honest answer to
+    the camera's 0.73&nbsp;s stamp fault. Rates matter: a 42–60&nbsp;fps camera feeding a
+    ~13&nbsp;fps depth model is why the sync queues are 30 deep.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="fig-head">
+      <p class="eyebrow">Figure 2 · deployment</p>
+      <h2>Two machines, one wireless edge</h2>
+      <p>Which process lives where, and exactly what is allowed to cross the Wi-Fi link.</p>
+    </div>
+    <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+    subgraph PI["Raspberry Pi · 192.168.2.17 · wlan0 on THEKKEL_MESH"]
+        UCAM["usb_cam — owns /dev/video0&lt;br/&gt;exclusive capture"]
+        STF2["static TF publishers"]
+        WD["wifi-watchdog · 60 s timer&lt;br/&gt;reassociate → driver reload → guarded reboot"]
+    end
+
+    subgraph DEV["Dev box · 192.168.2.109 · enp6s18"]
+        subgraph VENV["~/.venvs/piros2-perception — PyPI-only deps, run as python -m"]
+            D2["depth_estimator&lt;br/&gt;onnxruntime · CUDA · GTX 1660 SUPER"]
+            M2["tsdf_mesher&lt;br/&gt;open3d · CUDA"]
+        end
+        COLC["colcon-built nodes&lt;br/&gt;keypoint_detector · dashboard&lt;br/&gt;cloud_projector · cloud_mapper"]
+        RV["rviz2&lt;br/&gt;QT_QPA_PLATFORM=xcb"]
+    end
+
+    PI == "DDS · domain 42 · CycloneDDS pinned per interface&lt;br/&gt;/image_raw/compressed · /camera_info · /tf_static" ==> DEV
+    DEV -- "ssh -tt · BatchMode · keepalives&lt;br/&gt;the camera launch session" --> PI
+    PI -. "/image_raw (raw) · ~83 MB/s&lt;br/&gt;never crosses the link" .-x DEV
+
+    linkStyle 2 stroke:#b96518,stroke-width:2px,stroke-dasharray:5 5;
+</pre>
+    </div>
+    <figcaption><strong>What to notice</strong> — the wireless edge carries only compressed
+    JPEG, camera intrinsics and the static transforms; the ~83&nbsp;MB/s raw stream never
+    leaves the Pi. In <code>odom:=rgbd</code> mode a local <code>image_transport republish</code>
+    regenerates <code>/image_raw</code> on the dev box from the compressed stream already
+    crossing — the raw stream still doesn't touch the Wi-Fi. The two venv processes are
+    <code>ExecuteProcess</code>, not launch_ros <code>Node</code>s: colcon hardcodes the system-python
+    shebang, which has no onnxruntime or open3d. The watchdog and the ssh keepalives are the
+    two halves of the link-death contract: the Pi heals itself, and a dead session reaps the
+    camera in ~60&nbsp;s instead of holding <code>/dev/video0</code>.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="fig-head">
+      <p class="eyebrow">Figure 3 · TF tree</p>
+      <h2>Frame ownership — one parent per frame</h2>
+      <p>Every frame has exactly one authority (REP-105). The <code>odom:=</code> launch argument
+      decides who owns the only dynamic edge.</p>
+    </div>
+    <div class="canvas">
+<pre class="mermaid">
+flowchart TB
+    ODOM(["odom"])
+    BASE(["base_link"])
+    CL(["camera_link"])
+    COF(["camera_optical_frame&lt;br/&gt;the frame_id in every image header"])
+
+    ODOM -- "odom:=kp (default)&lt;br/&gt;keypoint_detector on /tf&lt;br/&gt;rotation-only · Kabsch on bearing rays" --> BASE
+    ODOM -. "odom:=rgbd&lt;br/&gt;rgbd_odometry on /tf · 6-DoF&lt;br/&gt;(detector's publish_tf flips false)" .-> BASE
+    BASE -- "/tf_static · published on the Pi&lt;br/&gt;placeholder mount pose · 5 cm up" --> CL
+    CL -- "/tf_static · published on the Pi&lt;br/&gt;canonical optical rotation −90°/0°/−90°" --> COF
+</pre>
+    </div>
+    <figcaption><strong>What to notice</strong> — the two edges into <code>base_link</code> never
+    coexist: swapping odometry sources means swapping the <em>publisher</em> of that one edge,
+    which is why <code>odom:=rgbd</code> sets the detector's <code>publish_tf</code> false while its
+    <code>/camera/orientation</code> topic keeps publishing. The bottom two edges are static,
+    latched, and owned by the Pi; the optical-frame edge is the −90/0/−90 rotation that turns
+    "z forward, x right" camera axes into robot axes. RViz's fixed frame is <code>odom</code>,
+    so everything a TF consumer poses ends up in one coherent scene.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="fig-head">
+      <p class="eyebrow">Figure 4 · lifecycle</p>
+      <h2>The recipe itself — start-up, health check, teardown</h2>
+      <p>Pure bash, no ROS: this is the part <code>rqt_graph</code> can never show you.</p>
+    </div>
+    <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+    actor U as You
+    participant J as just world
+    participant P as Pi (ssh -tt + keepalives)
+    participant W as world.launch.py
+    participant R as rviz2
+
+    U->>J: just world [image_width:=…]
+    J->>P: ros2 launch piros2_camera camera.launch.py — background
+    J->>W: ros2 launch piros2_world world.launch.py — background
+    Note over W: 6 processes (8 with odom:=rgbd)
+    loop 8 × 1 s warm-up
+        J->>J: kill -0 cam_pid — camera session alive?
+    end
+    Note over J,P: camera died during warm-up → exit 1 with a hint (ping the Pi, just camera)
+    J->>R: rviz2 -d world.rviz — FOREGROUND
+    Note over R: the session now lives exactly as long as this window
+    U->>R: close the window (or Ctrl-C the recipe)
+    R-->>J: foreground command returns, recipe exits
+    Note over J: bash EXIT trap fires — one trap covers both exit paths
+    J->>W: pkill -f each node pattern (7 patterns)
+    J->>P: ssh pkill camera launch · usb_cam · static TF
+    Note over P: /dev/video0 released — just stragglers reports clean
+</pre>
+    </div>
+    <figcaption><strong>What to notice</strong> — RViz running in the <em>foreground</em> is the
+    whole teardown mechanism: closing the window ends the recipe, and bash fires the same
+    <code>EXIT</code> trap on Ctrl-C, so one trap covers both exits. The trap must
+    <code>pkill -f</code> node patterns rather than <code>kill %N</code> — killing a background
+    job's <code>bash -lc</code> wrapper orphans the actual ros2 grandchildren. The warm-up loop
+    exists because usb_cam idles forever on a missing device; the recipe checks the camera
+    session survived eight seconds and fails loudly if not. When a session gains a node, its
+    pkill pattern goes into this trap in the same change.</figcaption>
+  </figure>
+
+  <footer>
+    Drawn from <code>justfile:307</code> (the recipe), <code>src/piros2_world/launch/world.launch.py</code>,
+    and the node sources in <code>piros2_world</code> / <code>piros2_perception</code>, as of 2026-08-12.
+    Rates and counts are the repo's measured figures, not spec sheet values.
+    Rendering needs internet once per visit (mermaid.js from jsdelivr).
+  </footer>
+</main>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: dark ? 'dark' : 'neutral',
+    fontFamily: 'ui-monospace, "DejaVu Sans Mono", monospace',
+  });
+
+  // Render from textContent so the &lt;br/&gt; entities in the source reach
+  // mermaid as literal <br/> label breaks regardless of parser internals.
+  const blocks = document.querySelectorAll('pre.mermaid');
+  let n = 0;
+  for (const el of blocks) {
+    try {
+      const { svg } = await mermaid.render('mmd-' + n++, el.textContent.trim());
+      el.innerHTML = svg;
+    } catch (err) {
+      el.textContent = 'diagram failed to render: ' + err.message;
+    }
+  }
+</script>
+</body>
+</html>
