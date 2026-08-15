@@ -323,30 +323,30 @@ world *args:
     done
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world/config/world.rviz'
 
-# The mesh-first world session (world mesh plan): the `world` stack via
-# world_mesh.launch.py, but posed for the surface — odom defaults to
-# rgbd (6-DoF rgbd_odometry + a local raw republisher, so eight
-# processes), tsdf_mesher runs the quality-biased world_mesh.yaml
-# overlay, and world_mesh.rviz opens with LiveMesh front and centre
-# (CloudMap defaulted off — the mapper still runs, re-enable in
-# Displays). Never run alongside `just world`: same nodes, same topics,
-# same camera. Args reach both launches — each ignores what it doesn't
-# declare — so `just dev image_width:=640` and `just dev odom:=kp` both
-# work.
-# The mesh-first world session (`just dev`) — rgbd odom + quality TSDF, one RViz window
+# The mesh-first world session (world mesh plan): the piros2_world_mesh
+# package — a full fork of the world nodes — via world_mesh.launch.py,
+# posed for the surface. odom defaults to rgbd (6-DoF rgbd_odometry + a
+# local raw republisher, so eight processes), tsdf_mesher runs the
+# quality-biased values in world_mesh.yaml, and world_mesh.rviz opens
+# with LiveMesh front and centre (CloudMap defaulted off — the mapper
+# still runs, re-enable in Displays). Never run alongside `just world`:
+# same node names, same topics, same camera. Args reach both launches —
+# each ignores what it doesn't declare — so `just dev image_width:=640`
+# and `just dev odom:=kp` both work.
+# The mesh-first world session (`just dev`, package piros2_world_mesh) — rgbd odom + quality TSDF
 [group('test')]
 world_mesh *args:
     #!/usr/bin/env bash
     ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
-    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world world_mesh.launch.py {{ args }}' &
-    trap 'pkill -f "ros2 [l]aunch piros2_world" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world/[d]ashboard" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world/[c]loud_mapper" 2>/dev/null; pkill -f "piros2_world.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "out:=/[i]mage_raw" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world/config" 2>/dev/null; ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py {{ args }}' &
+    trap 'pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh/[c]loud_mapper" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "out:=/[i]mage_raw" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world_mesh/config" 2>/dev/null; ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 8); do
         kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
         sleep 1
     done
-    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world/config/world_mesh.rviz'
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world_mesh/config/world_mesh.rviz'
 
 # The orientation compass in 3D (world 3D plan P1): camera on the Pi +
 # keypoint detector here (it estimates rotation and broadcasts

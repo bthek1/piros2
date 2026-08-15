@@ -36,6 +36,7 @@ the workspace.
 | `piros2_vision` | Canny edge detector (`cv_bridge`), the first processing node; its QoS and timestamp findings shaped everything after it |
 | `piros2_perception` | `depth_estimator` (Depth Anything V2 Small, ONNX on the dev box GPU, 72–79 ms/frame) and `cloud_projector` (`/depth` + image → `PointCloud2` through K); plus `mapping.launch.py` for the RTAB-Map route |
 | `piros2_world` | `keypoint_detector` (ORB + descriptor matching → rotation-only camera orientation via Kabsch on bearing rays, published as TF), `cloud_mapper` (voxel map with weighted-average fusion → `/world/map_points`), `dashboard` (live stats panel on `/world/stats/compressed`; its 2×2 mosaic retired 2026-08-12), and `se3.py` (shared SE(3) pure functions) |
+| `piros2_world_mesh` | Mesh-first fork of `piros2_world` (world mesh plan, in progress): same node lineup with imports renamed, `odom:=rgbd` and quality-biased TSDF values by default, `~/save` writing the live surface to `meshes/*.ply` — run as `just world_mesh` / `just dev` |
 
 Outside `src/`: `tools/recon/` is an offline reconstruction pipeline under
 the perception venv (open3d) — bag → TUM-layout capture export → TSDF

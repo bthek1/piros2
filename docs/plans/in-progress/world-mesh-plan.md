@@ -8,11 +8,13 @@
 > they are, the known-good baseline to fall back to.
 >
 > **Status 2026-08-12 (same day):** P0–P3 built and unit-tested in one
-> sitting (93 tests green). Open: the **live gates** — P2's hand sweep
-> (which is also live-mesh P3's open gate) and P3's in-session
+> sitting, then **rebuilt as a full package fork by decision** —
+> `src/piros2_world_mesh`, see the revised section below (160 tests
+> green, both forks' suites). Open: the **live gates** — P2's hand
+> sweep (which is also live-mesh P3's open gate) and P3's in-session
 > `just mesh-save` → `just view-mesh` check — plus P4's bookkeeping
-> once those pass. P2's overlay values are provisional until the sweep
-> measures them.
+> once those pass. P2's mesh-first values are provisional until the
+> sweep measures them.
 
 The motivating decision (2026-08-12 discussion): for a surface,
 `tsdf_mesher` beats `cloud_mapper` by construction — a point cloud is
@@ -22,58 +24,61 @@ output that dies with RViz). A mesh-first session gets to change those
 defaults, defaults `odom:=rgbd` for poses that survive translation, and
 grows a way to keep the surface when the session ends.
 
-## What "duplicate" means here
+## What "duplicate" means here (revised 2026-08-12, same day)
 
-**The session, not the package.** `just world` is three artefacts —
-the justfile recipe, `world.launch.py`, `world.rviz` — running six
-shared nodes. Those three get `world_mesh` counterparts; the node code
-in `piros2_world`/`piros2_perception` is not forked. Copying the
-package would duplicate six nodes in order to change one session's
-defaults, and every dashboard fix would then need making twice — the
-combined plan's "one launch, not overlapping ones" lesson applies to
-code as much as to processes.
+**A full package fork: `src/piros2_world_mesh`.** The plan's first
+draft argued for duplicating only the session artefacts (recipe +
+launch + rviz) around shared nodes, and the first build that day did
+exactly that — an include-wrapper launch plus an `extra_params`
+overlay threaded through `world.launch.py`. **Decision: rejected** in
+favour of a real project the mesh work can freely diverge — nodes
+included — without ever touching `piros2_world`. The wrapper bits were
+unwound the same day (`world.launch.py` is back to its pre-fork
+shape); this section records the final shape:
 
-Mechanics of the duplicate:
+- `src/piros2_world_mesh` is a copy of `piros2_world` — the four nodes
+  (`keypoint_detector`, `dashboard`, `cloud_mapper`, `tsdf_mesher`),
+  `se3.py`/`depth_align.py`, and the full test suite, imports renamed.
+  Node names, topics and services are unchanged: it is an alternative
+  implementation of the same session, not a second one.
+- `piros2_perception` stays shared (depth estimator + cloud projector
+  belong to perception, not to either world fork).
+- `world_mesh.launch.py` is a standalone copy of `world.launch.py`
+  running this package's nodes with this package's full
+  `world_mesh.yaml` (forked from `world.yaml`, deviations marked
+  MESH-FIRST); `world_mesh.rviz` is a copy of `world.rviz`.
+- The `world_mesh` recipe matches the `world` recipe shape end to end
+  (SSH camera launch, warm-up check, RViz foreground, EXIT trap), with
+  patterns for this package's process names.
 
-- `world_mesh.launch.py` **includes** `world.launch.py` via
-  `IncludeLaunchDescription` and overrides arguments/parameters, the
-  same composition pattern `vision.launch.py` used on the camera
-  launch. (Safe here: an include executes on the launching machine,
-  and this launch, like `world.launch.py`, only ever runs on the dev
-  box.) Session-specific parameter overrides go in a small
-  `world_mesh.yaml`, not by editing `world.yaml`.
-- `world_mesh.rviz` starts as a **literal copy** of `world.rviz` —
-  RViz configs have no include mechanism; the copy is the price of a
-  divergent layout, paid once.
-- The `world_mesh` recipe starts as a copy of the `world` recipe with
-  the launch and rviz names swapped. Same shape end to end: SSH camera
-  launch with keepalives, warm-up health check, RViz in the
-  foreground, EXIT trap `pkill -f`ing every node pattern on both
-  machines.
+**The cost is real and accepted:** a `dashboard` fix now exists twice,
+and the forks will drift — that drift is the point. If a change is
+wanted in both, make it in both; `just test` runs both suites.
 
 **The two sessions are alternatives, never run together.** They start
-the same nodes on the same topics; running both would double-start
-everything and fight over the camera. Nothing enforces this beyond the
-same convention that already governs `world` vs `orient` — the docs
-say so, and both traps kill the same patterns anyway.
+identically-named nodes on the same topics; running both would
+double-start everything and fight over the camera. Nothing enforces
+this beyond the same convention that already governs `world` vs
+`orient`.
 
 ## Phases
 
 ### P0 — the faithful duplicate ✓ runnable
 
-**Built 2026-08-12.** One deviation from the sketch below: the include
-needed a delivery mechanism for the overlay, so `world.launch.py`
-gained an `extra_params` launch argument (default: `world.yaml` itself
-— loading the same file twice is a no-op, so plain `just world` is
-behaviourally unchanged), threaded into every dev-box process as a
-second params file. Launch validates (`ros2 launch … world_mesh
---show-args`); the live indistinguishability check folds into P2's
-sweep. **Found while copying the recipe:** `just world` passes its
-args to the *camera* launch only — `just world odom:=rgbd`, as
-README described, never reached `world.launch.py` (launch silently
+**Built 2026-08-12, twice.** First as the include-wrapper this phase
+originally sketched (an `extra_params` overlay argument on
+`world.launch.py`); superseded the same day by the package-fork
+decision — `src/piros2_world_mesh` copied from `piros2_world`, imports
+renamed, its own standalone launch/config/rviz, the wrapper bits
+reverted out of `piros2_world`. Launch validates (`ros2 launch
+piros2_world_mesh world_mesh.launch.py --show-args`), the module
+imports under the venv interpreter, and the fork's full test suite
+runs in `just test`. **Found while copying the recipe:** `just world`
+passes its args to the *camera* launch only — `just world odom:=rgbd`,
+as README described, never reached `world.launch.py` (launch silently
 accepts unknown args, so nothing errored). `world_mesh` routes args to
-both launches; `world` is left as-is for now — its README claim is the
-bug, noted here.
+both launches; `world` is left as-is for now — its README claim was
+the bug, and README now points at `just dev`.
 
 Create the three artefacts, changing nothing behavioural:
 
@@ -115,11 +120,13 @@ opens the classic one.
 
 **File-side built 2026-08-12**: `odom` defaults `rgbd` in
 `world_mesh.launch.py`, the recipe trap carries `rgbd_[o]dometry` and
-`out:=/[i]mage_raw` patterns, `world_mesh.yaml` sets voxel_size 0.015 /
-max_triangles 120000 / refresh_period 15.0 (all marked PROVISIONAL in
-the file), CloudMap defaulted off in `world_mesh.rviz` (the one line
-that differs from `world.rviz`). **The live sweep gate is open** — run
-it, record the measured costs here, and settle the provisional values.
+`out:=/[i]mage_raw` patterns, and `world_mesh.yaml` (the fork's own
+full config since the package decision) sets voxel_size 0.015 /
+max_triangles 120000 / refresh_period 15.0, marked MESH-FIRST and
+provisional in the file. CloudMap defaulted off in `world_mesh.rviz`
+(the one line that differs from `world.rviz`). **The live sweep gate
+is open** — run it, record the measured costs here, and settle the
+provisional values.
 
 Now diverge, in `world_mesh`'s own files only:
 

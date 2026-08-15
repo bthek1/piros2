@@ -1,29 +1,22 @@
 """
-The whole dev-box side of piros2_world, in the launch whose name says so.
+The mesh-first world session — piros2_world_mesh's whole dev-box side.
 
-Depth estimator + keypoint detector + dashboard + cloud projector +
-cloud mapper + mesh marker + TSDF mesher: the projector/mapper joined in
-the world combined plan's merge, the two mesh nodes in the live mesh
-plan — one launch, not overlapping ones that double-start shared nodes.
+World mesh plan: a full fork of world.launch.py, running this package's
+copies of the four world nodes plus the shared perception pair. Same
+shape as the original (venv ExecuteProcess for the two PyPI-dependent
+nodes, no camera include — the camera belongs to the Pi), with the
+defaults re-posed for the surface:
 
-Deliberately does NOT include the camera launch, same reasoning as
-perception.launch.py: an IncludeLaunchDescription executes on the machine
-doing the launching, and this launch runs on the dev box — including
-camera.launch.py here would try to open /dev/video0 locally. The camera
-belongs to the Pi; `just world` starts it there over SSH.
+- `odom` defaults to **rgbd**: the mesh is the point of this session,
+  and rotation-only poses smear it the moment a hand-pan carries real
+  translation (RTAB-Map measured 0.9 m of arm-arc in a "rotation-only"
+  sweep). `odom:=kp` gets the compass back.
+- Nodes read config/world_mesh.yaml — this package's own full config,
+  free to drift from world.yaml (that freedom is why the fork exists).
 
-The estimator is an ExecuteProcess, not a Node, on purpose: launch_ros's
-Node action execs the installed entry point, whose shebang colcon hardcodes
-to the system python — which has no onnxruntime. The venv interpreter must
-be named explicitly (piros2_perception's README documents this trap).
-
-`odom:=rgbd` (live mesh plan P3, default `kp`) swaps the odometry:
-RTAB-Map's rgbd_odometry publishes real 6-DoF odom → base_link (walls
-stay put when the camera *translates*), the keypoint detector's compass
-yields the TF slot (REP-105: one parent per frame — its `publish_tf`
-goes false; the orientation topic keeps publishing), and an
-image_transport republisher provides the raw /image_raw rgbd_odometry
-needs — locally, from the compressed stream already crossing the Wi-Fi.
+`just world_mesh` (aliased `just dev`) runs it with world_mesh.rviz.
+Never run alongside `just world`: same node names, same topics, same
+camera.
 """
 
 import os
@@ -40,9 +33,9 @@ VENV_PYTHON = os.path.expanduser('~/.venvs/piros2-perception/bin/python')
 
 
 def generate_launch_description():
-    world_config = os.path.join(
-        get_package_share_directory('piros2_world'),
-        'config', 'world.yaml')
+    mesh_config = os.path.join(
+        get_package_share_directory('piros2_world_mesh'),
+        'config', 'world_mesh.yaml')
     perception_config = os.path.join(
         get_package_share_directory('piros2_perception'),
         'config', 'perception.yaml')
@@ -53,26 +46,26 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument(
-            'odom', default_value='kp',
-            description='odom → base_link source: kp = the keypoint '
-                        'detector rotation-only compass, rgbd = '
-                        'RTAB-Map rgbd_odometry (6-DoF)'),
+            'odom', default_value='rgbd',
+            description='odom → base_link source: rgbd = RTAB-Map '
+                        'rgbd_odometry (6-DoF, the default here), kp = '
+                        'the keypoint detector rotation-only compass'),
         ExecuteProcess(
             cmd=[VENV_PYTHON, '-m', 'piros2_perception.depth_estimator',
                  '--ros-args', '--params-file', perception_config],
             output='screen'),
         Node(
-            package='piros2_world',
+            package='piros2_world_mesh',
             executable='keypoint_detector',
             name='keypoint_detector',
-            parameters=[world_config, {
+            parameters=[mesh_config, {
                 'publish_tf': ParameterValue(
                     PythonExpression(["'", odom, "' != 'rgbd'"]),
                     value_type=bool)}],
             output='screen'),
-        # The rgbd-odometry alternative (P3): raw republisher + the
-        # odometry, both only in rgbd mode. Params/remaps match
-        # mapping.launch.py, sync-queue fix included.
+        # The rgbd-odometry pair (the default here): raw republisher +
+        # the odometry. Params/remaps match mapping.launch.py,
+        # sync-queue fix included.
         Node(
             package='image_transport',
             executable='republish',
@@ -100,10 +93,10 @@ def generate_launch_description():
                         ('depth/image', '/depth')],
             output='screen'),
         Node(
-            package='piros2_world',
+            package='piros2_world_mesh',
             executable='dashboard',
             name='dashboard',
-            parameters=[world_config],
+            parameters=[mesh_config],
             output='screen'),
         Node(
             package='piros2_perception',
@@ -112,16 +105,16 @@ def generate_launch_description():
             parameters=[perception_config],
             output='screen'),
         Node(
-            package='piros2_world',
+            package='piros2_world_mesh',
             executable='cloud_mapper',
             name='cloud_mapper',
-            parameters=[world_config],
+            parameters=[mesh_config],
             output='screen'),
-        # Live TSDF + timed re-mesh (live mesh plan P0/P1). Venv
-        # ExecuteProcess for the same reason as the depth estimator:
-        # open3d is PyPI-only and colcon's shebang misses the venv.
+        # Live TSDF + timed re-mesh. Venv ExecuteProcess for the same
+        # reason as the depth estimator: open3d is PyPI-only and
+        # colcon's shebang misses the venv.
         ExecuteProcess(
-            cmd=[VENV_PYTHON, '-m', 'piros2_world.tsdf_mesher',
-                 '--ros-args', '--params-file', world_config],
+            cmd=[VENV_PYTHON, '-m', 'piros2_world_mesh.tsdf_mesher',
+                 '--ros-args', '--params-file', mesh_config],
             output='screen'),
     ])

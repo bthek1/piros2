@@ -92,11 +92,11 @@ high-pass scale aligner halves the depth model's per-frame wobble, and
 `just dev odom:=rgbd` optionally swaps the rotation-only compass for
 RTAB-Map's live 6-DoF odometry. The
 [world mesh plan](docs/plans/in-progress/world-mesh-plan.md) (**in
-progress, 2026-08-12**) forks the session as `just world_mesh` —
-aliased **`just dev`**, now the day-to-day target — with 6-DoF
-odometry and quality-biased TSDF settings by default, and
-`just mesh-save` writing the live surface to `meshes/live_<stamp>.ply`
-mid-session.
+progress, 2026-08-12**) forks the world stack into its own package,
+`piros2_world_mesh`, run as `just world_mesh` — aliased **`just dev`**,
+now the day-to-day target — with 6-DoF odometry and quality-biased
+TSDF settings by default, and `just mesh-save` writing the live
+surface to `meshes/live_<stamp>.ply` mid-session.
 
 Reliability groundwork
 ([wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md),
@@ -140,7 +140,7 @@ status.
 | [world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for TSDF fusion, pose graphs and meshing; upgraded the cloud map to weighted fusion, built the offline recon pipeline, pinned the depth scale — done 2026-08-10, kept as the build log |
 | [live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md) | The live pipeline grows a surface: in-session TSDF + timed re-mesh in RViz, per-frame depth alignment, optional 6-DoF live odometry — in progress since 2026-08-11 |
-| [world-mesh-plan.md](docs/plans/in-progress/world-mesh-plan.md) | `just world_mesh` (aliased `just dev`): the `just world` session duplicated and diverged mesh-first — 6-DoF odometry by default, quality-biased TSDF, a saved PLY at the end — in progress since 2026-08-12 |
+| [world-mesh-plan.md](docs/plans/in-progress/world-mesh-plan.md) | `piros2_world_mesh` (`just world_mesh`, aliased `just dev`): the world stack forked into its own package and diverged mesh-first — 6-DoF odometry by default, quality-biased TSDF, a saved PLY at the end — in progress since 2026-08-12 |
 | [wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link: escalation-ladder watchdog, outage-reaped camera sessions, `just wifi` — done 2026-08-12, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 

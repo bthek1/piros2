@@ -1,0 +1,107 @@
+# Parameters for the world_mesh session — piros2_world_mesh's own full
+# config, forked from world.yaml (world mesh plan) and free to drift.
+# Keyed by node name — a mismatch silently applies nothing (same trap as
+# camera.yaml). Values that differ from world.yaml are marked MESH-FIRST.
+keypoint_detector:
+  ros__parameters:
+    # ORB feature cap: bounds per-frame cost. 500 is comfortable at
+    # 30 fps on the dev box CPU, and a deeper pool also stabilises
+    # matching — rank churn at the cap is the main source of unmatched
+    # keypoints.
+    max_features: 500
+    # JPEG re-encode quality for the annotated stream.
+    jpeg_quality: 80
+    # Matching: reject matches whose descriptor Hamming distance (out of
+    # 256 bits) exceeds this — a lookalike corner, not the same physical
+    # point. Lower = stricter, fewer green keypoints.
+    match_max_distance: 64
+    # Match against the pooled descriptors of this many recent frames.
+    # 1 = strict frame-to-frame, which loses ~25% of keypoints to
+    # detection flicker at the feature cap; 10 forgives a feature that
+    # drops out for a few frames and returns.
+    match_window: 10
+    # Rotation estimator gates. Fewer strict consecutive-pair matches
+    # than this and the frame's rotation is not trusted (estimate
+    # returns None, orientation holds).
+    min_matched_pairs: 8
+    # Mean ray residual (radians) allowed after the reject-worst refits;
+    # ~0.03 rad ≈ 1.7° ≈ 27 px at fx≈907. Looser admits bad geometry,
+    # tighter starves the estimator in blurry motion.
+    max_residual_rad: 0.03
+
+cloud_mapper:
+  ros__parameters:
+    # Voxel edge in metres: 5 cm resolves furniture without ballooning
+    # the map dict.
+    voxel_size: 0.05
+    # The merged map republishes at its own pace, decoupled from the
+    # ~15 Hz cloud stream.
+    map_publish_rate: 1.0
+    # Hard cap on distinct voxels; when hit the map logs once and stops
+    # growing (no silent eviction) — ~/clear starts over.
+    max_voxels: 200000
+    # Points farther than this (metres from the lens) are dropped:
+    # monocular depth degrades with distance and would smear the
+    # panorama.
+    max_range: 6.0
+    # A voxel joins the published map only once this many clouds have
+    # observed it — one look is usually depth noise at a surface edge.
+    min_weight: 2
+    # Cap on a voxel's averaging inertia, in observations: evidence
+    # never weighs more than this, so a moved object can displace a
+    # long-observed surface instead of arguing with its whole history.
+    max_weight: 64
+
+tsdf_mesher:
+  ros__parameters:
+    # MESH-FIRST (world.yaml: 0.02), PROVISIONAL until the live sweep
+    # measures the cost: 1.5 cm voxels, finer than the 2 cm mono-noise
+    # resolution on the bet that rgbd poses + scale alignment leave
+    # structure worth it; if the live mesh just gets noisier, put it
+    # back.
+    voxel_size: 0.015
+    # Depth beyond this (metres) is ignored, same reasoning as the
+    # mapper's max_range: far monocular depth is a guess.
+    depth_max: 6.0
+    # MESH-FIRST (world.yaml: 10.0): meshing costs more at the finer
+    # density; re-mesh a little less often.
+    refresh_period: 15.0
+    # TSDF voxels observed fewer times than this don't mesh.
+    weight_threshold: 3.0
+    # Small gaps default to connected: interior holes up to this radius
+    # (metres) are triangulated closed at extraction. The scan's open
+    # outer boundary is far larger than this and stays open; the volume
+    # itself is untouched. 0 disables.
+    fill_hole_radius: 0.06
+    # MESH-FIRST (world.yaml: 60000): more surface allowed before the
+    # Marker cap truncates — finer voxels mean more triangles for the
+    # same room. A capped refresh still logs what it dropped.
+    max_triangles: 120000
+    # Per-frame depth scale alignment: each frame is scaled by the
+    # median ratio against a TSDF ray-cast from its own pose — the fix
+    # for the depth model's measured ±4% wobble. The first frame
+    # defines the map's scale.
+    align: true
+    # Below this valid-overlap fraction a frame integrates unaligned —
+    # a mostly-new view has nothing to conform to.
+    align_min_overlap: 0.2
+    # Correction clamp: a disagreement beyond this is a wrong pose or a
+    # depth failure, not a wobble; refuse to fold the map.
+    align_max_correction: 0.15
+
+dashboard:
+  ros__parameters:
+    # Stats panel size: one cell of the retired 2x2 mosaic, a
+    # comfortable RViz side-panel size.
+    cell_width: 640
+    cell_height: 360
+    # Rates average over this many seconds; short = jumpy, long = slow
+    # to show a stall.
+    rate_window: 5.0
+    # A feed whose newest arrival (by receipt time — never header.stamp,
+    # the camera's stamps lag ~0.73 s by fault) is older than this gets
+    # a STALE line in the stats panel.
+    stale_after: 2.0
+    # Stats refresh rate: decoupled from every input rate on purpose.
+    publish_rate: 10.0
+    jpeg_quality: 80

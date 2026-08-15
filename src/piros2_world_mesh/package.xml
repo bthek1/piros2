@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>piros2_world_mesh</name>
+  <version>0.0.0</version>
+  <description>Mesh-first fork of piros2_world: same node lineup, defaults posed for a live TSDF surface and a saved mesh.</description>
+  <maintainer email="bthekkel1@gmail.com">Benedict Thekkel</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros_py</depend>
+  <depend>cv_bridge</depend>
+  <!-- cloud_mapper imports the projector's POINT_DTYPE: the wire format
+       is a contract, and importing it makes drift impossible. -->
+  <exec_depend>piros2_perception</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>rtabmap_odom</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

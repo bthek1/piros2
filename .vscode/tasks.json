@@ -43,7 +43,7 @@
             "id": "package",
             "type": "pickString",
             "description": "Which package to test",
-            "options": ["piros2_hello", "piros2_camera", "piros2_vision", "piros2_perception", "piros2_world"],
+            "options": ["piros2_hello", "piros2_camera", "piros2_vision", "piros2_perception", "piros2_world", "piros2_world_mesh"],
             "default": "piros2_perception"
         }
     ]
