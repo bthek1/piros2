@@ -3,7 +3,7 @@
 <package format="3">
   <name>piros2_world_mesh</name>
   <version>0.0.0</version>
-  <description>Mesh-first fork of piros2_world: same node lineup, defaults posed for a live TSDF surface and a saved mesh.</description>
+  <description>Mesh-first fork of piros2_world, defaults posed for a live TSDF surface and a saved mesh; the voxel cloud_mapper is dropped — the TSDF is the fusion accumulator here.</description>
   <maintainer email="bthekkel1@gmail.com">Benedict Thekkel</maintainer>
   <license>Apache-2.0</license>
 
@@ -14,8 +14,8 @@
   <depend>std_srvs</depend>
   <depend>tf2_ros_py</depend>
   <depend>cv_bridge</depend>
-  <!-- cloud_mapper imports the projector's POINT_DTYPE: the wire format
-       is a contract, and importing it makes drift impossible. -->
+  <!-- The launch runs the shared perception pair (depth_estimator,
+       cloud_projector) alongside this package's nodes. -->
   <exec_depend>piros2_perception</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-numpy</exec_depend>

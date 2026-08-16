@@ -58,7 +58,7 @@ dashboard node that composes the camera feed, the neural depth preview,
 and the annotated keypoints into one 2×2 mosaic with a live stats panel —
 per-stream rates measured against the node's own clock, cumulative counts,
 and staleness banners — published as a single compressed topic. `just world`
-(the new `just run`) starts the camera on the Pi and opens the one-window
+(then the `just run` target) starts the camera on the Pi and opens the one-window
 view in `rqt_image_view`. (The mosaic retired in stages: its window on
 2026-08-05, the topic itself on 2026-08-12 — the stats panel lives on as
 the dashboard's output, in RViz.) Since **2026-08-04** the detector also matches
@@ -71,7 +71,7 @@ solved by Kabsch, composed and broadcast as `odom → base_link` — plus the
 depth clouds accumulated into a persistent voxel panorama on
 `/world/map_points`. Since the combined-plan merge (**2026-08-05**,
 [world-combined-plan.md](docs/plans/completed/world-combined-plan.md))
-one command — `just world`, the `just run` target — opens one RViz
+one command — `just world`, the `just run` target until 2026-08-15 — opens one RViz
 window: axes, live cloud and the accumulating map panorama in one 3D
 scene, with raw camera, keypoints, depth and stats image panels docked
 alongside;
@@ -83,20 +83,25 @@ The [world fusion plan](docs/plans/completed/world-fusion-plan.md)
 weighted averages live, plus an offline pipeline (`tools/recon/`,
 Open3D under the perception venv) from bag to TSDF mesh to a
 plane-labelled `room.json`, with the depth scale pinned by tape measure
-(`depth_scale: 2.69`, +0.1% on verification). The
-[live mesh plan](docs/plans/in-progress/live-mesh-plan.md) (**in
-progress, 2026-08-11**) then brought the surface live: `tsdf_mesher`
+(`depth_scale: 2.69`, +0.1% on verification). The live mesh work
+(**2026-08-11**; its plan file was retired 2026-08-15, absorbed by the
+world mesh plan below) then brought the surface live: `tsdf_mesher`
 integrates depth in-session and re-meshes onto `/world/mesh_live`
 every ~10 s (the LiveMesh display in the same RViz window), a
 high-pass scale aligner halves the depth model's per-frame wobble, and
 `just dev odom:=rgbd` optionally swaps the rotation-only compass for
 RTAB-Map's live 6-DoF odometry. The
-[world mesh plan](docs/plans/in-progress/world-mesh-plan.md) (**in
-progress, 2026-08-12**) forks the world stack into its own package,
-`piros2_world_mesh`, run as `just world_mesh` — aliased **`just dev`**,
-now the day-to-day target — with 6-DoF odometry and quality-biased
+[world mesh plan](docs/plans/completed/world-mesh-plan.md)
+(**2026-08-12, closed by decision 2026-08-15** — the live sweep
+checks moved to the todo list) forks the world stack into its own
+package, `piros2_world_mesh`, run as `just world_mesh` — aliased
+**`just dev`** and, since 2026-08-15, **`just run`**, making it the
+day-to-day target — with 6-DoF odometry and quality-biased
 TSDF settings by default, and `just mesh-save` writing the live
-surface to `meshes/live_<stamp>.ply` mid-session.
+surface to `meshes/live_<stamp>.ply` mid-session. The fork's first
+real divergence landed the same day: it drops `cloud_mapper` — the
+TSDF is its fusion accumulator — while `just world` keeps the voxel
+panorama.
 
 Reliability groundwork
 ([wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md),
@@ -131,7 +136,7 @@ status.
 | [networking.md](docs/info/networking.md) | DDS discovery across the LAN, domain IDs, and the Docker-bridge gotcha |
 | [camera.md](docs/info/camera.md) | Driver choice, capture modes, image transport, calibration |
 | [troubleshooting.md](docs/info/troubleshooting.md) | Symptoms → causes for the failures you are most likely to hit |
-| [just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — dataflow, deployment, TF tree, lifecycle — plus topic/service/cost reference tables (open in a browser; mermaid renders via CDN) |
+| [just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — dataflow, deployment, TF tree, lifecycle — plus topic/service/cost reference tables (open in a browser; mermaid renders via CDN) |
 | [roadmap.md](docs/info/roadmap.md) | The learning path, milestone by milestone — concluded 2026-07-27 |
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
 | [perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order, phases P0–P4 — closed 2026-07-29, kept as the build log |
@@ -139,8 +144,7 @@ status.
 | [world-3d-plan.md](docs/plans/completed/world-3d-plan.md) | Camera orientation from keypoint matches + an accumulated cloud map in RViz — done 2026-08-05, kept as the build log |
 | [world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for TSDF fusion, pose graphs and meshing; upgraded the cloud map to weighted fusion, built the offline recon pipeline, pinned the depth scale — done 2026-08-10, kept as the build log |
-| [live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md) | The live pipeline grows a surface: in-session TSDF + timed re-mesh in RViz, per-frame depth alignment, optional 6-DoF live odometry — in progress since 2026-08-11 |
-| [world-mesh-plan.md](docs/plans/in-progress/world-mesh-plan.md) | `piros2_world_mesh` (`just world_mesh`, aliased `just dev`): the world stack forked into its own package and diverged mesh-first — 6-DoF odometry by default, quality-biased TSDF, a saved PLY at the end — in progress since 2026-08-12 |
+| [world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md) | `piros2_world_mesh` (`just world_mesh`, aliased `just dev` and `just run`): the world stack forked into its own package and diverged mesh-first — 6-DoF odometry by default, quality-biased TSDF, a saved PLY at the end — built 2026-08-12, closed by decision 2026-08-15, kept as the build log |
 | [wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link: escalation-ladder watchdog, outage-reaped camera sessions, `just wifi` — done 2026-08-12, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How `just world` works</title>
+<title>How `just world_mesh` works</title>
 <style>
   :root {
     --bg: #f2f3f3;
@@ -132,9 +132,13 @@
 <main>
   <header class="page">
     <p class="eyebrow">piros2 · session anatomy</p>
-    <h1>How <code>just world</code> works</h1>
-    <p>One recipe, two machines, six processes (eight with <code>odom:=rgbd</code>), one RViz
-    window whose closing tears everything down. The four diagrams below are four different
+    <h1>How <code>just world_mesh</code> works</h1>
+    <p>One recipe, two machines, seven processes (five with <code>odom:=kp</code>), one RViz
+    window whose closing tears everything down. This is the mesh-first fork session —
+    <code>piros2_world_mesh</code>, aliased <code>just dev</code> and <code>just run</code> —
+    with 6-DoF <code>rgbd_odometry</code> by default and the TSDF as the only fusion
+    accumulator (no <code>cloud_mapper</code>; <code>just world</code> keeps the classic
+    session with the voxel panorama). The four diagrams below are four different
     cuts through the same session: what data flows where, what crosses the Wi-Fi link,
     how the TF tree is owned, and how the recipe starts and stops it all. Reference
     tables with the measured numbers — every topic, service, and per-node cost —
@@ -147,7 +151,7 @@
       <h2>The node-and-topic graph — a diamond, not a chain</h2>
       <p>Boxes are processes; rounded pills are the high-fan-out topics. Every image topic
       runs RELIABLE / KEEP_LAST&nbsp;1 (<code>BIG_FRAME_QOS</code>) — BEST_EFFORT delivers
-      zero large frames over this link.</p>
+      zero large frames over this link. Drawn in the default <code>odom:=rgbd</code> mode.</p>
     </div>
     <div class="canvas">
 <pre class="mermaid">
@@ -162,13 +166,15 @@ flowchart LR
     TTFS(["/tf_static"])
 
     subgraph DEV["Dev box"]
-        KP["keypoint_detector&lt;br/&gt;ORB · rotation compass"]
+        KP["keypoint_detector&lt;br/&gt;ORB · rotation compass&lt;br/&gt;publish_tf off in rgbd mode"]
         DEPTH["depth_estimator&lt;br/&gt;Depth Anything V2 · venv · GPU"]
         DASH["dashboard&lt;br/&gt;arrival stats · 10 Hz wall timer"]
         PROJ["cloud_projector&lt;br/&gt;exact sync by header stamp"]
-        MAPPER["cloud_mapper&lt;br/&gt;weighted voxel fusion"]
-        MESH["tsdf_mesher&lt;br/&gt;TSDF · venv · GPU"]
-        RVIZ["rviz2&lt;br/&gt;world.rviz · fixed frame odom"]
+        REPUB["image_transport republish&lt;br/&gt;compressed → raw, local"]
+        RGBD["rgbd_odometry&lt;br/&gt;RTAB-Map · 6-DoF"]
+        MESH["tsdf_mesher&lt;br/&gt;TSDF 1.5 cm · venv · GPU"]
+        RVIZ["rviz2&lt;br/&gt;world_mesh.rviz · fixed frame odom"]
+        TRAW(["/image_raw&lt;br/&gt;raw · dev-box-local"])
         TDEPTH(["/depth&lt;br/&gt;32FC1 · ~13 fps"])
         TTF(["/tf&lt;br/&gt;odom → base_link"])
         TPTS(["/points&lt;br/&gt;33–57k points"])
@@ -182,54 +188,58 @@ flowchart LR
     TIMG --> KP
     TIMG --> DASH
     TIMG --> PROJ
+    TIMG --> REPUB
     TIMG --> MESH
     TIMG --> RVIZ
     TINFO --> KP
     TINFO --> PROJ
     TINFO --> MESH
+    TINFO --> RGBD
+
+    REPUB --> TRAW
+    TRAW --> RGBD
 
     DEPTH --> TDEPTH
     TDEPTH --> PROJ
     TDEPTH --> MESH
+    TDEPTH --> RGBD
     DEPTH -- "/depth/preview/compressed" --> DASH
     DEPTH -- "/depth/preview/compressed" --> RVIZ
 
     KP -- "/keypoints/compressed&lt;br/&gt;/keypoints/count · /keypoints/matched" --> DASH
-    KP --> TTF
     KP -- "/keypoints/compressed" --> RVIZ
     KP -- "/camera/orientation" --> RVIZ
 
+    RGBD --> TTF
+
     PROJ --> TPTS
-    TPTS --> MAPPER
     TPTS --> RVIZ
 
-    TTF --> MAPPER
     TTF --> MESH
     TTF --> RVIZ
-    TTFS --> MAPPER
+    TTFS --> RGBD
     TTFS --> MESH
     TTFS --> RVIZ
 
-    MAPPER -- "/world/map_points · 1 Hz" --> RVIZ
-    MESH -- "/world/mesh_live&lt;br/&gt;latched Marker · re-mesh every 10 s" --> RVIZ
+    MESH -- "/world/mesh_live&lt;br/&gt;latched Marker · re-mesh every 15 s" --> RVIZ
     DASH -- "/world/stats/compressed" --> RVIZ
 
     classDef topic fill:#b9651822,stroke:#b96518,stroke-width:1px;
-    class TIMG,TINFO,TTFS,TDEPTH,TTF,TPTS topic;
+    class TIMG,TINFO,TTFS,TRAW,TDEPTH,TTF,TPTS topic;
 </pre>
     </div>
     <figcaption><strong>What to notice</strong> — <code>/image_raw/compressed</code> fans out to
-    six consumers and <code>/depth</code> to two more, then everything reconverges in RViz —
-    whose image panels subscribe to the camera, keypoint and depth-preview feeds directly
-    (since the mosaic's removal they are those feeds' only viewers).
-    Three different consumption strategies coexist on the same topics: the projector and
-    mesher pair messages by exact header stamp (<code>message_filters</code>), the dashboard
+    seven consumers and <code>/depth</code> to three more, then everything reconverges in RViz —
+    whose image panels subscribe to the camera, keypoint and depth-preview feeds directly.
+    Three different consumption strategies coexist on the same topics: the projector, mesher
+    and rgbd_odometry pair messages by exact header stamp (<code>message_filters</code>; queues
+    30 deep because a 42–60&nbsp;fps camera feeds a ~13&nbsp;fps depth model), the dashboard
     deliberately syncs nothing — it counts arrivals per feed and renders the stats panel on
-    its own 10&nbsp;Hz clock (since 2026-08-12 that panel is its only output; the 2×2 mosaic
-    topic was removed as a publisher without subscribers),
-    and the mapper/mesher pose their data by latest-only TF lookup — the honest answer to
-    the camera's 0.73&nbsp;s stamp fault. Rates matter: a 42–60&nbsp;fps camera feeding a
-    ~13&nbsp;fps depth model is why the sync queues are 30 deep.</figcaption>
+    its own 10&nbsp;Hz clock — and the mesher poses each frame by latest-only TF lookup, the
+    honest answer to the camera's 0.73&nbsp;s stamp fault. With <code>cloud_mapper</code>
+    removed (2026-08-15) the TSDF is the only accumulator: <code>/points</code> feeds just
+    RViz's live Depth3D display, and the map that persists is the surface on
+    <code>/world/mesh_live</code>.</figcaption>
   </figure>
 
   <figure>
@@ -252,7 +262,8 @@ flowchart LR
             D2["depth_estimator&lt;br/&gt;onnxruntime · CUDA · GTX 1660 SUPER"]
             M2["tsdf_mesher&lt;br/&gt;open3d · CUDA"]
         end
-        COLC["colcon-built nodes&lt;br/&gt;keypoint_detector · dashboard&lt;br/&gt;cloud_projector · cloud_mapper"]
+        COLC["colcon-built nodes&lt;br/&gt;keypoint_detector · dashboard&lt;br/&gt;cloud_projector"]
+        APT["apt-installed rgbd pair (default)&lt;br/&gt;image_transport republish&lt;br/&gt;rtabmap rgbd_odometry"]
         RV["rviz2&lt;br/&gt;QT_QPA_PLATFORM=xcb"]
     end
 
@@ -265,13 +276,14 @@ flowchart LR
     </div>
     <figcaption><strong>What to notice</strong> — the wireless edge carries only compressed
     JPEG, camera intrinsics and the static transforms; the ~83&nbsp;MB/s raw stream never
-    leaves the Pi. In <code>odom:=rgbd</code> mode a local <code>image_transport republish</code>
-    regenerates <code>/image_raw</code> on the dev box from the compressed stream already
-    crossing — the raw stream still doesn't touch the Wi-Fi. The two venv processes are
-    <code>ExecuteProcess</code>, not launch_ros <code>Node</code>s: colcon hardcodes the system-python
-    shebang, which has no onnxruntime or open3d. The watchdog and the ssh keepalives are the
-    two halves of the link-death contract: the Pi heals itself, and a dead session reaps the
-    camera in ~60&nbsp;s instead of holding <code>/dev/video0</code>.</figcaption>
+    leaves the Pi. The default <code>odom:=rgbd</code> mode needs raw frames, so a local
+    <code>image_transport republish</code> regenerates <code>/image_raw</code> on the dev box
+    from the compressed stream already crossing — the raw stream still doesn't touch the
+    Wi-Fi. The two venv processes are <code>ExecuteProcess</code>, not launch_ros
+    <code>Node</code>s: colcon hardcodes the system-python shebang, which has no onnxruntime
+    or open3d. The watchdog and the ssh keepalives are the two halves of the link-death
+    contract: the Pi heals itself, and a dead session reaps the camera in ~60&nbsp;s instead
+    of holding <code>/dev/video0</code>.</figcaption>
   </figure>
 
   <figure>
@@ -289,19 +301,22 @@ flowchart TB
     CL(["camera_link"])
     COF(["camera_optical_frame&lt;br/&gt;the frame_id in every image header"])
 
-    ODOM -- "odom:=kp (default)&lt;br/&gt;keypoint_detector on /tf&lt;br/&gt;rotation-only · Kabsch on bearing rays" --> BASE
-    ODOM -. "odom:=rgbd&lt;br/&gt;rgbd_odometry on /tf · 6-DoF&lt;br/&gt;(detector's publish_tf flips false)" .-> BASE
+    ODOM -- "odom:=rgbd (default)&lt;br/&gt;rgbd_odometry on /tf · 6-DoF&lt;br/&gt;(detector's publish_tf flips false)" --> BASE
+    ODOM -. "odom:=kp&lt;br/&gt;keypoint_detector on /tf&lt;br/&gt;rotation-only · Kabsch on bearing rays" .-> BASE
     BASE -- "/tf_static · published on the Pi&lt;br/&gt;placeholder mount pose · 5 cm up" --> CL
     CL -- "/tf_static · published on the Pi&lt;br/&gt;canonical optical rotation −90°/0°/−90°" --> COF
 </pre>
     </div>
     <figcaption><strong>What to notice</strong> — the two edges into <code>base_link</code> never
     coexist: swapping odometry sources means swapping the <em>publisher</em> of that one edge,
-    which is why <code>odom:=rgbd</code> sets the detector's <code>publish_tf</code> false while its
-    <code>/camera/orientation</code> topic keeps publishing. The bottom two edges are static,
-    latched, and owned by the Pi; the optical-frame edge is the −90/0/−90 rotation that turns
-    "z forward, x right" camera axes into robot axes. RViz's fixed frame is <code>odom</code>,
-    so everything a TF consumer poses ends up in one coherent scene.</figcaption>
+    which is why the default <code>odom:=rgbd</code> sets the detector's <code>publish_tf</code>
+    false while its <code>/camera/orientation</code> topic keeps publishing. The fork defaults
+    the solid edge because the mesh is the point of this session: rotation-only poses smear it
+    the moment a hand-pan carries real translation (RTAB-Map measured 0.9&nbsp;m of arm-arc in
+    a "rotation-only" sweep). The bottom two edges are static, latched, and owned by the Pi;
+    the optical-frame edge is the −90/0/−90 rotation that turns "z forward, x right" camera
+    axes into robot axes. RViz's fixed frame is <code>odom</code>, so everything a TF consumer
+    poses ends up in one coherent scene.</figcaption>
   </figure>
 
   <figure>
@@ -314,25 +329,25 @@ flowchart TB
 <pre class="mermaid">
 sequenceDiagram
     actor U as You
-    participant J as just world
+    participant J as just world_mesh
     participant P as Pi (ssh -tt + keepalives)
-    participant W as world.launch.py
+    participant W as world_mesh.launch.py
     participant R as rviz2
 
-    U->>J: just world [image_width:=…]
-    J->>P: ros2 launch piros2_camera camera.launch.py — background
-    J->>W: ros2 launch piros2_world world.launch.py — background
-    Note over W: 6 processes (8 with odom:=rgbd)
+    U->>J: just world_mesh [odom:=kp · image_width:=…]
+    J->>P: ros2 launch piros2_camera camera.launch.py — background, args passed
+    J->>W: ros2 launch piros2_world_mesh world_mesh.launch.py — background, args passed
+    Note over W: 7 processes (5 with odom:=kp)
     loop 8 × 1 s warm-up
         J->>J: kill -0 cam_pid — camera session alive?
     end
     Note over J,P: camera died during warm-up → exit 1 with a hint (ping the Pi, just camera)
-    J->>R: rviz2 -d world.rviz — FOREGROUND
+    J->>R: rviz2 -d world_mesh.rviz — FOREGROUND
     Note over R: the session now lives exactly as long as this window
     U->>R: close the window (or Ctrl-C the recipe)
     R-->>J: foreground command returns, recipe exits
     Note over J: bash EXIT trap fires — one trap covers both exit paths
-    J->>W: pkill -f each node pattern (7 patterns)
+    J->>W: pkill -f each node pattern (9 patterns)
     J->>P: ssh pkill camera launch · usb_cam · static TF
     Note over P: /dev/video0 released — just stragglers reports clean
 </pre>
@@ -341,10 +356,12 @@ sequenceDiagram
     whole teardown mechanism: closing the window ends the recipe, and bash fires the same
     <code>EXIT</code> trap on Ctrl-C, so one trap covers both exits. The trap must
     <code>pkill -f</code> node patterns rather than <code>kill %N</code> — killing a background
-    job's <code>bash -lc</code> wrapper orphans the actual ros2 grandchildren. The warm-up loop
-    exists because usb_cam idles forever on a missing device; the recipe checks the camera
-    session survived eight seconds and fails loudly if not. When a session gains a node, its
-    pkill pattern goes into this trap in the same change.</figcaption>
+    job's <code>bash -lc</code> wrapper orphans the actual ros2 grandchildren. Unlike
+    <code>just world</code>, this recipe passes its args to <em>both</em> launches (each ignores
+    what it doesn't declare), which is what makes <code>just dev odom:=kp</code> work. The
+    warm-up loop exists because usb_cam idles forever on a missing device; the recipe checks
+    the camera session survived eight seconds and fails loudly if not. When a session gains a
+    node, its pkill pattern goes into this trap in the same change.</figcaption>
   </figure>
 
   <section class="tables">
@@ -353,7 +370,8 @@ sequenceDiagram
       <h2>Topics, services and measured costs</h2>
       <p>Every figure below is one of the repo's measured values, not a spec-sheet number.
       "≈ camera" means the stream is paced by whatever the camera delivers (42–60 fps
-      under the <code>just camera-reset</code> baseline).</p>
+      under the <code>just camera-reset</code> baseline). The fork's TSDF values are
+      provisional until the live sweep measures them.</p>
     </div>
 
     <h3>Topics</h3>
@@ -365,25 +383,25 @@ sequenceDiagram
         <tbody>
           <tr>
             <td>/image_raw/compressed</td><td>CompressedImage</td><td>usb_cam (Pi)</td>
-            <td>depth_estimator, keypoint_detector, dashboard, cloud_projector, tsdf_mesher, RViz</td>
+            <td>depth_estimator, keypoint_detector, dashboard, cloud_projector, republisher, tsdf_mesher, RViz</td>
             <td>42–60 fps</td><td>RELIABLE · KEEP_LAST 1</td>
             <td>JPEG, ~1.5 MB/s over the Wi-Fi (milestone-6 bag) — the only image stream that crosses the link</td>
           </tr>
           <tr>
-            <td>/image_raw</td><td>Image (raw)</td><td>usb_cam (Pi); in <code>odom:=rgbd</code> mode also a local republisher on the dev box</td>
+            <td>/image_raw</td><td>Image (raw)</td><td>usb_cam (Pi); in the default <code>odom:=rgbd</code> mode also the local republisher on the dev box</td>
             <td>rgbd_odometry (rgbd mode only)</td>
             <td>≈ camera</td><td>RELIABLE · KEEP_LAST 1</td>
             <td>~83 MB/s if streamed — never crosses the LAN; header stamps lag wall clock ~0.73 s by fault</td>
           </tr>
           <tr>
             <td>/camera_info</td><td>CameraInfo</td><td>usb_cam (Pi)</td>
-            <td>keypoint_detector, cloud_projector, tsdf_mesher (+ rgbd_odometry)</td>
+            <td>keypoint_detector, cloud_projector, tsdf_mesher, rgbd_odometry</td>
             <td>≈ camera</td><td>RELIABLE</td>
             <td>approx intrinsics: fx = fy ≈ 907 px, centred, zero distortion (spec-derived; checkerboard run pending)</td>
           </tr>
           <tr>
             <td>/depth</td><td>Image (32FC1)</td><td>depth_estimator</td>
-            <td>cloud_projector, tsdf_mesher (+ rgbd_odometry)</td>
+            <td>cloud_projector, tsdf_mesher, rgbd_odometry</td>
             <td>~13 fps</td><td>RELIABLE · KEEP_LAST 1</td>
             <td>3.7 MB/frame (~48 MB/s) — all endpoints dev-box-local, so it never touches the Wi-Fi; header copied from the source frame, which is what makes exact sync possible</td>
           </tr>
@@ -409,11 +427,11 @@ sequenceDiagram
             <td>/camera/orientation</td><td>PoseStamped</td><td>keypoint_detector</td>
             <td>RViz</td>
             <td>≈ camera</td><td>RELIABLE · KEEP_LAST 1</td>
-            <td>rotation-only; keeps publishing even in rgbd mode (only the TF slot is handed over)</td>
+            <td>rotation-only; keeps publishing even in the default rgbd mode (only the TF slot is handed over)</td>
           </tr>
           <tr>
-            <td>/tf</td><td>TFMessage</td><td>keypoint_detector (kp mode) <em>or</em> rgbd_odometry (rgbd mode)</td>
-            <td>cloud_mapper, tsdf_mesher, RViz</td>
+            <td>/tf</td><td>TFMessage</td><td>rgbd_odometry (default) <em>or</em> keypoint_detector (kp mode)</td>
+            <td>tsdf_mesher, RViz</td>
             <td>≈ camera</td><td>tf2 default</td>
             <td>the one dynamic edge, odom → base_link; one parent per frame (REP-105)</td>
           </tr>
@@ -425,21 +443,15 @@ sequenceDiagram
           </tr>
           <tr>
             <td>/points</td><td>PointCloud2</td><td>cloud_projector</td>
-            <td>cloud_mapper, RViz</td>
-            <td>~13 fps (paced by /depth)</td><td>RELIABLE · KEEP_LAST 1</td>
-            <td>33–57k points per cloud, built in ~12 ms, expressed in camera_optical_frame</td>
-          </tr>
-          <tr>
-            <td>/world/map_points</td><td>PointCloud2</td><td>cloud_mapper</td>
             <td>RViz</td>
-            <td>1 Hz</td><td>RELIABLE · KEEP_LAST 1</td>
-            <td>5 cm voxels, weighted-average fused, min_weight 2 holdback, max_range 6 m, expressed in odom</td>
+            <td>~13 fps (paced by /depth)</td><td>RELIABLE · KEEP_LAST 1</td>
+            <td>33–57k points per cloud, built in ~12 ms, expressed in camera_optical_frame; RViz's Depth3D display is its only consumer since cloud_mapper's removal</td>
           </tr>
           <tr>
             <td>/world/mesh_live</td><td>Marker (TRIANGLE_LIST)</td><td>tsdf_mesher</td>
             <td>RViz</td>
-            <td>re-mesh every 10 s</td><td>latched (TRANSIENT_LOCAL)</td>
-            <td>2 cm TSDF voxels; 60k-triangle cap (the mesher warns with what it dropped); fill_hole_radius 0.06</td>
+            <td>re-mesh every 15 s</td><td>latched (TRANSIENT_LOCAL)</td>
+            <td>1.5 cm TSDF voxels; 120k-triangle cap (the mesher warns with what it dropped); fill_hole_radius 0.06 — the mesh-first values, provisional until the sweep</td>
           </tr>
           <tr>
             <td>/world/stats/compressed</td><td>CompressedImage</td><td>dashboard</td>
@@ -463,12 +475,12 @@ sequenceDiagram
             <td>re-zero the composed orientation — the drift strategy in lieu of loop closure</td>
           </tr>
           <tr>
-            <td>/cloud_mapper/clear</td><td>std_srvs/Trigger</td><td>cloud_mapper</td>
-            <td>empty the voxel map and start the panorama again</td>
-          </tr>
-          <tr>
             <td>/tsdf_mesher/reset</td><td>std_srvs/Trigger</td><td>tsdf_mesher</td>
             <td>drop the TSDF volume; the next synced pair starts a fresh surface (live click still an open gate — bag-proven only)</td>
+          </tr>
+          <tr>
+            <td>/tsdf_mesher/save</td><td>std_srvs/Trigger</td><td>tsdf_mesher</td>
+            <td>extract now and write <code>meshes/live_&lt;stamp&gt;.ply</code> at full detail — hand-written ASCII PLY, no triangle cap; <code>just mesh-save</code> is the wrapper (in-session check still an open gate)</td>
           </tr>
         </tbody>
       </table>
@@ -498,12 +510,16 @@ sequenceDiagram
             <td>exact-stamp sync of /depth + RGB through K</td>
           </tr>
           <tr>
-            <td>cloud_mapper</td><td>dev box</td><td>27–30 ms per 45k-point cloud</td>
-            <td>array-backed weighted-average voxel fusion; capped weight keeps old evidence displaceable</td>
+            <td>image republisher</td><td>dev box</td><td>negligible</td>
+            <td>JPEG decode per frame; exists only so rgbd_odometry gets raw frames without raw ever crossing the Wi-Fi</td>
           </tr>
           <tr>
-            <td>tsdf_mesher</td><td>dev box · venv · GPU</td><td>52–78 ms/frame integrate</td>
-            <td>VoxelBlockGrid at 2 cm; extraction on the 10 s timer, not per frame</td>
+            <td>rgbd_odometry</td><td>dev box</td><td>odometry quality 447–563 (static plumbing bag)</td>
+            <td>bag-verified: 101 odometry updates on replay, rgbd owns /tf; exact sync off the depth node's honest headers, 30-deep queues</td>
+          </tr>
+          <tr>
+            <td>tsdf_mesher</td><td>dev box · venv · GPU</td><td>52–78 ms/frame integrate (measured at 2 cm)</td>
+            <td>VoxelBlockGrid at the fork's 1.5 cm — cost at the finer voxels unmeasured until the sweep; extraction on the 15 s timer, not per frame</td>
           </tr>
           <tr>
             <td>dashboard</td><td>dev box</td><td>negligible</td>
@@ -519,8 +535,8 @@ sequenceDiagram
   </section>
 
   <footer>
-    Drawn from <code>justfile:307</code> (the recipe), <code>src/piros2_world/launch/world.launch.py</code>,
-    and the node sources in <code>piros2_world</code> / <code>piros2_perception</code>, as of 2026-08-12.
+    Drawn from <code>justfile:339</code> (the recipe), <code>src/piros2_world_mesh/launch/world_mesh.launch.py</code>,
+    and the node sources in <code>piros2_world_mesh</code> / <code>piros2_perception</code>, as of 2026-08-15.
     Rates and counts are the repo's measured figures, not spec sheet values.
     Rendering needs internet once per visit (mermaid.js from jsdelivr).
   </footer>

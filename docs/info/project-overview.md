@@ -1,6 +1,6 @@
 # Project overview and progress
 
-*Written 2026-08-11, updated 2026-08-12. A single-page account of what piros2 is, what has been
+*Written 2026-08-11, updated 2026-08-15. A single-page account of what piros2 is, what has been
 built, and where it stands. The detailed logs live in
 [roadmap.md](roadmap.md) and the plans under
 [docs/plans/completed/](../plans/completed/); this page is the map.*
@@ -21,8 +21,9 @@ stage ended with something runnable and verified before moving on.
 Both machines run Jazzy natively from apt on Ubuntu 24.04, provisioned by
 the Ansible tree in `ansible/` (six roles, idempotent on both hosts),
 talking over CycloneDDS on domain 42 with interfaces pinned per host.
-Day-to-day commands are `just` recipes; `just world` is the current
-`just run` target.
+Day-to-day commands are `just` recipes; `just world_mesh` is the current
+`just run` target (retargeted 2026-08-15 — `just world` remains the
+stable classic session).
 
 ## The packages
 
@@ -120,10 +121,11 @@ day — the learning plan for `info.md`'s capture/fusion/output topics:
   pan), while RTAB-Map's poses reveal shingling from the neural depth's
   per-frame ±4% scale wobble — which names the next lever.
 
-### The live mesh — 2026-08-11 → in progress
+### The live mesh — 2026-08-11 → absorbed 2026-08-15
 
-[live-mesh-plan.md](../plans/in-progress/live-mesh-plan.md) — the live
-pipeline grows a surface:
+The live pipeline grows a surface (its plan file was retired
+2026-08-15, the remaining work absorbed by the
+[world mesh plan](../plans/completed/world-mesh-plan.md)):
 
 - `tsdf_mesher` (the sixth `just world` node, venv-run like the depth
   estimator) integrates synced depth + RGB into a `VoxelBlockGrid`
@@ -138,6 +140,30 @@ pipeline grows a surface:
 - A `mesh_marker` node (RViz overlay of the newest offline mesh) lived
   one day — added 2026-08-11, removed 2026-08-12 once LiveMesh made it
   redundant.
+
+### The world mesh fork — 2026-08-12 → closed 2026-08-15
+
+[world-mesh-plan.md](../plans/completed/world-mesh-plan.md) — the
+world stack forked for the surface; the plan closed by decision with
+the live gates unrun (measurement, not build work — they moved to the
+todo list):
+
+- `src/piros2_world_mesh`: a full copy of the four world nodes plus
+  their test suite (imports renamed; perception stays shared), free to
+  diverge mesh-first without ever touching `piros2_world`. Since
+  2026-08-15 the fork drops `cloud_mapper` — the TSDF is its fusion
+  accumulator, and the voxel panorama duplicated it.
+- `just world_mesh` — aliased `just dev`, and since 2026-08-15
+  `just run` too — defaults `odom:=rgbd` (6-DoF poses, seven
+  processes), quality-biased TSDF values (1.5 cm voxels / 120k
+  triangles, provisional until measured), no CloudMap in its RViz
+  layout. `just world` remains the classic session.
+- `tsdf_mesher` grew `~/save` (`just mesh-save`): the live surface
+  outlives the session as `meshes/live_<stamp>.ply` — hand-written
+  ASCII PLY, unit-tested without open3d.
+- Still open after the close, tracked in the repo's todo list: the
+  live hand-sweep gate (inherited from the retired live-mesh plan)
+  and an in-session save check.
 
 ### The Wi-Fi watchdog — 2026-08-12
 
@@ -159,17 +185,21 @@ record in [networking.md](networking.md#wi-fi-link-reliability)):
 
 ## Testing
 
-`just test` (or the VSCode Testing sidebar — identical results): **90 tests
-green** as of 2026-08-12, all style-clean, none needing hardware or model
-weights — fake ONNX sessions, synthetic depth planes and chessboards,
-seeded-noise rotation geometry, SE(3) quaternion-branch coverage,
-stubbed-TF weighted-fusion tests for the mapper, and pure-function
-marker/alignment tests for the live mesh.
+`just test` (or the VSCode Testing sidebar — identical results): **160
+tests green** as of 2026-08-15, all style-clean, none needing hardware or
+model weights — fake ONNX sessions, synthetic depth planes and
+chessboards, seeded-noise rotation geometry, SE(3) quaternion-branch
+coverage, stubbed-TF weighted-fusion tests for the mapper, and
+pure-function marker/alignment/PLY-serialisation tests for the live mesh
+and its `~/save`; `piros2_world_mesh` carries the same suite as
+`piros2_world`, imports renamed.
 
 ## Where it stands now
 
-- **Working end to end:** `just world` runs the whole six-node dev-box
-  stack against the live camera; the offline pipeline goes bag → mesh →
+- **Working end to end:** `just dev` (= `just run` since 2026-08-15 —
+  the mesh-first `piros2_world_mesh` session, 6-DoF odometry) runs the
+  dev-box stack against the live camera, with `just world` as the
+  classic six-node baseline; the offline pipeline goes bag → mesh →
   room layer without hardware; the Pi repairs its own Wi-Fi link.
 - **Committed:** the entire fusion-plan day — `se3.py`, the fusing
   `cloud_mapper`, `tools/recon/`, the pinned `depth_scale`, doc updates —
@@ -178,9 +208,14 @@ marker/alignment tests for the live mesh.
   `point-cloud`, `raspberry-pi`, `onnx`) as of the same day; "SLAM" is
   deliberately not among them — the honest scope is rotation-only
   orientation.
-- **Open items** ([todo.md](../../todo.md)):
-  - Per-frame depth-to-TSDF scale alignment — the named next fusion lever
-    against the ±4% depth wobble.
+- **Open items** (plus [todo.md](../../todo.md)'s standing ambition, a
+  C/C++ rewrite):
+  - The world-mesh live gates: the lit-room hand sweep (settles the
+    provisional TSDF values) and an in-session `just mesh-save` check.
+  - Affine depth-to-TSDF alignment — the next lever now that the live
+    high-pass scale aligner landed (placement spread 4.0% → 2.9%; the
+    residual is spatially structured model error a global scale cannot
+    touch).
   - Checkerboard calibration — optional accuracy upgrade over the
     approximate intrinsics.
   - The "reduce compute" throttle for consumers now that the camera

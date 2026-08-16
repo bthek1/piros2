@@ -533,6 +533,67 @@ themselves are normal at ~1–2 Hz paired rates (see the mapping notes in
 CLAUDE.md) — the symptom is *variance* between identical runs, not the
 warnings.
 
+On the *live* camera, queue depth turned out not to be the whole story:
+two independent decimators (a 60 fps republisher and the ~10 Hz depth
+node) drop *different* frames, so their stamp sets rarely intersect and
+no queue makes exact sync pair what never coexists. The fix
+(2026-08-16, `piros2_world_mesh`) is `publish_rgb` on the depth
+estimator: it republishes the exact frame it inferred on as `/depth/rgb`,
+so every `/depth` stamp has its RGB twin by construction and pairing
+runs at depth rate. See also the Wi-Fi entry below — the live 1–2 Hz
+had a second, bigger cause.
+
+## A live session crawls at ~2 fps while the Pi's Wi-Fi is saturated
+
+Symptom: every consumer of the camera stream (depth, keypoints,
+odometry, the mesher) limps at ~2 Hz; `rgbd_odometry` logs `delay=`
+figures of 2–6 s that sawtooth; RViz's Depth3D flickers between a TF
+error and rendering. Meanwhile the Pi's `wlan0` transmits 14+ MiB/s —
+ten times what the compressed stream needs.
+
+Two causes, both measured 2026-08-16, both invisible in bag replay:
+
+- **A raw-topic collision.** usb_cam publishes raw `/image_raw`
+  (2.7 MB/frame) alongside the compressed topic. Any dev-box
+  subscription remapped to `/image_raw` — rgbd_odometry's `rgb/image`
+  was, from the first `odom:=rgbd` session — matches the Pi's publisher
+  by topic name and silently streams **raw video over the Wi-Fi**, the
+  exact thing rule 8 forbids. The link saturates and every other topic
+  starves. Never point a dev-box subscriber at a topic name usb_cam
+  also publishes; the depth estimator's twin is named `/depth/rgb` for
+  this reason.
+- **One unicast copy per subscriber.** DDS sends each RELIABLE reader
+  its own copy: five dev-box consumers of `/image_raw/compressed` =
+  five copies over the Wi-Fi, and the retransmit storm collapses the
+  link (measured: one reader receives the full rate at ~1.3 MiB/s;
+  five readers each *complete* ~2 frames/s while the link burns
+  14 MiB/s). `camera_relay` (in `piros2_world_mesh`) is the fix: the
+  session's single Wi-Fi reader republishes the stream locally on
+  `/camera_relay/compressed` and every consumer — RViz panels included —
+  reads the loopback copy. Adding consumers is free; adding a direct
+  Wi-Fi subscriber reintroduces the collapse.
+
+The tell-tale diagnostic is the Pi's own TX counter, which needs no ROS
+and perturbs nothing:
+`ssh pi 'cat /sys/class/net/wlan0/statistics/tx_bytes'` twice, 10 s
+apart. One clean compressed stream is ~1–3 MiB/s; double digits means
+something is pulling raw or pulling many copies.
+
+After the transport fixes a residual flap remained: RViz's Depth3D
+status cycled OK/error every couple of seconds, because the unpaced
+depth pipeline (~10 Hz in daylight) outran rgbd_odometry (~4–5 Hz), so
+the odom TF stamps trailed the clouds by ~0.8 s median while rgbd
+chewed queue backlog — and the display's `Depth: 1` gave each cloud
+only until the next one arrived to find its transform. Two-part fix
+(2026-08-16): the depth estimator's `max_rate` paces the whole
+pipeline at 5 Hz (what rgbd sustains — TF stays current, GPU does half
+the work), and the display queues 10 clouds. Measured: per-cloud TF
+wait went from p50 813 ms with 30% dropped to p50 15 ms / max 551 ms
+with none dropped. Shrinking rgbd's sync queues to bound the lag was
+tried first and made it *worse* — under bursty processing the two
+topics drop different stamps and exact sync starves; pace the source,
+don't starve the sync.
+
 ## RViz Marker: "Could not load resource … GLTF: Buffer view … out of range"
 
 Symptom: a `mesh_resource` Marker pointing at a `.glb` written by
@@ -634,3 +695,11 @@ already held by an orphaned usb_cam from an earlier session (check
 in a transient bad state shortly after a Pi reboot (seen 2026-08-11;
 the identical launch succeeded on retry minutes later). Clear any
 holder, retry once, and only then treat it as a real bug.
+
+Since 2026-08-16 the held-device case fails *before* usb_cam starts:
+`camera.launch.py`'s pre-flight scans `/proc/*/fd` for the device and
+aborts naming the holding PID and command line (a leaked session held
+the camera for 37 minutes on 2026-08-15 while a second session ran
+unknowingly on the leak's frames; the abort above was the only clue).
+If a launch reports `camera is already in use`, believe it — run
+`just stragglers`.

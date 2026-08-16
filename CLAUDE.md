@@ -189,7 +189,8 @@ the STALE lines are
 measured against the dashboard's own receipt clock, never `header.stamp`
 (the 0.73 s camera fault). `world.launch.py` follows the
 perception-launch rules (venv `ExecuteProcess` for depth, no camera
-include); `just world` runs it live and is the new `just run` target.
+include); `just world` runs it live and became the `just run` target
+(until 2026-08-15, when `run` retargeted to `world_mesh`).
 The live run surfaced a finding, verified 2026-08-04: the camera panel
 reads 42–60 msgs/s, not ~30 — all distinct frames; the C922 genuinely
 exceeds the old "30 fps ceiling" now (see the 720p60 bullet below).
@@ -228,8 +229,9 @@ TRANSIENT_LOCAL Marker pointing RViz at the newest offline-fused
 one day: added 2026-08-11, removed 2026-08-12 once the live mesh made
 the offline overlay redundant — its measured findings (RViz's assimp
 loads PLY but rejects Open3D's GLB; RViz caches `mesh_resource` by URI)
-are recorded in the live-mesh plan. `just world` (still the `just run`
-target) opens one
+are recorded here — the live-mesh plan file that first logged them was
+retired 2026-08-15. `just world` (the `just run`
+target until 2026-08-15) opens one
 RViz window (`world.rviz`, renamed from `orient.rviz` once it became the
 whole session): the Depth3D live cloud + CloudMap panorama + LiveMesh
 surface + TF axes in one 3D scene, each toggleable in Displays, plus raw
@@ -288,8 +290,9 @@ deterministic 24 odometry updates on the same replay), and
 `rtabmap-export` does not work on these databases — `rtabmap-report
 --poses_raw` (via `just map-headless`) is the pose export that works.
 
-The live mesh plan (in progress, started 2026-08-11 —
-[docs/plans/in-progress/live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md)):
+The live mesh build (started 2026-08-11; its plan file was retired
+2026-08-15 when the world mesh fork absorbed the remaining work — this
+paragraph is now the record):
 the live pipeline grew a surface. `tsdf_mesher` (venv `ExecuteProcess`,
 open3d lazy-imported) integrates synced `/depth` + compressed RGB into a
 `VoxelBlockGrid` at 2 cm voxels (~52–78 ms/frame CUDA) and re-meshes on
@@ -318,25 +321,34 @@ odometry updates, rgbd owns `/tf`). P1's live glance closed 2026-08-12
 — the live sessions watched the surface and their "triangles have
 gaps" observation fed straight back into `fill_hole_radius` and the
 cap finding. Open: P3's live hand-sweep gate (and one live click of
-`~/reset`, bag-proven only).
+`~/reset`, bag-proven only) — both tracked in todo.md since the world
+mesh plan closed.
 
-The world mesh project (in progress, started 2026-08-12 —
-[docs/plans/in-progress/world-mesh-plan.md](docs/plans/in-progress/world-mesh-plan.md)):
+The world mesh project (built 2026-08-12, plan closed by decision
+2026-08-15 with the live gates unrun — measurement work, not build
+work, remained; the gates moved to todo.md —
+[docs/plans/completed/world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md)):
 **`src/piros2_world_mesh` — a full fork of `piros2_world`** (the four
-nodes, `se3.py`/`depth_align.py`, the whole test suite, imports
-renamed; perception stays shared), re-posed for the surface and free
-to drift — same node names, topics and services, so it is an
-*alternative* session, never run alongside `just world`. First built
+nodes at fork time, `se3.py`/`depth_align.py`, the whole test suite,
+imports renamed; perception stays shared), re-posed for the surface
+and free to drift — same node names, topics and services, so it is an
+*alternative* session, never run alongside `just world`. The first
+divergence beyond defaults landed 2026-08-15: **`cloud_mapper` was
+removed from the fork** (node, test, config, CloudMap display, trap
+pattern) — the TSDF is this session's fusion accumulator and the
+voxel panorama duplicated it; `piros2_world` keeps its mapper. First built
 that day as a session wrapper inside `piros2_world` (include +
 `extra_params` overlay); rebuilt as its own package by decision the
 same day, the wrapper bits reverted. `just world_mesh` — aliased
-**`just dev`**, the session under active change while `just run`
-stays the stable baseline — runs `world_mesh.launch.py`: `odom:=rgbd`
-by default (6-DoF, eight processes; the recipe trap carries the two
+**`just dev`** and, since 2026-08-15, **`just run`** too (the fork is
+now the day-to-day target; `just world` stays as the known-good
+fallback) — runs `world_mesh.launch.py`: `odom:=rgbd`
+by default (6-DoF, seven processes since the mapper removal; the
+recipe trap carries the two
 extra pkill patterns), the fork's own full `world_mesh.yaml` with
 quality-biased `tsdf_mesher` values (1.5 cm / 120k triangles / 15 s —
 provisional until the sweep measures them), and `world_mesh.rviz`
-with CloudMap defaulted off. `tsdf_mesher` (both forks' copies) grew
+with no CloudMap display. `tsdf_mesher` (both forks' copies) grew
 `~/save` (`just mesh-save`): the surface outlives the session as
 `meshes/live_<stamp>.ply`, hand-written ASCII PLY so the path stays
 open3d-free and unit-testable. P0–P3 built and tested same-day; the
@@ -344,6 +356,26 @@ live gates (hand sweep — shared with live-mesh P3 — and an in-session
 save) are open. Found while building: `just world` passes args to the
 camera launch only, so `just world odom:=rgbd` never actually reached
 `world.launch.py`; `world_mesh` routes args to both launches.
+The 2026-08-16 live-debug session (Depth3D flickering between a TF
+error and rendering) rebuilt the fork's transport: rgbd's `rgb/image`
+had been remapped to `/image_raw` — usb_cam's *raw* topic, so it was
+silently pulling 2.7 MB frames over the Wi-Fi — and five dev-box
+readers each pulled their own unicast copy of the compressed stream,
+collapsing the link (~2 frames/s each at 14+ MiB/s of traffic). Now
+the stream crosses the Wi-Fi once (`camera_relay` fans it out locally
+on `/camera_relay/compressed`), the depth estimator republishes the
+exact frame it inferred on as `/depth/rgb` (`publish_rgb`, stamps
+identical to `/depth`, so exact sync pairs every depth frame — the
+60 fps republisher node is gone from this session), and the estimator
+paces the whole pipeline (`max_rate: 5` — what rgbd sustains, so the
+odom TF stays current with the clouds instead of trailing a queue
+backlog; per-cloud TF wait measured p50 15 ms / max 551 ms, zero
+drops, and the GPU does half the work). Same
+session: `camera.launch.py` pre-flights a *held* device (names the
+holder PID; a leaked usb_cam had fed a whole session unnoticed) —
+docs/info/troubleshooting.md#a-live-session-crawls-at-2-fps-while-the-pis-wi-fi-is-saturated.
+`just world`'s `odom:=rgbd` mode still carries the raw-topic collision
+— live it will saturate the link; its default `kp` mode is unaffected.
 
 The Wi-Fi watchdog (done 2026-08-12, the whole
 [watchdog plan](docs/plans/completed/wifi-watchdog-plan.md) planned,
@@ -363,19 +395,20 @@ released in ~60 s) instead of orphaning it.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (160 tests; `piros2_vision`, `piros2_perception`,
+is green (149 tests; `piros2_vision`, `piros2_perception`,
 `piros2_world` and its fork `piros2_world_mesh` (which carries the
-same suite, imports renamed) hold real unit tests — none need hardware or model weights: a fake ONNX
+same suite minus the mapper tests, imports renamed) hold real unit tests — none need hardware or model weights: a fake ONNX
 session for the estimator, synthetic depth planes for the projector,
 synthetic chessboards for the keypoint detector, pure-function
 `rates`/`stats_lines` tests for the dashboard, matching and
 rotation-geometry tests on seeded noise and synthetic ray bundles — a
 chessboard's lookalike corners defeat the matcher's cross-check by
 design — SE(3) geometry tests driving all four quaternion branches
-(`test_se3.py`), stubbed-TF weighted-fusion voxel-map tests for the
-mapper: noise averages toward the plane, min_weight holdback, capped
+(`test_se3.py`), stubbed-TF weighted-fusion voxel-map tests for
+`piros2_world`'s mapper: noise averages toward the plane, min_weight
+holdback, capped
 inertia — and pure-function marker/alignment/PLY-serialisation tests
-for the live mesh and its `~/save`) as of 2026-08-12.
+for the live mesh and its `~/save`) as of 2026-08-15.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -628,7 +661,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
 | [docs/info/project-overview.md](docs/info/project-overview.md) | Single-page account of the project and progress so far — packages, timeline, current state |
-| [docs/info/just-world-diagrams.html](docs/info/just-world-diagrams.html) | The `just world` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle — plus reference tables of every topic, service, and per-node measured cost. Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes, topics, or measured figures change |
+| [docs/info/just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle — plus reference tables of every topic, service, and per-node measured cost (renamed from just-world-diagrams.html 2026-08-15 when the fork became the day-to-day session). Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes, topics, or measured figures change |
 | [docs/info/hardware.md](docs/info/hardware.md) | Measured specs of both machines and the camera's capture modes |
 | [docs/info/setup.md](docs/info/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
 | [docs/info/ansible.md](docs/info/ansible.md) | The playbook: inventory, roles, gotchas |
@@ -643,8 +676,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/plans/completed/world-combined-plan.md](docs/plans/completed/world-combined-plan.md) | One command, three windows: dashboard mosaic + orientation RViz + map RViz — done 2026-08-05, kept as the build log |
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 | [docs/plans/completed/world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for `info.md`'s topics — TSDF fusion, pose graphs, meshing, plane fitting — phases P0–P6: weighted cloud-map fusion, the `tools/recon/` offline pipeline, `depth_scale` pinned at 2.69; done 2026-08-10, kept as the build log |
-| [docs/plans/in-progress/live-mesh-plan.md](docs/plans/in-progress/live-mesh-plan.md) | The live pipeline grows a surface — `tsdf_mesher` (in-session TSDF + timed re-mesh into RViz), P2 lands the per-frame depth-alignment todo, P3 optionally swaps in 6-DoF `rgbd_odometry`; in progress since 2026-08-11 |
-| [docs/plans/in-progress/world-mesh-plan.md](docs/plans/in-progress/world-mesh-plan.md) | Fork `piros2_world` into a new package `piros2_world_mesh` (`just world_mesh`, aliased `just dev`) and diverge it mesh-first — `odom:=rgbd` default, quality-biased TSDF params, mesh-centric RViz, a `~/save` PLY export; in progress since 2026-08-12 |
+| [docs/plans/completed/world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md) | Fork `piros2_world` into a new package `piros2_world_mesh` (`just world_mesh`, aliased `just dev` and `just run`) and diverge it mesh-first — `odom:=rgbd` default, quality-biased TSDF params, mesh-centric RViz, a `~/save` PLY export; built 2026-08-12, closed by decision 2026-08-15 (live sweep gates unrun, moved to todo.md), kept as the build log |
 | [docs/plans/completed/wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link — `just wifi` visibility, power-save off, an escalation-ladder watchdog (reassociate → driver reload → guarded reboot) via the Ansible `wifi` role, and outages reap camera sessions instead of orphaning them; planned, built and drilled 2026-08-12 after two link-death incidents (kept as the build log) |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

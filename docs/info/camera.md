@@ -43,7 +43,15 @@ learned the hard way, detail in the linked sections:
 7. **Never trust `header.stamp` for freshness or latency** — the driver
    stamps ~0.73 s behind wall clock ([Timestamps](#timestamps)).
 8. **Never stream raw images across the LAN** — compressed transport only;
-   raw 720p30 is ~83 MB/s ([Image transport](#image-transport)).
+   raw 720p30 is ~83 MB/s ([Image transport](#image-transport)). Two
+   corollaries, both hit live on 2026-08-16
+   (docs/info/troubleshooting.md#a-live-session-crawls-at-2-fps-while-the-pis-wi-fi-is-saturated):
+   never remap a dev-box subscriber to a topic name usb_cam also
+   publishes (`/image_raw` is its *raw* topic — DDS matches by name and
+   streams raw over the Wi-Fi), and give a session **one** Wi-Fi reader
+   of the compressed stream — every extra RELIABLE reader pulls its own
+   unicast copy, and five collapsed the link; fan out locally
+   (`camera_relay` in `piros2_world_mesh`).
 9. **Never quote a frame rate without stating the exposure mode**, and run
    usb_cam at `framerate:=60` to get the camera's real 30
    ([Running it](#running-it)).
@@ -160,8 +168,12 @@ Three layers enforce it:
 
 - **`camera.launch.py` pre-flight-checks the device.** An `OpaqueFunction`
   runs after argument resolution, on the launching machine (the one with the
-  camera), and raises if the resolved `video_device` is missing or not a
-  character device — the launch aborts with exit 1 before any node starts.
+  camera), and raises if the resolved `video_device` is missing, not a
+  character device, or (since 2026-08-16) already held open by another
+  process — the error names the holding PID and command line, because a
+  held device otherwise surfaces as usb_cam's unexplained `char*` abort
+  (docs/info/troubleshooting.md#usb_cam-dies-at-startup-terminate-called-after-throwing-an-instance-of-char).
+  The launch aborts with exit 1 before any node starts.
   `vision.launch.py` inherits the check through its
   `IncludeLaunchDescription`.
 - **The usb_cam node carries `on_exit=Shutdown()`.** If the node dies

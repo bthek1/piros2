@@ -129,6 +129,58 @@ def test_preview_is_jpeg_with_header(node):
     assert preview.header.frame_id == 'camera_optical_frame'
 
 
+@pytest.fixture
+def rgb_node():
+    # publish_rgb reaches the node as a global parameter override — the
+    # same route the world_mesh launch uses (`-p publish_rgb:=true`).
+    rclpy.init(args=['--ros-args', '-p', 'publish_rgb:=true'])
+    node = DepthEstimator(session=FakeSession())
+    assert node.pub_rgb is not None  # the param wired the publisher up
+    node.pub_depth = CapturingPublisher()
+    node.pub_preview = CapturingPublisher()
+    node.pub_rgb = CapturingPublisher()
+    yield node
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+def test_no_rgb_twin_by_default(node):
+    node.on_frame(make_frame())
+
+    assert node.pub_rgb is None
+
+
+def test_rgb_twin_is_stamp_identical_to_depth(rgb_node):
+    rgb_node.on_frame(make_frame())
+
+    assert len(rgb_node.pub_rgb.messages) == 1
+    rgb = rgb_node.pub_rgb.messages[0]
+    depth = rgb_node.pub_depth.messages[0]
+    assert rgb.encoding == 'bgr8'
+    assert (rgb.height, rgb.width) == (depth.height, depth.width)
+    # The whole point: exact-sync consumers must find a pair for every
+    # depth frame, so the twin carries the depth's header verbatim.
+    assert rgb.header.stamp == depth.header.stamp
+    assert rgb.header.frame_id == depth.header.frame_id
+
+
+def test_max_rate_skips_back_to_back_frames(node):
+    node.set_parameters([rclpy.parameter.Parameter(
+        'max_rate', rclpy.parameter.Parameter.Type.DOUBLE, 5.0)])
+    node.on_frame(make_frame())
+    node.on_frame(make_frame())  # arrives "immediately" — inside 200 ms
+
+    # The second frame must be skipped before decode: one depth out.
+    assert len(node.pub_depth.messages) == 1
+
+
+def test_unlimited_rate_processes_every_frame(node):
+    node.on_frame(make_frame())
+    node.on_frame(make_frame())
+
+    assert len(node.pub_depth.messages) == 2
+
+
 def test_undecodable_frame_is_skipped(node):
     bad = CompressedImage()
     bad.format = 'jpeg'

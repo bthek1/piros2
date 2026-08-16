@@ -15,7 +15,8 @@ works before moving on.
 > optional accuracy upgrade. The world dashboard followed:
 > [world-plan.md](../plans/completed/world-plan.md) built `src/piros2_world`
 > (done 2026-08-03) — ORB keypoints plus every feed and its live stats
-> composed into one window (`just world`, the current `just run` target),
+> composed into one window (`just world`, the `just run` target until
+> 2026-08-15, when `run` retargeted to `just world_mesh`),
 > extended 2026-08-04 with descriptor matching across a 10-frame window
 > (green = re-observed, yellow = new). The world 3D build followed:
 > [world-3d-plan.md](../plans/completed/world-3d-plan.md) (done

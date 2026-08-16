@@ -28,13 +28,52 @@ from launch_ros.parameter_descriptions import ParameterValue
 CAMERA_BY_ID = '/dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0'
 
 
+def _device_holders(device, proc='/proc'):
+    """
+    Return processes (other than this one) holding `device` open.
+
+    Each holder is a '<pid> <cmdline>' string, ready for an error
+    message. /proc/<pid>/fd is a directory of symlinks to everything a process has
+    open, readable for your own processes without root — the same source
+    `fuser` uses. Only same-user processes are visible, which is exactly
+    the population that can be a leaked camera session here.
+    """
+    real = os.path.realpath(device)
+    holders = []
+    for pid in os.listdir(proc):
+        if not pid.isdigit() or int(pid) == os.getpid():
+            continue
+        fd_dir = os.path.join(proc, pid, 'fd')
+        try:
+            fds = os.listdir(fd_dir)
+        except OSError:  # not ours, or it exited mid-scan
+            continue
+        for fd in fds:
+            try:
+                if os.path.realpath(os.path.join(fd_dir, fd)) != real:
+                    continue
+            except OSError:
+                continue
+            try:
+                with open(os.path.join(proc, pid, 'cmdline'), 'rb') as f:
+                    cmd = f.read().replace(b'\0', b' ').decode(
+                        errors='replace').strip()
+            except OSError:
+                cmd = '?'
+            holders.append(f'{pid} {cmd}')
+            break
+    return holders
+
+
 def _require_camera(context):
     """
-    Fail the whole launch, loudly, if the capture device is not there.
+    Fail the whole launch, loudly, if the capture device is not usable.
 
     usb_cam does NOT do this itself: given a missing device it logs one
-    ERROR and then idles forever (measured 2026-07-31), so without this
-    check the launch sits there publishing nothing but static transforms.
+    ERROR and then idles forever (measured 2026-07-31), and given a device
+    another process is streaming it dies much later with an unexplained
+    `char*` abort (a leaked session held the C922 for 37 minutes on
+    2026-08-15 and every frame the "new" session saw came from the leak).
     An OpaqueFunction runs after argument resolution on the launching
     machine — the one with the camera — and a raise here aborts the launch
     with a nonzero exit before any node starts.
@@ -49,6 +88,15 @@ def _require_camera(context):
         raise RuntimeError(
             f'camera not detected: {device} exists but is not a character '
             'device, so it cannot be a V4L2 capture node.')
+    holders = _device_holders(device)
+    if holders:
+        raise RuntimeError(
+            f'camera is already in use: {device} is held open by:\n  '
+            + '\n  '.join(holders)
+            + '\ncapture is exclusive (docs/info/camera.md, rule 2), so '
+            'another camera session is still running — probably a leaked '
+            'one. Stop it (`just stragglers` sweeps both machines) and '
+            'relaunch.')
     return []
 
 

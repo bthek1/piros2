@@ -47,27 +47,13 @@ Visualization Manager:
       Enabled: true
       Topic:
         Value: /points
-        Depth: 1
+        Depth: 10
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
       Color Transformer: RGB8
       Position Transformer: XYZ
       Size (m): 0.01
-      Style: Flat Squares
-      Value: true
-    - Class: rviz_default_plugins/PointCloud2
-      Name: CloudMap
-      Enabled: false
-      Topic:
-        Value: /world/map_points
-        Depth: 1
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Color Transformer: RGB8
-      Position Transformer: XYZ
-      Size (m): 0.02
       Style: Flat Squares
       Value: true
     - Class: rviz_default_plugins/Marker
@@ -84,7 +70,7 @@ Visualization Manager:
       Name: Camera
       Enabled: true
       Topic:
-        Value: /image_raw/compressed
+        Value: /camera_relay/compressed
         Depth: 1
         Durability Policy: Volatile
         History Policy: Keep Last

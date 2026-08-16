@@ -22,9 +22,8 @@ pipeline (tools/recon/) proved the machinery; this node runs the same
   module and unit-test the pure marker functions.
 
 Pose honesty: frames are posed by a latest-only TF lookup (the 0.73 s
-stamp fault rule, same as cloud_mapper), and under the default
-rotation-only odometry a hand pan's real translation smears the mesh
-exactly as it smears CloudMap. P2 aligns depth scale; P3 offers real
+stamp fault rule), and under rotation-only odometry a hand pan's real
+translation smears the mesh. P2 aligns depth scale; P3 offers real
 6-DoF poses; this phase pretends neither.
 
 The surface can outlive the session (world mesh plan P3): `~/save`

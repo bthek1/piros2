@@ -1,20 +1,45 @@
 # World mesh plan — `just world_mesh`, the mesh-first session
 
-> **In progress, started 2026-08-12.** Duplicate the `just world`
+> **Started 2026-08-12; closed by decision 2026-08-15 — see the final
+> status note below.** Duplicate the `just world`
 > session under a new name — `just world_mesh` — so it can diverge
 > toward the goal the current session only gestures at: **a 3D surface
 > as the final output**. The duplicate becomes the day-to-day target as
 > `just dev`; `just world` (and its `just run` alias) stay exactly as
-> they are, the known-good baseline to fall back to.
+> they are, the known-good baseline to fall back to. *(Amended
+> 2026-08-15: `just run` now points at `world_mesh` as well — see the
+> P1 annotation; `just world` itself is unchanged.)*
 >
 > **Status 2026-08-12 (same day):** P0–P3 built and unit-tested in one
 > sitting, then **rebuilt as a full package fork by decision** —
 > `src/piros2_world_mesh`, see the revised section below (160 tests
 > green, both forks' suites). Open: the **live gates** — P2's hand
-> sweep (which is also live-mesh P3's open gate) and P3's in-session
+> sweep (formerly also live-mesh P3's gate; that plan file was retired
+> 2026-08-15, so this plan is its only tracker) and P3's in-session
 > `just mesh-save` → `just view-mesh` check — plus P4's bookkeeping
 > once those pass. P2's mesh-first values are provisional until the
 > sweep measures them.
+>
+> **Status 2026-08-15:** the fork is now the day-to-day target on both
+> aliases (`just run` retargeted by decision — see the P1 note), and
+> P4's doc half is done ahead of the gates: CLAUDE.md, README and
+> project-overview describe the fork, the run retarget, and carry the
+> retired live-mesh plan's redirected references. **The plan is not
+> complete**: neither live gate has run — verified today, `meshes/`
+> holds no `live_*.ply` and no sweep bag exists — so P2's provisional
+> values are still unmeasured and the file stays in `in-progress/`.
+>
+> **Closed by decision 2026-08-15 (later the same day), live gates
+> unrun** — the perception-plan precedent. The fork is built, tested
+> and the day-to-day target on both aliases; what remains is live
+> measurement, not build work, so the checks move to `todo.md` (the
+> lit-room hand sweep that measures P2's still-provisional TSDF
+> values, and the in-session `mesh-save` → `view-mesh` check) and the
+> file moves to `completed/` as the build log. The same day also
+> brought the fork's first real divergence: **`cloud_mapper` removed**
+> — node, test, config section, CloudMap display, trap pattern — the
+> TSDF is this session's fusion accumulator and the voxel panorama
+> duplicated it (`piros2_world` keeps its copy).
 
 The motivating decision (2026-08-12 discussion): for a surface,
 `tsdf_mesher` beats `cloud_mapper` by construction — a point cloud is
@@ -40,7 +65,11 @@ shape); this section records the final shape:
   (`keypoint_detector`, `dashboard`, `cloud_mapper`, `tsdf_mesher`),
   `se3.py`/`depth_align.py`, and the full test suite, imports renamed.
   Node names, topics and services are unchanged: it is an alternative
-  implementation of the same session, not a second one.
+  implementation of the same session, not a second one. *(2026-08-15:
+  `cloud_mapper` was removed from the fork — node, test, config
+  section, CloudMap display and trap pattern — the TSDF is this
+  session's fusion accumulator and the voxel panorama duplicated it;
+  `piros2_world` keeps its copy.)*
 - `piros2_perception` stays shared (depth estimator + cloud projector
   belong to perception, not to either world fork).
 - `world_mesh.launch.py` is a standalone copy of `world.launch.py`
@@ -116,6 +145,10 @@ learned by getting it wrong).
 **Check:** `just dev` opens the world_mesh session; `just run` still
 opens the classic one.
 
+> **Superseded 2026-08-15 by decision:** `just run` retargeted to
+> `world_mesh` too — both aliases now open the mesh-first session, and
+> `just world` remains the explicit way to run the classic baseline.
+
 ### P2 — mesh-first defaults (the reason the fork exists) ✓ runnable
 
 **File-side built 2026-08-12**: `odom` defaults `rgbd` in
@@ -147,10 +180,12 @@ Now diverge, in `world_mesh`'s own files only:
   guess). Re-mesh period revisited under the new cost.
 - `world_mesh.rviz` becomes mesh-centric: LiveMesh and TF prominent,
   CloudMap defaulted off (the mapper still runs — toggling it back on
-  is one click), image panels kept but small.
+  is one click), image panels kept but small. *(2026-08-15: overtaken —
+  the fork's `cloud_mapper` was removed outright, and the CloudMap
+  display with it.)*
 
-**Check (this is also live-mesh P3's open hand-sweep gate — closing
-it here closes it there; annotate that plan):** a lit-room hand sweep
+**Check (formerly shared with live-mesh P3 — that plan file was
+retired 2026-08-15, so this check is the gate's only home):** a lit-room hand sweep
 with real translation under `just dev`; walls stay put while the
 camera moves, the mesh accumulates without radial smear, and one live
 click of `/tsdf_mesher/reset` starts the surface over. Cost figures
@@ -186,11 +221,27 @@ teardown the file opens in `just view-mesh` and shows the swept scene.
 
 ### P4 — bookkeeping ✓ checkable
 
+**Progress 2026-08-15 (doc half done early):** CLAUDE.md's
+current-state paragraph, docs-map row, README and project-overview all
+describe the fork, both aliases, and the `~/save` export; the retired
+live-mesh plan's inbound references were redirected here; roadmap and
+justfile comments carry the 2026-08-15 run retarget. **Still open,
+gated on P2/P3's live runs:** the diagrams-page note for the
+rgbd-default session, recording the measured sweep figures here, and
+the move to `completed/`. *(Later 2026-08-15: the move happened by
+the close-by-decision instead — see the header. The live runs and
+their figures are tracked in `todo.md` now; when they happen, note
+the measured values here.)*
+
 - CLAUDE.md current-state paragraph and docs map row for this plan;
   README session wording (`just dev` exists, what it is); the
   diagrams page (`docs/info/just-world-diagrams.html`) gains a note —
   or a fifth-figure variant — for the rgbd-default session once P2
-  lands, per its "keep in step" contract.
+  lands, per its "keep in step" contract. *(Done differently
+  2026-08-15: the page was renamed to
+  `docs/info/just_world_mesh_diagrams.html` and redrawn wholesale for
+  the fork session — rgbd default, no cloud_mapper; only the
+  sweep-measured figures remain, tracked in todo.md.)*
 - Move this file to `docs/plans/completed/` and fix inbound links —
   the move is the status change.
 
@@ -202,8 +253,8 @@ implies `world_mesh` does something it doesn't.
 - **This plan does not improve mesh quality beyond poses + budget.**
   The measured next ceiling after 6-DoF poses is the depth model's
   per-frame scale wobble and its spatially-structured residual
-  (affine alignment is the named todo) — out of scope here, same as
-  in the live mesh plan.
+  (affine alignment is the named todo) — out of scope here, as it was
+  in the (retired) live mesh plan.
 - **The best surface is still the offline one.** RTAB-Map-posed
   `fuse-capture --trajectory` remains the quality ceiling; `just dev`
   narrows the gap live but P3's PLY is a convenience export, not a

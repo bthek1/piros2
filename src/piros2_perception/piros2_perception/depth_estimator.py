@@ -66,6 +66,31 @@ class DepthEstimator(Node):
         # metres-ish values (z = depth_scale / output) and is arbitrary until
         # P2's tape-measure check pins it. Tune, don't trust.
         self.declare_parameter('depth_scale', 10.0)
+        # Republish the decoded input frame as raw /depth/rgb, stamped
+        # identically to /depth, for exact-sync consumers (rgbd_odometry).
+        # A separate 60 fps republisher node cannot pair with us: it and
+        # this node each drop *different* frames (republish decodes ~14 Hz
+        # of the camera's 42-60, inference keeps ~10), so their stamp sets
+        # rarely intersect and exact sync limps at ~2 Hz with seconds of
+        # sawtooth delay — measured 2026-08-15, no queue depth fixes it.
+        # Sourcing raw from the frame we actually processed makes every
+        # /depth stamp pairable by construction. The name is deliberately
+        # NOT image_raw: usb_cam already publishes raw /image_raw, and a
+        # dev-box subscriber on a shared name matches the Pi's publisher
+        # too — 2.7 MB frames over Wi-Fi, the exact thing the compressed
+        # transport exists to prevent (found live 2026-08-16: rgbd's
+        # /image_raw remap was silently streaming raw across the link and
+        # saturating it). Off by default: only rgbd sessions want it.
+        self.declare_parameter('publish_rgb', False)
+        # Pace the whole depth pipeline: frames arriving faster than this
+        # are skipped before decoding. This node is the tempo for /depth,
+        # the clouds, the mesher AND rgbd_odometry's TF — unpaced (~10 Hz
+        # in daylight) it outruns rgbd's ~4-5 Hz, whose TF stamps then
+        # trail the clouds by ~0.8 s while it chews queue backlog, and
+        # RViz flaps "could not transform" per cloud (measured
+        # 2026-08-16). 0 = unlimited.
+        self.declare_parameter('max_rate', 0.0)
+        self.last_processed = None
 
         self.session = session if session is not None else self._load_model()
         self.input_name = self.session.get_inputs()[0].name
@@ -76,6 +101,10 @@ class DepthEstimator(Node):
         self.pub_depth = self.create_publisher(Image, 'depth', BIG_FRAME_QOS)
         self.pub_preview = self.create_publisher(
             CompressedImage, 'depth/preview/compressed', BIG_FRAME_QOS)
+        self.pub_rgb = None
+        if self.get_parameter('publish_rgb').value:
+            self.pub_rgb = self.create_publisher(
+                Image, 'depth/rgb', BIG_FRAME_QOS)
 
     def _load_model(self):
         # Imported here, not at module top: onnxruntime comes from the pip
@@ -106,6 +135,13 @@ class DepthEstimator(Node):
     def on_frame(self, msg: CompressedImage):
         entry = self.get_clock().now()
 
+        max_rate = self.get_parameter('max_rate').value
+        if (max_rate > 0.0 and self.last_processed is not None
+                and (entry - self.last_processed).nanoseconds
+                < 1e9 / max_rate):
+            return
+        self.last_processed = entry
+
         frame = cv2.imdecode(np.frombuffer(msg.data, np.uint8),
                              cv2.IMREAD_COLOR)
         if frame is None:
@@ -125,6 +161,14 @@ class DepthEstimator(Node):
         depth = np.clip(scale / np.maximum(relative, 1e-3), 0.0, 100.0)
         depth = cv2.resize(depth, (width, height),
                            interpolation=cv2.INTER_LINEAR)
+
+        # The raw twin goes out first so exact sync can complete the pair
+        # the moment /depth lands. bgr8 as decoded — consumers that care
+        # (rtabmap does not) can convert.
+        if self.pub_rgb is not None:
+            rgb_msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+            rgb_msg.header = msg.header
+            self.pub_rgb.publish(rgb_msg)
 
         depth_msg = self.bridge.cv2_to_imgmsg(depth, encoding='32FC1')
         depth_msg.header = msg.header

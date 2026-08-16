@@ -29,29 +29,6 @@ keypoint_detector:
     # tighter starves the estimator in blurry motion.
     max_residual_rad: 0.03
 
-cloud_mapper:
-  ros__parameters:
-    # Voxel edge in metres: 5 cm resolves furniture without ballooning
-    # the map dict.
-    voxel_size: 0.05
-    # The merged map republishes at its own pace, decoupled from the
-    # ~15 Hz cloud stream.
-    map_publish_rate: 1.0
-    # Hard cap on distinct voxels; when hit the map logs once and stops
-    # growing (no silent eviction) — ~/clear starts over.
-    max_voxels: 200000
-    # Points farther than this (metres from the lens) are dropped:
-    # monocular depth degrades with distance and would smear the
-    # panorama.
-    max_range: 6.0
-    # A voxel joins the published map only once this many clouds have
-    # observed it — one look is usually depth noise at a surface edge.
-    min_weight: 2
-    # Cap on a voxel's averaging inertia, in observations: evidence
-    # never weighs more than this, so a moved object can displace a
-    # long-observed surface instead of arguing with its whole history.
-    max_weight: 64
-
 tsdf_mesher:
   ros__parameters:
     # MESH-FIRST (world.yaml: 0.02), PROVISIONAL until the live sweep

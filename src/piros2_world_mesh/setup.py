@@ -31,7 +31,7 @@ setup(
         'console_scripts': [
             'keypoint_detector = piros2_world_mesh.keypoint_detector:main',
             'dashboard = piros2_world_mesh.dashboard:main',
-            'cloud_mapper = piros2_world_mesh.cloud_mapper:main',
+            'camera_relay = piros2_world_mesh.camera_relay:main',
             # Present for symmetry; the launch runs this module via the
             # perception venv python -m (open3d is PyPI-only), so the
             # colcon-shebang entry point would miss the import.
