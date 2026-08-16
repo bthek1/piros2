@@ -22,8 +22,9 @@ Both machines run Jazzy natively from apt on Ubuntu 24.04, provisioned by
 the Ansible tree in `ansible/` (six roles, idempotent on both hosts),
 talking over CycloneDDS on domain 42 with interfaces pinned per host.
 Day-to-day commands are `just` recipes; `just world_mesh` is the current
-`just run` target (retargeted 2026-08-15 — `just world` remains the
-stable classic session).
+`just run` target (retargeted 2026-08-15) and `piros2_world_mesh` is
+where all new work lands — `just world` remains the frozen known-good
+fallback, deliberately untouched since the fork took over.
 
 ## The packages
 
@@ -37,7 +38,7 @@ the workspace.
 | `piros2_vision` | Canny edge detector (`cv_bridge`), the first processing node; its QoS and timestamp findings shaped everything after it |
 | `piros2_perception` | `depth_estimator` (Depth Anything V2 Small, ONNX on the dev box GPU, 72–79 ms/frame) and `cloud_projector` (`/depth` + image → `PointCloud2` through K); plus `mapping.launch.py` for the RTAB-Map route |
 | `piros2_world` | `keypoint_detector` (ORB + descriptor matching → rotation-only camera orientation via Kabsch on bearing rays, published as TF), `cloud_mapper` (voxel map with weighted-average fusion → `/world/map_points`), `dashboard` (live stats panel on `/world/stats/compressed`; its 2×2 mosaic retired 2026-08-12), and `se3.py` (shared SE(3) pure functions) |
-| `piros2_world_mesh` | Mesh-first fork of `piros2_world` (world mesh plan, in progress): same node lineup with imports renamed, `odom:=rgbd` and quality-biased TSDF values by default, `~/save` writing the live surface to `meshes/*.ply` — run as `just world_mesh` / `just dev` |
+| `piros2_world_mesh` | **The active world stack** (mesh-first fork of `piros2_world`; plan closed 2026-08-15): `odom:=rgbd` and quality-biased TSDF values by default, `~/save` writing the live surface to `meshes/*.ply`, and since the 2026-08-16 transport rework `camera_relay` (the session's single Wi-Fi reader, fanned out locally) with a paced depth pipeline and odom-frame clouds — run as `just world_mesh` / `just dev` / `just run` |
 
 Outside `src/`: `tools/recon/` is an offline reconstruction pipeline under
 the perception venv (open3d) — bag → TUM-layout capture export → TSDF
@@ -164,6 +165,20 @@ todo list):
 - Still open after the close, tracked in the repo's todo list: the
   live hand-sweep gate (inherited from the retired live-mesh plan)
   and an in-session save check.
+- The 2026-08-16 transport rework (a live-debug day chasing a
+  flapping RViz display down to its roots, recorded in
+  [troubleshooting.md](troubleshooting.md#a-live-session-crawls-at-2-fps-while-the-pis-wi-fi-is-saturated))
+  rebuilt the fork's data path: `camera_relay` makes the camera
+  stream cross the Wi-Fi exactly once (five direct readers had
+  collapsed the link into a retransmit storm), the depth estimator
+  paces the pipeline at 5 Hz and publishes a stamp-identical raw twin
+  (`/depth/rgb`) so the odometry pairs every frame — the old
+  republisher's remap had been silently pulling *raw* frames over the
+  Wi-Fi — and `cloud_projector` poses `/points` in `odom` itself via
+  latest TF, so RViz never waits on the always-late odometry
+  transform. The camera launch also pre-flights a *held* device now,
+  naming the leaked holder. All of it landed in the fork and the
+  shared `piros2_perception`; `piros2_world` was left frozen.
 
 ### The Wi-Fi watchdog — 2026-08-12
 
@@ -185,21 +200,25 @@ record in [networking.md](networking.md#wi-fi-link-reliability)):
 
 ## Testing
 
-`just test` (or the VSCode Testing sidebar — identical results): **160
-tests green** as of 2026-08-15, all style-clean, none needing hardware or
+`just test` (or the VSCode Testing sidebar — identical results): **162
+tests green** as of 2026-08-16, all style-clean, none needing hardware or
 model weights — fake ONNX sessions, synthetic depth planes and
 chessboards, seeded-noise rotation geometry, SE(3) quaternion-branch
-coverage, stubbed-TF weighted-fusion tests for the mapper, and
+coverage, stubbed-TF weighted-fusion tests for the mapper,
 pure-function marker/alignment/PLY-serialisation tests for the live mesh
-and its `~/save`; `piros2_world_mesh` carries the same suite as
-`piros2_world`, imports renamed.
+and its `~/save`, and the transport rework's additions: relay
+byte-identity, the estimator's stamp-twin and pacing, the projector's
+odom-frame output through a stubbed TF buffer, and a fake-`/proc`
+busy-device pre-flight; `piros2_world_mesh` carries the same suite as
+`piros2_world`, imports renamed, minus the mapper tests.
 
 ## Where it stands now
 
 - **Working end to end:** `just dev` (= `just run` since 2026-08-15 —
-  the mesh-first `piros2_world_mesh` session, 6-DoF odometry) runs the
+  the mesh-first `piros2_world_mesh` session, 6-DoF odometry, one
+  Wi-Fi copy of the camera stream since 2026-08-16) runs the
   dev-box stack against the live camera, with `just world` as the
-  classic six-node baseline; the offline pipeline goes bag → mesh →
+  frozen classic baseline; the offline pipeline goes bag → mesh →
   room layer without hardware; the Pi repairs its own Wi-Fi link.
 - **Committed:** the entire fusion-plan day — `se3.py`, the fusing
   `cloud_mapper`, `tools/recon/`, the pinned `depth_scale`, doc updates —

@@ -127,11 +127,17 @@ def generate_launch_description():
             parameters=[mesh_config],
             remappings=[('image_raw/compressed', '/camera_relay/compressed')],
             output='screen'),
+        # output_frame odom: the projector poses the cloud in the world
+        # itself with the latest TF (the repo's latest-only rule), so
+        # RViz's Depth3D never waits on the always-late odometry
+        # transform — the wait race is what flapped the display
+        # (2026-08-16, cloud_projector's module docstring has the story).
         Node(
             package='piros2_perception',
             executable='cloud_projector',
             name='cloud_projector',
-            parameters=[perception_config],
+            parameters=[perception_config, {'output_frame': 'odom'}],
+            remappings=[('image_raw/compressed', '/camera_relay/compressed')],
             output='screen'),
         # Live TSDF + timed re-mesh. Venv ExecuteProcess for the same
         # reason as the depth estimator: open3d is PyPI-only and

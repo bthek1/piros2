@@ -23,11 +23,14 @@ which also pins the PointCloud2 memory layout.
 """
 
 import cv2
+from geometry_msgs.msg import TransformStamped
 import numpy as np
-from piros2_perception.cloud_projector import CloudProjector, POINT_DTYPE
+from piros2_perception.cloud_projector import (
+    CloudProjector, POINT_DTYPE, rotation_matrix)
 import pytest
 import rclpy
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
+from tf2_ros import LookupException
 
 WIDTH, HEIGHT = 160, 120
 FX = FY = 100.0
@@ -146,3 +149,68 @@ def test_no_camera_info_publishes_nothing(node):
     node.k = None
     node.on_pair(make_depth(2.0), make_colour())
     assert node.pub_points.messages == []
+
+
+@pytest.fixture
+def odom_node():
+    # output_frame reaches the node the same way the world_mesh launch
+    # sets it — as a parameter override.
+    rclpy.init(args=['--ros-args', '-p', 'output_frame:=odom'])
+    node = CloudProjector()
+    assert node.tf_buffer is not None  # the param wired TF up
+    node.pub_points = CapturingPublisher()
+    node.on_info(make_camera_info())
+    yield node
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+class FakeBuffer:
+    """Stands in for tf2's Buffer: one canned transform, or none."""
+
+    def __init__(self, transform):
+        self.transform = transform
+
+    def lookup_transform(self, target, source, time):
+        if self.transform is None:
+            raise LookupException('odom does not exist yet')
+        return self.transform
+
+
+def make_transform(tx, ty, tz) -> TransformStamped:
+    tf = TransformStamped()
+    tf.transform.translation.x = tx
+    tf.transform.translation.y = ty
+    tf.transform.translation.z = tz
+    tf.transform.rotation.w = 1.0
+    return tf
+
+
+def test_output_frame_poses_cloud_in_world(odom_node):
+    odom_node.tf_buffer = FakeBuffer(make_transform(1.0, 2.0, 3.0))
+    odom_node.on_pair(make_depth(2.0), make_colour())
+
+    assert len(odom_node.pub_points.messages) == 1
+    out = odom_node.pub_points.messages[0]
+    points = decode(out)
+    # Identity rotation, so the wall stays flat, shifted by the
+    # translation; and the header now names the world frame while the
+    # honest stamp survives.
+    assert out.header.frame_id == 'odom'
+    assert out.header.stamp.sec == 12345
+    assert np.allclose(points['z'], 2.0 + 3.0)
+
+
+def test_output_frame_without_tf_publishes_nothing(odom_node):
+    odom_node.tf_buffer = FakeBuffer(None)
+    odom_node.on_pair(make_depth(2.0), make_colour())
+
+    assert odom_node.pub_points.messages == []
+
+
+def test_rotation_matrix_quarter_turn_about_z():
+    half = np.sin(np.pi / 4)
+    rot = rotation_matrix(0.0, 0.0, half, np.cos(np.pi / 4))
+    # +90° about z carries x onto y.
+    assert np.allclose(rot @ np.array([1.0, 0.0, 0.0]),
+                       [0.0, 1.0, 0.0], atol=1e-9)

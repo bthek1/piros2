@@ -101,7 +101,15 @@ TSDF settings by default, and `just mesh-save` writing the live
 surface to `meshes/live_<stamp>.ply` mid-session. The fork's first
 real divergence landed the same day: it drops `cloud_mapper` — the
 TSDF is its fusion accumulator — while `just world` keeps the voxel
-panorama.
+panorama. **The fork is where development happens now**: all new
+work lands in `piros2_world_mesh` (plus the shared
+`piros2_perception`), and `piros2_world` is frozen as the known-good
+fallback. The 2026-08-16 transport rework proved the point — a
+live-debug day rebuilt the fork's whole data path (the camera stream
+crosses the Wi-Fi exactly once via `camera_relay`; the depth
+estimator paces the pipeline and feeds the odometry a stamp-identical
+raw twin; the point cloud arrives in RViz already posed in the world)
+while the frozen classic session was never touched.
 
 Reliability groundwork
 ([wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md),
@@ -136,7 +144,7 @@ status.
 | [networking.md](docs/info/networking.md) | DDS discovery across the LAN, domain IDs, and the Docker-bridge gotcha |
 | [camera.md](docs/info/camera.md) | Driver choice, capture modes, image transport, calibration |
 | [troubleshooting.md](docs/info/troubleshooting.md) | Symptoms → causes for the failures you are most likely to hit |
-| [just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — dataflow, deployment, TF tree, lifecycle — plus topic/service/cost reference tables (open in a browser; mermaid renders via CDN) |
+| [just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — dataflow, deployment, TF tree, lifecycle — plus topic/service/cost reference tables (open in a browser; mermaid renders via CDN; redrawn 2026-08-16 for the transport rework) |
 | [roadmap.md](docs/info/roadmap.md) | The learning path, milestone by milestone — concluded 2026-07-27 |
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
 | [perception-plan.md](docs/plans/completed/perception-plan.md) | Perception build order, phases P0–P4 — closed 2026-07-29, kept as the build log |
@@ -146,6 +154,7 @@ status.
 | [world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for TSDF fusion, pose graphs and meshing; upgraded the cloud map to weighted fusion, built the offline recon pipeline, pinned the depth scale — done 2026-08-10, kept as the build log |
 | [world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md) | `piros2_world_mesh` (`just world_mesh`, aliased `just dev` and `just run`): the world stack forked into its own package and diverged mesh-first — 6-DoF odometry by default, quality-biased TSDF, a saved PLY at the end — built 2026-08-12, closed by decision 2026-08-15, kept as the build log |
 | [wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link: escalation-ladder watchdog, outage-reaped camera sessions, `just wifi` — done 2026-08-12, kept as the build log |
+| [world-mesh-diagrams-plan.md](docs/plans/completed/world-mesh-diagrams-plan.md) | Redraw the `just world_mesh` diagrams page for the 2026-08-16 transport rework — done 2026-08-16, kept as the build log |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

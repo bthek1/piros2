@@ -341,8 +341,9 @@ that day as a session wrapper inside `piros2_world` (include +
 `extra_params` overlay); rebuilt as its own package by decision the
 same day, the wrapper bits reverted. `just world_mesh` — aliased
 **`just dev`** and, since 2026-08-15, **`just run`** too (the fork is
-now the day-to-day target; `just world` stays as the known-good
-fallback) — runs `world_mesh.launch.py`: `odom:=rgbd`
+now the day-to-day target *and the sole development target — new work
+lands in the fork, see Conventions*; `just world` stays as the frozen
+known-good fallback) — runs `world_mesh.launch.py`: `odom:=rgbd`
 by default (6-DoF, seven processes since the mapper removal; the
 recipe trap carries the two
 extra pkill patterns), the fork's own full `world_mesh.yaml` with
@@ -369,8 +370,12 @@ identical to `/depth`, so exact sync pairs every depth frame — the
 60 fps republisher node is gone from this session), and the estimator
 paces the whole pipeline (`max_rate: 5` — what rgbd sustains, so the
 odom TF stays current with the clouds instead of trailing a queue
-backlog; per-cloud TF wait measured p50 15 ms / max 551 ms, zero
-drops, and the GPU does half the work). Same
+backlog; the GPU also does half the work), and `cloud_projector`
+publishes `/points` already posed in `odom` (`output_frame`, a
+latest-TF lookup — the mapper/mesher rule) because even paced, RViz's
+wait-for-TF-at-stamp raced the always-late odometry transform and
+flapped the Depth3D status under RViz's own load; a cloud whose frame
+*is* the fixed frame cannot lose that race. Same
 session: `camera.launch.py` pre-flights a *held* device (names the
 holder PID; a leaked usb_cam had fed a whole session unnoticed) —
 docs/info/troubleshooting.md#a-live-session-crawls-at-2-fps-while-the-pis-wi-fi-is-saturated.
@@ -395,10 +400,14 @@ released in ~60 s) instead of orphaning it.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (149 tests; `piros2_vision`, `piros2_perception`,
+is green (162 tests; `piros2_vision`, `piros2_perception`, `piros2_camera`,
 `piros2_world` and its fork `piros2_world_mesh` (which carries the
-same suite minus the mapper tests, imports renamed) hold real unit tests — none need hardware or model weights: a fake ONNX
-session for the estimator, synthetic depth planes for the projector,
+same suite minus the mapper tests, imports renamed, plus the
+camera_relay byte-identity tests) hold real unit tests — none need hardware or model weights: a fake ONNX
+session for the estimator (plus its `publish_rgb` stamp-twin and
+`max_rate` pacing tests), synthetic depth planes for the projector
+(plus its odom-frame output through a stubbed TF buffer),
+a fake `/proc` tree for the camera launch's busy-device pre-flight,
 synthetic chessboards for the keypoint detector, pure-function
 `rates`/`stats_lines` tests for the dashboard, matching and
 rotation-geometry tests on seeded noise and synthetic ray bundles — a
@@ -408,7 +417,7 @@ design — SE(3) geometry tests driving all four quaternion branches
 `piros2_world`'s mapper: noise averages toward the plane, min_weight
 holdback, capped
 inertia — and pure-function marker/alignment/PLY-serialisation tests
-for the live mesh and its `~/save`) as of 2026-08-15.
+for the live mesh and its `~/save`) as of 2026-08-16.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -555,6 +564,15 @@ this convention and [docs/info/roadmap.md](docs/info/roadmap.md) tracks status.
 ## Conventions
 
 - This repo doubles as the colcon workspace; packages go in `src/`.
+- **The active world stack is `piros2_world_mesh` — all new work lands
+  there** (and in its shared dependency `piros2_perception`), never in
+  `piros2_world`. The unforked `piros2_world` is the frozen known-good
+  fallback: leave it alone unless it stops launching, and don't backport
+  the fork's changes for parity. Two accepted consequences of the
+  freeze: its `odom:=rgbd` mode still carries the raw-topic collision
+  (it will saturate the Wi-Fi if run live — its default `kp` mode is
+  unaffected), and it predates the 2026-08-16 transport rework
+  entirely (no relay, no pacing, viewer-transformed clouds).
 - Day-to-day commands are recipes in the `justfile` (`just` lists them by
   group: provision, sync, status, test, build, recon). Add a recipe rather
   than documenting a long one-off command; keep recipes and docs in
@@ -661,7 +679,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
 | [docs/info/project-overview.md](docs/info/project-overview.md) | Single-page account of the project and progress so far — packages, timeline, current state |
-| [docs/info/just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle — plus reference tables of every topic, service, and per-node measured cost (renamed from just-world-diagrams.html 2026-08-15 when the fork became the day-to-day session). Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes, topics, or measured figures change |
+| [docs/info/just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle — plus reference tables of every topic, service, and per-node measured cost (renamed from just-world-diagrams.html 2026-08-15 when the fork became the day-to-day session; the old name is gone — fix links, don't resurrect it; redrawn 2026-08-16 for the transport rework, topic list regenerated from the live graph). Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes, topics, or measured figures change |
 | [docs/info/hardware.md](docs/info/hardware.md) | Measured specs of both machines and the camera's capture modes |
 | [docs/info/setup.md](docs/info/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
 | [docs/info/ansible.md](docs/info/ansible.md) | The playbook: inventory, roles, gotchas |
@@ -677,6 +695,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/plans/completed/ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — done 2026-07-24, kept as the build log |
 | [docs/plans/completed/world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for `info.md`'s topics — TSDF fusion, pose graphs, meshing, plane fitting — phases P0–P6: weighted cloud-map fusion, the `tools/recon/` offline pipeline, `depth_scale` pinned at 2.69; done 2026-08-10, kept as the build log |
 | [docs/plans/completed/world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md) | Fork `piros2_world` into a new package `piros2_world_mesh` (`just world_mesh`, aliased `just dev` and `just run`) and diverge it mesh-first — `odom:=rgbd` default, quality-biased TSDF params, mesh-centric RViz, a `~/save` PLY export; built 2026-08-12, closed by decision 2026-08-15 (live sweep gates unrun, moved to todo.md), kept as the build log |
+| [docs/plans/completed/world-mesh-diagrams-plan.md](docs/plans/completed/world-mesh-diagrams-plan.md) | Redraw `just_world_mesh_diagrams.html` for the 2026-08-16 transport rework (relay, `/depth/rgb` twin, pacing, odom-frame clouds) — done 2026-08-16 same day, kept as the build log; its regenerate-from-the-live-graph rule caught cloud_projector still pulling a second Wi-Fi copy |
 | [docs/plans/completed/wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link — `just wifi` visibility, power-save off, an escalation-ladder watchdog (reassociate → driver reload → guarded reboot) via the Ansible `wifi` role, and outages reap camera sessions instead of orphaning them; planned, built and drilled 2026-08-12 after two link-death incidents (kept as the build log) |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

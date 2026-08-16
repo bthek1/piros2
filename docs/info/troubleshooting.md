@@ -594,6 +594,21 @@ tried first and made it *worse* — under bursty processing the two
 topics drop different stamps and exact sync starves; pace the source,
 don't starve the sync.
 
+Even paced, the flap returned once RViz itself was running — its own
+load pushed rgbd's `delay=` to 1.6–2.6 s (read from the session's node
+logs in `~/.ros/log/`), and the display's wait budget is only ~2 s. The
+structural truth: RViz was waiting for a transform that is *computed
+after* the data it poses, on a camera whose stamps are faulted — a race
+that tuning can only narrow, never win. The definitive fix (2026-08-16)
+moves the transform into the data path: `cloud_projector`'s
+`output_frame` parameter (world_mesh sets `odom`) makes the projector
+pose the cloud in the world itself using the **latest** TF — the same
+latest-only rule as `cloud_mapper` and `tsdf_mesher`, adopted for the
+same reason. A cloud whose `frame_id` *is* the fixed frame needs no
+dynamic transform, so Depth3D can no longer error after startup.
+`piros2_world` leaves the parameter unset and keeps the original
+viewer-transforms behaviour for its mapper.
+
 ## RViz Marker: "Could not load resource … GLTF: Buffer view … out of range"
 
 Symptom: a `mesh_resource` Marker pointing at a `.glb` written by

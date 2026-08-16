@@ -19,8 +19,17 @@ This is where the K matrix earns its keep. Three concepts:
   headers. The camera's ~0.73 s stamp fault cancels out here: both stamps
   carry the same fault, and sync only compares them to each other.
 
-Everything is published in camera_optical_frame (z forward, x right,
-y down); RViz walks TF from base_link to pose the cloud in the world.
+By default everything is published in camera_optical_frame (z forward,
+x right, y down) and RViz walks TF from base_link to pose the cloud in
+the world. With `output_frame` set (the world_mesh session sets `odom`)
+the projector transforms the cloud itself using the *latest* TF — the
+same latest-only-lookup pattern as cloud_mapper and tsdf_mesher, and for
+the same reason: on this camera the stamps are faulted and the odometry
+transform for a given stamp lands ~0.5-1.5 s after the cloud does, so a
+viewer that waits for TF-at-stamp (RViz's message filter) is racing a
+transform that is structurally always late — it flapped OK/error every
+couple of seconds (2026-08-16). A cloud already in `odom` needs no
+dynamic TF to render, so it can never lose that race.
 """
 
 import cv2
@@ -30,8 +39,10 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.time import Time
 from sensor_msgs.msg import (CameraInfo, CompressedImage, Image, PointCloud2,
                              PointField)
+from tf2_ros import Buffer, TransformException, TransformListener
 
 # RELIABLE for the same measured reason as everywhere else in this repo:
 # BEST_EFFORT delivers zero fragmented megabyte messages.
@@ -54,6 +65,18 @@ POINT_FIELDS = [
 ]
 
 
+def rotation_matrix(qx, qy, qz, qw):
+    """Quaternion -> 3x3 rotation matrix (the standard expansion)."""
+    return np.array([
+        [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw),
+         2 * (qx * qz + qy * qw)],
+        [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz),
+         2 * (qy * qz - qx * qw)],
+        [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw),
+         1 - 2 * (qx * qx + qy * qy)],
+    ])
+
+
 class CloudProjector(Node):
 
     def __init__(self):
@@ -65,6 +88,18 @@ class CloudProjector(Node):
         # Depth beyond this is the model saying "background, no idea"; the
         # 1/x inversion makes those values explode, so cut them.
         self.declare_parameter('far_clip', 20.0)
+        # '' = publish in the optical frame and let the viewer transform
+        # (the original behaviour; piros2_world's mapper wants this).
+        # A frame name (world_mesh sets 'odom') = transform here with the
+        # latest TF so the viewer never has to wait — see the module
+        # docstring for why.
+        self.declare_parameter('output_frame', '')
+
+        self.output_frame = self.get_parameter('output_frame').value
+        self.tf_buffer = None
+        if self.output_frame:
+            self.tf_buffer = Buffer()
+            self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.k = None
         self.create_subscription(
@@ -133,9 +168,30 @@ class CloudProjector(Node):
         cloud['rgb'] = packed[valid]
 
         out = PointCloud2()
-        # The depth frame's header verbatim: same stamp, and crucially the
-        # optical frame id — RViz uses it to transform the cloud via TF.
+        # The depth frame's header verbatim: same stamp, and the optical
+        # frame id — unless output_frame moves the cloud into the world
+        # here (below), RViz uses it to transform the cloud via TF.
         out.header = depth_msg.header
+        if self.output_frame:
+            try:
+                # Time() = latest available, never the faulted stamp —
+                # the repo's TF rule for this camera.
+                tf = self.tf_buffer.lookup_transform(
+                    self.output_frame, depth_msg.header.frame_id, Time())
+            except TransformException as exc:
+                self.get_logger().warn(
+                    f'no transform {self.output_frame} ← '
+                    f'{depth_msg.header.frame_id} yet ({exc})',
+                    throttle_duration_sec=5.0)
+                return
+            q = tf.transform.rotation
+            t = tf.transform.translation
+            rot = rotation_matrix(q.x, q.y, q.z, q.w)
+            pts = rot @ np.stack([cloud['x'], cloud['y'], cloud['z']])
+            cloud['x'] = pts[0] + t.x
+            cloud['y'] = pts[1] + t.y
+            cloud['z'] = pts[2] + t.z
+            out.header.frame_id = self.output_frame
         out.height = 1
         out.width = cloud.size
         out.fields = POINT_FIELDS
