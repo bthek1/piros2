@@ -23,9 +23,11 @@ features on one.
 
 import cv2
 import numpy as np
+from piros2_world_mesh.keyframe_store import Keyframe
 from piros2_world_mesh.keypoint_detector import (
     estimate_rotation,
     kabsch,
+    keyframe_marker,
     KeypointDetector,
     rays_from_pixels,
 )
@@ -513,3 +515,60 @@ def test_reset_clears_the_room_memory(node):
 
     node.on_reset(Trigger.Request(), Trigger.Response())
     assert len(node.store) == 0
+
+
+def test_save_map_writes_npz_that_reloads(node, tmp_path):
+    node.k_matrix = K_TEST
+    node.orientation = np.eye(3)
+    descriptors, pixels, _ = synthetic_view(np.eye(3))
+    node.maybe_store_keyframe(pixels, descriptors)
+    node.set_parameters([rclpy.parameter.Parameter(
+        'map_dir', rclpy.parameter.Parameter.Type.STRING, str(tmp_path))])
+
+    response = node.on_save_map(Trigger.Request(), Trigger.Response())
+    assert response.success
+    saved = list(tmp_path.glob('room_*.npz'))
+    assert len(saved) == 1
+    from piros2_world_mesh.keyframe_store import KeyframeStore
+    assert len(KeyframeStore.load(saved[0])) == 1
+
+
+def test_save_map_refuses_an_empty_store(node, tmp_path):
+    node.set_parameters([rclpy.parameter.Parameter(
+        'map_dir', rclpy.parameter.Parameter.Type.STRING, str(tmp_path))])
+    response = node.on_save_map(Trigger.Request(), Trigger.Response())
+    assert not response.success
+    assert list(tmp_path.glob('*.npz')) == []
+
+
+# --- keyframe marker (P4) ---------------------------------------------------
+
+def test_keyframe_marker_draws_one_stroke_per_keyframe():
+    from builtin_interfaces.msg import Time as TimeMsg
+    pose = np.eye(4)
+    pose[:3, 3] = [1.0, 2.0, 0.5]
+    keyframes = [
+        Keyframe(descriptors=np.zeros((1, 32), np.uint8),
+                 view_dir=np.array([0.0, 0.0, 1.0]), pose=pose),
+        Keyframe(descriptors=np.zeros((1, 32), np.uint8),
+                 view_dir=np.array([0.0, 0.0, 1.0])),  # kp mode: no pose
+    ]
+    marker = keyframe_marker(keyframes, TimeMsg(), axis_length=0.5)
+    assert marker.header.frame_id == 'odom'
+    assert len(marker.points) == 4  # LINE_LIST: two points per stroke
+    # rgbd keyframe: stroke starts at the stored position, points along
+    # the pose's optical-z axis (identity pose → +z).
+    assert (marker.points[0].x, marker.points[0].y,
+            marker.points[0].z) == (1.0, 2.0, 0.5)
+    assert np.isclose(marker.points[1].z, 1.0)
+    # kp keyframe: from the origin, optical forward → base +x.
+    assert (marker.points[2].x, marker.points[2].y,
+            marker.points[2].z) == (0.0, 0.0, 0.0)
+    assert np.isclose(marker.points[3].x, 0.5)
+
+
+def test_keyframe_marker_deletes_when_store_is_empty():
+    from builtin_interfaces.msg import Time as TimeMsg
+    marker = keyframe_marker([], TimeMsg())
+    assert marker.action == marker.DELETE
+    assert marker.points == []

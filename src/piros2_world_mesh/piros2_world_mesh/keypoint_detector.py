@@ -54,10 +54,12 @@ JPEG ever crosses the Wi-Fi.
 """
 
 from collections import deque
+import os
+import time
 import zlib
 
 import cv2
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import Point, PoseStamped, TransformStamped
 import numpy as np
 from piros2_world_mesh.keyframe_store import KeyframeStore
 from piros2_world_mesh.se3 import (BASE_FROM_OPTICAL, euler_from_rotation,
@@ -69,13 +71,15 @@ from piros2_world_mesh.se3 import (BASE_FROM_OPTICAL, euler_from_rotation,
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
+                       ReliabilityPolicy)
 from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 from std_msgs.msg import Int32
 from std_srvs.srv import Trigger
 from tf2_ros import (Buffer, TransformBroadcaster, TransformException,
                      TransformListener)
+from visualization_msgs.msg import Marker
 
 # RELIABLE for megabyte-class messages, same reasoning as piros2_vision's
 # edge detector: BEST_EFFORT delivers zero frames once a message fragments
@@ -86,6 +90,51 @@ BIG_FRAME_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     history=HistoryPolicy.KEEP_LAST,
     depth=1)
+
+# Latched: one keyframe-map refresh serves a late-joining RViz.
+LATCHED_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1)
+
+
+def keyframe_marker(keyframes, stamp, frame_id='odom', axis_length=0.15):
+    """
+    Build one LINE_LIST Marker drawing every stored keyframe's viewpoint.
+
+    Relocalization plan P4: the debugging view that makes "why didn't it
+    relocalize" answerable — a stored keyframe is a short cyan stroke
+    from its capture position along its view direction. rgbd keyframes
+    carry a full pose (position + direction); kp-mode keyframes carry
+    only a direction, drawn from the origin. Pure function so the
+    geometry is unit-testable without ROS.
+    """
+    marker = Marker()
+    marker.header.stamp = stamp
+    marker.header.frame_id = frame_id
+    marker.ns = 'keyframes'
+    marker.id = 0
+    marker.type = Marker.LINE_LIST
+    marker.action = Marker.ADD if keyframes else Marker.DELETE
+    marker.pose.orientation.w = 1.0
+    marker.scale.x = 0.01
+    marker.color.r, marker.color.g, marker.color.b = 0.1, 0.9, 0.9
+    marker.color.a = 0.9
+    for kf in keyframes:
+        origin = (kf.pose[:3, 3] if kf.pose is not None
+                  else np.zeros(3))
+        # A stored view_dir is optical z (forward); as a stroke in
+        # odom that is the base-axes forward direction of the camera.
+        direction = (kf.pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+                     if kf.pose is not None
+                     else BASE_FROM_OPTICAL @ kf.view_dir)
+        tip = origin + axis_length * direction
+        marker.points.append(Point(x=float(origin[0]), y=float(origin[1]),
+                                   z=float(origin[2])))
+        marker.points.append(Point(x=float(tip[0]), y=float(tip[1]),
+                                   z=float(tip[2])))
+    return marker
 
 
 def rays_from_pixels(pixels, k_matrix):
@@ -200,6 +249,13 @@ class KeypointDetector(Node):
         self.declare_parameter('depth_max_age', 1.0)
         self.declare_parameter('min_correction_m', 0.3)
         self.declare_parameter('min_correction_deg', 10.0)
+        # Persistence (relocalization plan P3): where ~/save_map writes,
+        # and an optional map to load at startup. A loaded map arms
+        # recognition immediately — a cold-started session has no odom
+        # history, so the first successful match *defines* where odom is
+        # relative to the stored room (the map's frame wins).
+        self.declare_parameter('map_dir', 'maps')
+        self.declare_parameter('map_path', '')
         self.orb = cv2.ORB_create(
             nfeatures=self.get_parameter('max_features').value)
         # Brute force is fine at <=500 features; NORM_HAMMING because ORB
@@ -230,6 +286,15 @@ class KeypointDetector(Node):
         self.lost_frames = 0
         self.needs_relocalization = False
         self.retry_countdown = 0
+        map_path = os.path.expanduser(self.get_parameter('map_path').value)
+        if map_path:
+            # Fail loudly: a misspelt path silently starting an empty
+            # room would defeat the whole point of loading one.
+            self.store = KeyframeStore.load(map_path)
+            self.needs_relocalization = True
+            self.get_logger().info(
+                f'loaded {len(self.store)} keyframes from {map_path} — '
+                'relocalizing before trusting any pose')
         self.depth_image = None
         self.depth_received_at = None
         self.tf_buffer = None
@@ -288,6 +353,13 @@ class KeypointDetector(Node):
         # restarting the node — the drift strategy, in lieu of loop
         # closure. '~/reset' resolves to /keypoint_detector/reset.
         self.create_service(Trigger, '~/reset', self.on_reset)
+        # P3: the room outlives the session — plain npz, no pickle.
+        self.create_service(Trigger, '~/save_map', self.on_save_map)
+        # P4: RViz sees the room memory. Slow, latched — a debugging
+        # view, not a stream.
+        self.pub_keyframe_marker = self.create_publisher(
+            Marker, 'world/keyframes', LATCHED_QOS)
+        self.create_timer(2.0, self.publish_keyframe_marker)
 
     def on_camera_info(self, msg: CameraInfo):
         if self.k_matrix is not None:
@@ -313,6 +385,24 @@ class KeypointDetector(Node):
         self.needs_relocalization = False
         response.success = True
         response.message = 'orientation reset to identity, keyframes cleared'
+        return response
+
+    def publish_keyframe_marker(self):
+        self.pub_keyframe_marker.publish(keyframe_marker(
+            self.store.keyframes, self.get_clock().now().to_msg()))
+
+    def on_save_map(self, request, response):
+        if len(self.store) == 0:
+            response.success = False
+            response.message = 'no keyframes stored yet — nothing to save'
+            return response
+        map_dir = self.get_parameter('map_dir').value
+        os.makedirs(map_dir, exist_ok=True)
+        path = os.path.join(map_dir, time.strftime('room_%Y%m%d-%H%M%S.npz'))
+        self.store.save(path)
+        response.success = True
+        response.message = f'{path}: {len(self.store)} keyframes'
+        self.get_logger().info(f'saved {response.message}')
         return response
 
     def on_depth(self, msg: Image):
@@ -641,9 +731,16 @@ class KeypointDetector(Node):
         request.roll, request.pitch = float(roll), float(pitch)
         request.yaw = float(yaw)
         self.reset_pose_client.call_async(request)
-        self.get_logger().info(
-            f'relocalized against keyframe {best}: snapping odometry '
-            f'(Δ {delta_m:.2f} m, {delta_deg:.1f}°)')
+        if current is None:
+            # Cold start (P3): no odometry yet, so nothing to be "off"
+            # from — the map's frame is being adopted, not corrected.
+            self.get_logger().info(
+                f'relocalized against keyframe {best}: adopting the '
+                f"map's frame (no odometry yet)")
+        else:
+            self.get_logger().info(
+                f'relocalized against keyframe {best}: snapping odometry '
+                f'(Δ {delta_m:.2f} m, {delta_deg:.1f}°)')
         return True
 
     def _depth_points(self, pixels):

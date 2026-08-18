@@ -44,10 +44,16 @@ def generate_launch_description():
         'config', 'perception.yaml')
 
     odom = LaunchConfiguration('odom')
+    map_path = LaunchConfiguration('map_path')
     rgbd_mode = IfCondition(
         PythonExpression(["'", odom, "' == 'rgbd'"]))
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'map_path', default_value='',
+            description='keyframe map (maps/room_<stamp>.npz from '
+                        '`just map-save`) to relocalize against at '
+                        'startup; empty = start with an empty room memory'),
         DeclareLaunchArgument(
             'odom', default_value='rgbd',
             description='odom → base_link source: rgbd = RTAB-Map '
@@ -89,7 +95,8 @@ def generate_launch_description():
             parameters=[mesh_config, {
                 'publish_tf': ParameterValue(
                     PythonExpression(["'", odom, "' != 'rgbd'"]),
-                    value_type=bool)}],
+                    value_type=bool),
+                'map_path': map_path}],
             remappings=[('image_raw/compressed', '/camera_relay/compressed')],
             output='screen'),
         # The odometry (the default here): consumes the estimator's

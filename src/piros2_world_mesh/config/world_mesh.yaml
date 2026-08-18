@@ -51,6 +51,12 @@ keypoint_detector:
     depth_max_age: 1.0
     min_correction_m: 0.3
     min_correction_deg: 10.0
+    # Persistence: ~/save_map (`just map-save`) writes maps/room_<stamp>.npz
+    # here (git-ignored); map_path loads one at startup and arms
+    # recognition immediately — the first match defines odom relative to
+    # the stored room. Empty = start with an empty memory.
+    map_dir: maps
+    map_path: ''
 
 tsdf_mesher:
   ros__parameters:

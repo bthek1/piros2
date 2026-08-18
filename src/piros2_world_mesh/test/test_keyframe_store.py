@@ -109,3 +109,43 @@ def test_empty_inputs_are_refused():
     assert store.maybe_add(None, direction(0)) is None
     assert store.match(None) is None
     assert store.match(descriptors(0)) is None  # empty store
+
+
+# --- persistence (P3) ---------------------------------------------------
+
+def test_save_load_round_trip_preserves_store_and_matching(tmp_path):
+    store = KeyframeStore(novelty_deg=20.0, cap=50)
+    store.maybe_add(descriptors(0), direction(0),
+                    rays=np.ones((60, 3)) / np.sqrt(3))
+    store.maybe_add(descriptors(1), direction(40),
+                    points=np.arange(180.0).reshape(60, 3),
+                    pose=np.eye(4))
+    path = tmp_path / 'room.npz'
+    store.save(path)
+
+    loaded = KeyframeStore.load(path)
+    assert len(loaded) == 2
+    assert loaded.cap == 50
+    assert np.isclose(np.degrees(loaded.novelty_rad), 20.0)
+    for a, b in zip(store.keyframes, loaded.keyframes):
+        assert (a.descriptors == b.descriptors).all()
+        assert np.allclose(a.view_dir, b.view_dir)
+        for column in ('rays', 'points', 'pose'):
+            va, vb = getattr(a, column), getattr(b, column)
+            assert (va is None) == (vb is None)
+            if va is not None:
+                assert np.allclose(va, vb)
+    # Matching still works against the loaded store — the whole point.
+    best, _, _ = loaded.match(descriptors(1), min_pairs=12)
+    assert best == 1
+
+
+def test_saved_map_is_plain_arrays_not_pickle(tmp_path):
+    store = KeyframeStore()
+    store.maybe_add(descriptors(0), direction(0))
+    path = tmp_path / 'room.npz'
+    store.save(path)
+    # allow_pickle=False must be enough to read every array back.
+    with np.load(path, allow_pickle=False) as data:
+        assert 'kf0_descriptors' in data.files
+        assert int(data['manifest_count']) == 1

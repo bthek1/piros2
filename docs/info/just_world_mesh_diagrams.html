@@ -497,6 +497,12 @@ sequenceDiagram
             <td>1.5 cm TSDF voxels; extraction runs the completion pass (2026-08-18: debris components pruned, interior holes filled from their rings — each component's frontier stays open) and the 120k budget is enforced by quadric decimation, never dropped triangles; TSDF quality values provisional until the sweep</td>
           </tr>
           <tr>
+            <td>/world/keyframes</td><td>Marker (LINE_LIST)</td><td>keypoint_detector</td>
+            <td>RViz (Keyframes display, off by default)</td>
+            <td>2 s timer</td><td>latched (TRANSIENT_LOCAL)</td>
+            <td>relocalization plan P4: one cyan stroke per stored keyframe (pose + view direction in odom) — the "why didn't it relocalize" view; /keypoints/keyframes carries the store count to the stats panel</td>
+          </tr>
+          <tr>
             <td>/world/stats/compressed</td><td>CompressedImage</td><td>dashboard</td>
             <td>RViz</td>
             <td>10 Hz</td><td>RELIABLE · KEEP_LAST 1</td>
@@ -515,7 +521,11 @@ sequenceDiagram
         <tbody>
           <tr>
             <td>/keypoint_detector/reset</td><td>std_srvs/Trigger</td><td>keypoint_detector</td>
-            <td>re-zero the composed orientation — the drift strategy in lieu of loop closure</td>
+            <td>re-zero the composed orientation and clear the keyframe store (its geometry lives in the odom the old orientation defined)</td>
+          </tr>
+          <tr>
+            <td>/keypoint_detector/save_map</td><td>std_srvs/Trigger</td><td>keypoint_detector</td>
+            <td>relocalization plan P3: write the room memory to <code>maps/room_&lt;stamp&gt;.npz</code> (plain arrays, no pickle); <code>just map-save</code> is the wrapper, <code>just run map_path:=…</code> loads it back and relocalizes before trusting any pose</td>
           </tr>
           <tr>
             <td>/tsdf_mesher/reset</td><td>std_srvs/Trigger</td><td>tsdf_mesher</td>
@@ -527,7 +537,7 @@ sequenceDiagram
           </tr>
           <tr>
             <td>/reset_odom · /pause_odom · /resume_odom · /reset_odom_to_pose</td><td>std_srvs / rtabmap_msgs</td><td>rgbd_odometry</td>
-            <td>RTAB-Map's own controls, unused so far — /reset_odom is the 6-DoF counterpart to the detector's reset if the odometry ever walks off</td>
+            <td>RTAB-Map's own controls; since 2026-08-18 the detector calls <code>/reset_odom_to_pose</code> to deliver a relocalization snap in rgbd mode (semantics verified live: it takes exactly <code>T_odom_base</code>)</td>
           </tr>
         </tbody>
       </table>
@@ -554,7 +564,7 @@ sequenceDiagram
           </tr>
           <tr>
             <td>keypoint_detector</td><td>dev box</td><td>14–34 ms/frame</td>
-            <td>ORB at the 500-feature cap; Kabsch on bearing rays per consecutive matched pair</td>
+            <td>ORB at the 500-feature cap; Kabsch on bearing rays per consecutive matched pair. Since 2026-08-18 also the room memory: novelty-gated keyframe store (≤100 × ~16 KB), recognition on tracking loss (tens of ms per full-store query, rate-limited), absolute snap in kp mode / <code>/reset_odom_to_pose</code> in rgbd mode</td>
           </tr>
           <tr>
             <td>cloud_projector</td><td>dev box</td><td>6–13 ms/cloud (~56k points)</td>

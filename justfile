@@ -580,6 +580,16 @@ map-headless bag:
 mesh-save:
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 service call /tsdf_mesher/save std_srvs/srv/Trigger'
 
+# The room memory (relocalization plan P3): the keypoint detector's
+# keyframe store — descriptors + geometry in odom — written as plain
+# npz to maps/room_<stamp>.npz (git-ignored). Load one back with
+# `just run map_path:=maps/room_<stamp>.npz`; the session then
+# relocalizes against yesterday's room before trusting any pose.
+# Save the live session's keyframe map to maps/room_<stamp>.npz (relocalization plan P3)
+[group('recon')]
+map-save:
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 service call /keypoint_detector/save_map std_srvs/srv/Trigger'
+
 # Meshes on disk come from the offline pipeline (`just fuse-capture`,
 # `just fuse-tum`) or a live `just mesh-save`; the live session shows its
 # own surface as LiveMesh in RViz, but a *file* is viewed here. Wayland

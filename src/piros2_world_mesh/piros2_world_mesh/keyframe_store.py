@@ -132,3 +132,49 @@ class KeyframeStore:
         kf_idx = np.array([m.queryIdx for m in matches])
         query_idx = np.array([m.trainIdx for m in matches])
         return best, kf_idx, query_idx
+
+    # ------------------------------------------------------------------
+    # Persistence (relocalization plan P3): the room survives the session.
+    # A .npz of plain arrays — no pickle, so a map file is data, never
+    # code. Keyframes are ragged (N differs per frame), hence one array
+    # group per keyframe plus a small manifest of the store's shape.
+
+    def to_arrays(self):
+        """Flatten the store into {name: ndarray} for np.savez."""
+        arrays = {
+            'manifest_count': np.array(len(self.keyframes)),
+            'manifest_novelty_rad': np.array(self.novelty_rad),
+            'manifest_cap': np.array(self.cap),
+        }
+        for i, kf in enumerate(self.keyframes):
+            arrays[f'kf{i}_descriptors'] = kf.descriptors
+            arrays[f'kf{i}_view_dir'] = kf.view_dir
+            for column in ('rays', 'points', 'pose'):
+                value = getattr(kf, column)
+                if value is not None:
+                    arrays[f'kf{i}_{column}'] = value
+        return arrays
+
+    def save(self, path):
+        """Write the store to `path` (.npz)."""
+        np.savez_compressed(path, **self.to_arrays())
+
+    @classmethod
+    def from_arrays(cls, arrays):
+        """Rebuild a store from to_arrays() output (or a loaded npz)."""
+        store = cls(novelty_deg=np.degrees(float(arrays['manifest_novelty_rad'])),
+                    cap=int(arrays['manifest_cap']))
+        for i in range(int(arrays['manifest_count'])):
+            def col(name, i=i):
+                key = f'kf{i}_{name}'
+                return np.asarray(arrays[key]) if key in arrays else None
+            store.keyframes.append(Keyframe(
+                descriptors=col('descriptors'), view_dir=col('view_dir'),
+                rays=col('rays'), points=col('points'), pose=col('pose')))
+        return store
+
+    @classmethod
+    def load(cls, path):
+        """Read a store written by save(); allow_pickle stays False."""
+        with np.load(path, allow_pickle=False) as data:
+            return cls.from_arrays(dict(data.items()))

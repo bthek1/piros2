@@ -209,8 +209,11 @@ pure-function marker/alignment/PLY-serialisation tests for the live mesh
 and its `~/save`, and the transport rework's additions: relay
 byte-identity, the estimator's stamp-twin and pacing, the projector's
 odom-frame output through a stubbed TF buffer, and a fake-`/proc`
-busy-device pre-flight; `piros2_world_mesh` carries the same suite as
-`piros2_world`, imports renamed, minus the mapper tests.
+busy-device pre-flight, and the relocalization plan's keyframe-store,
+recovery-geometry, rigid-3D-fit, map-persistence and keyframe-marker
+tests; `piros2_world_mesh` carries
+the same suite as `piros2_world`, imports renamed, minus the mapper
+tests.
 
 ## Where it stands now
 
