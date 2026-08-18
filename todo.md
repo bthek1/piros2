@@ -13,3 +13,7 @@
       [world-mesh-diagrams-plan](docs/plans/completed/world-mesh-diagrams-plan.md)):
       replace the provisional TSDF quality figures with measured ones
       once the sweep runs
+
+
+
+- [ ] project in C++

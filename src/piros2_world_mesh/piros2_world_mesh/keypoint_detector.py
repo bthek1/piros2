@@ -36,6 +36,19 @@ Duplicate frames (usb_cam's 60 Hz grab timer republishes each camera frame
 pair carries zero motion and would only dilute the estimator with identity
 votes — and skipping them lands part of the standing "reduce compute" todo.
 
+Relocalization (the relocalization plan): consecutive-pair tracking is
+memoryless, so a fast flick used to corrupt the pose permanently — the
+rotation spanning the blur is simply lost (and in rgbd mode the odometry
+resets to identity). This node now remembers the room: healthy frames
+feed a novelty-gated KeyframeStore (descriptors + bearing rays in odom,
+plus 3D landmarks when depth is available), and after `relocalize_after`
+frames without pairs it switches to recognition — match the store, then
+solve the *absolute* pose (Kabsch on rays for orientation; Umeyama on 3D
+landmark pairs for full 6-DoF). In kp mode the snap replaces the
+composed orientation; in rgbd mode it is delivered to the pose's owner
+via RTAB-Map's /reset_odom_to_pose. A wrong snap is worse than none, so
+recovery demands a match margin and a robust-fit gate before acting.
+
 Runs on the dev box against the compressed stream already in flight; only
 JPEG ever crosses the Wi-Fi.
 """
@@ -46,15 +59,23 @@ import zlib
 import cv2
 from geometry_msgs.msg import PoseStamped, TransformStamped
 import numpy as np
-from piros2_world_mesh.se3 import BASE_FROM_OPTICAL, quaternion_from_rotation
+from piros2_world_mesh.keyframe_store import KeyframeStore
+from piros2_world_mesh.se3 import (BASE_FROM_OPTICAL, euler_from_rotation,
+                                   invert, make_transform,
+                                   quaternion_from_rotation,
+                                   rigid_transform_3d,
+                                   rotation_from_quaternion,
+                                   transform_points)
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import CameraInfo, CompressedImage
+from rclpy.time import Time
+from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 from std_msgs.msg import Int32
 from std_srvs.srv import Trigger
-from tf2_ros import TransformBroadcaster
+from tf2_ros import (Buffer, TransformBroadcaster, TransformException,
+                     TransformListener)
 
 # RELIABLE for megabyte-class messages, same reasoning as piros2_vision's
 # edge detector: BEST_EFFORT delivers zero frames once a message fragments
@@ -161,6 +182,24 @@ class KeypointDetector(Node):
         # node's compass must not fight it — the orientation topic
         # keeps publishing either way.
         self.declare_parameter('publish_tf', True)
+        # Relocalization (see the module docstring). Novelty spacing and
+        # cap size the room memory; the rest gate when recognition may
+        # replace dead reckoning — a wrong snap is worse than waiting.
+        self.declare_parameter('keyframe_novelty_deg', 18.0)
+        self.declare_parameter('keyframe_cap', 100)
+        # Frames without consecutive pairs before tracking counts as
+        # lost and recognition starts; retries are rate-limited because
+        # a full store query is tens of milliseconds.
+        self.declare_parameter('relocalize_after', 10)
+        self.declare_parameter('relocalize_retry', 5)
+        self.declare_parameter('relocalize_min_pairs', 12)
+        self.declare_parameter('relocalize_margin', 1.3)
+        # rgbd mode only: how stale the cached /depth may be for 3D
+        # landmark capture/recovery, and the odometry-vs-recovered
+        # discrepancy below which no snap is sent (rgbd is fine).
+        self.declare_parameter('depth_max_age', 1.0)
+        self.declare_parameter('min_correction_m', 0.3)
+        self.declare_parameter('min_correction_deg', 10.0)
         self.orb = cv2.ORB_create(
             nfeatures=self.get_parameter('max_features').value)
         # Brute force is fine at <=500 features; NORM_HAMMING because ORB
@@ -181,6 +220,44 @@ class KeypointDetector(Node):
         self.prev_frame_crc = None
         self.dup_skipped = 0
 
+        # Relocalization state. rgbd_mode is read once: it decides which
+        # infrastructure exists (TF listener, depth cache, the snap
+        # service client), not just per-frame behaviour.
+        self.rgbd_mode = not self.get_parameter('publish_tf').value
+        self.store = KeyframeStore(
+            novelty_deg=self.get_parameter('keyframe_novelty_deg').value,
+            cap=self.get_parameter('keyframe_cap').value)
+        self.lost_frames = 0
+        self.needs_relocalization = False
+        self.retry_countdown = 0
+        self.depth_image = None
+        self.depth_received_at = None
+        self.tf_buffer = None
+        self.reset_pose_client = None
+        self.reset_pose_type = None
+        self.t_base_optical = None
+        if self.rgbd_mode:
+            # The pose authority is rgbd_odometry, reached two ways:
+            # TF (latest-only lookups — this camera's stamps are faulted
+            # by ~0.73 s, docs/info/camera.md#timestamps) for capture
+            # poses, and its reset_odom_to_pose service for the snap.
+            self.tf_buffer = Buffer()
+            self.tf_listener = TransformListener(self.tf_buffer, self)
+            self.sub_depth = self.create_subscription(
+                Image, 'depth', self.on_depth, BIG_FRAME_QOS)
+            try:
+                # Imported lazily: rtabmap_msgs is a dev-box package;
+                # the Pi builds this package without it and never runs
+                # this node in rgbd mode.
+                from rtabmap_msgs.srv import ResetPose
+                self.reset_pose_type = ResetPose
+                self.reset_pose_client = self.create_client(
+                    ResetPose, '/reset_odom_to_pose')
+            except ImportError:
+                self.get_logger().warn(
+                    'rtabmap_msgs not available — relocalization will '
+                    'recognise views but cannot snap the odometry')
+
         self.sub = self.create_subscription(
             CompressedImage, 'image_raw/compressed',
             self.on_frame, BIG_FRAME_QOS)
@@ -197,6 +274,8 @@ class KeypointDetector(Node):
             Int32, 'keypoints/count', BIG_FRAME_QOS)
         self.pub_matched = self.create_publisher(
             Int32, 'keypoints/matched', BIG_FRAME_QOS)
+        self.pub_keyframes = self.create_publisher(
+            Int32, 'keypoints/keyframes', BIG_FRAME_QOS)
         self.pub_pose = self.create_publisher(
             PoseStamped, 'camera/orientation', BIG_FRAME_QOS)
         # A TransformBroadcaster is just a publisher on /tf; tf2 consumers
@@ -226,9 +305,21 @@ class KeypointDetector(Node):
 
     def on_reset(self, request, response):
         self.orientation = np.eye(3)
+        # The room memory goes with it: stored geometry is expressed in
+        # the odom the old orientation defined, so keeping it would mean
+        # relocalizing into a frame that no longer exists.
+        self.store.clear()
+        self.lost_frames = 0
+        self.needs_relocalization = False
         response.success = True
-        response.message = 'orientation reset to identity'
+        response.message = 'orientation reset to identity, keyframes cleared'
         return response
+
+    def on_depth(self, msg: Image):
+        self.depth_image = np.frombuffer(msg.data, np.float32).reshape(
+            msg.height, msg.width)
+        # Receipt clock, never header.stamp — the 0.73 s stamp fault.
+        self.depth_received_at = self.get_clock().now()
 
     def on_frame(self, msg: CompressedImage):
         entry = self.get_clock().now()
@@ -306,6 +397,10 @@ class KeypointDetector(Node):
         matched_count.data = len(matched)
         self.pub_matched.publish(matched_count)
 
+        keyframes = Int32()
+        keyframes.data = len(self.store)
+        self.pub_keyframes.publish(keyframes)
+
         # Cost measured against our own clock only — this camera's header
         # stamps lag ~0.73 s by fault (docs/info/camera.md#timestamps) and
         # prove nothing about the pipeline.
@@ -344,6 +439,12 @@ class KeypointDetector(Node):
                     min_pairs=self.get_parameter('min_matched_pairs').value,
                     max_residual_rad=self.get_parameter(
                         'max_residual_rad').value)
+        # Whether this frame *could* have estimated (both frames carried
+        # descriptors and K exists) — the difference between "tracking
+        # lost" and "nothing to track yet". Read before prev is replaced.
+        could_estimate = (self.k_matrix is not None
+                          and descriptors is not None
+                          and self.prev_descriptors is not None)
         self.prev_points = points
         self.prev_descriptors = descriptors
 
@@ -354,6 +455,9 @@ class KeypointDetector(Node):
             self.orientation = self.orientation @ rotation.T
         if self.k_matrix is None:
             return
+
+        self.track_room_memory(rotation is not None, could_estimate,
+                               points, descriptors)
 
         # Conjugate optical-axes orientation into base_link axes and
         # publish. Our own stamp: the source stamps lag ~0.73 s by fault,
@@ -381,6 +485,200 @@ class KeypointDetector(Node):
         tf.child_frame_id = 'base_link'
         tf.transform.rotation = pose.pose.orientation
         self.tf_broadcaster.sendTransform(tf)
+
+    def track_room_memory(self, rotation_ok, could_estimate, points,
+                          descriptors):
+        """Feed the store while healthy; switch to recognition when lost."""
+        if rotation_ok:
+            self.lost_frames = 0
+        elif could_estimate:
+            self.lost_frames += 1
+            if (self.lost_frames
+                    == self.get_parameter('relocalize_after').value):
+                self.needs_relocalization = True
+                self.retry_countdown = 0
+                self.get_logger().warn(
+                    f'tracking lost for {self.lost_frames} frames — '
+                    f'watching for a known view '
+                    f'({len(self.store)} keyframes stored)')
+        if self.needs_relocalization:
+            # Full store queries cost tens of ms — retry on a cadence,
+            # not per frame; between retries the compass composes from
+            # its (possibly corrupt) baseline and the snap will replace
+            # it absolutely anyway.
+            if self.retry_countdown > 0:
+                self.retry_countdown -= 1
+            elif descriptors is not None and len(points):
+                self.retry_countdown = self.get_parameter(
+                    'relocalize_retry').value
+                if self.attempt_relocalization(points, descriptors):
+                    self.needs_relocalization = False
+                    self.lost_frames = 0
+        elif rotation_ok:
+            self.maybe_store_keyframe(points, descriptors)
+
+    def maybe_store_keyframe(self, points, descriptors):
+        """Offer the frame to the store; the novelty gate decides."""
+        if descriptors is None or len(points) == 0:
+            return
+        if self.rgbd_mode:
+            # Geometry and pose come from the odometry's own authority:
+            # a latest-only TF lookup and per-keypoint depth. No fresh
+            # depth or no odom yet → no keyframe, no fallback guessing.
+            transform = self._lookup('odom', 'camera_optical_frame')
+            if transform is None:
+                return
+            pts_cam, valid = self._depth_points(points)
+            min_pairs = self.get_parameter('relocalize_min_pairs').value
+            if pts_cam is None or valid.sum() < 2 * min_pairs:
+                return
+            slot = self.store.maybe_add(
+                descriptors[valid], transform[:3, 2],
+                points=transform_points(transform, pts_cam[valid]),
+                pose=transform)
+            view_dir = transform[:3, 2]
+        else:
+            # The compass's own frame: rays rotated into odom-optical by
+            # the composed orientation (R maps camera-frame vectors into
+            # the odom the compass started in).
+            rays_cam = rays_from_pixels(points, self.k_matrix)
+            slot = self.store.maybe_add(
+                descriptors, self.orientation[:, 2],
+                rays=rays_cam @ self.orientation.T)
+            view_dir = BASE_FROM_OPTICAL @ self.orientation[:, 2]
+        if slot is not None:
+            yaw = np.degrees(np.arctan2(view_dir[1], view_dir[0]))
+            self.get_logger().info(
+                f'keyframe {slot} stored (yaw {yaw:.0f}°, '
+                f'store {len(self.store)}/'
+                f'{self.get_parameter("keyframe_cap").value})')
+
+    def attempt_relocalization(self, points, descriptors):
+        """One recognition attempt; True clears the lost state."""
+        result = self.store.match(
+            descriptors,
+            max_distance=self.get_parameter('match_max_distance').value,
+            min_pairs=self.get_parameter('relocalize_min_pairs').value,
+            margin=self.get_parameter('relocalize_margin').value)
+        if result is None:
+            return False
+        best, kf_idx, query_idx = result
+        keyframe = self.store.keyframes[best]
+        if self.rgbd_mode:
+            return self._snap_rgbd(keyframe, best, kf_idx, query_idx,
+                                   points)
+        return self._snap_orientation(keyframe, best, kf_idx, query_idx,
+                                      points)
+
+    def _snap_orientation(self, keyframe, best, kf_idx, query_idx, points):
+        """Replace the composed orientation absolutely (kp mode)."""
+        if keyframe.rays is None:
+            return False
+        rotation = estimate_rotation(
+            keyframe.rays[kf_idx],
+            rays_from_pixels(points[query_idx], self.k_matrix),
+            min_pairs=self.get_parameter('relocalize_min_pairs').value,
+            max_residual_rad=self.get_parameter('max_residual_rad').value)
+        if rotation is None:
+            return False
+        # estimate_rotation gave R mapping stored odom rays onto current
+        # camera rays — R_cam_odom; the camera's orientation in odom is
+        # its transpose. Not composed: *replaced*.
+        recovered = rotation.T
+        correction = self._angle_between_deg(self.orientation, recovered)
+        self.orientation = recovered
+        self.get_logger().info(
+            f'relocalized against keyframe {best}: orientation snapped, '
+            f'correction {correction:.1f}°')
+        return True
+
+    def _snap_rgbd(self, keyframe, best, kf_idx, query_idx, points):
+        """Recover 6-DoF and hand it to the pose's owner (rgbd mode)."""
+        if keyframe.points is None or self.reset_pose_type is None:
+            return False
+        pts_cam, valid = self._depth_points(points[query_idx])
+        if pts_cam is None or valid.sum() == 0:
+            return False
+        fit = rigid_transform_3d(
+            pts_cam[valid], keyframe.points[kf_idx][valid],
+            min_pairs=self.get_parameter('relocalize_min_pairs').value)
+        if fit is None:
+            return False
+        # dst points live in odom, src in the current optical frame, so
+        # the fit *is* T_odom_optical for the current camera.
+        t_odom_optical = make_transform(*fit)
+        if self.t_base_optical is None:
+            self.t_base_optical = self._lookup('base_link',
+                                               'camera_optical_frame')
+            if self.t_base_optical is None:
+                return False
+        t_odom_base = t_odom_optical @ invert(self.t_base_optical)
+
+        current = self._lookup('odom', 'base_link')
+        delta_m, delta_deg = float('inf'), float('inf')
+        if current is not None:
+            delta_m = float(np.linalg.norm(
+                t_odom_base[:3, 3] - current[:3, 3]))
+            delta_deg = self._angle_between_deg(current[:3, :3],
+                                                t_odom_base[:3, :3])
+            if (delta_m < self.get_parameter('min_correction_m').value
+                    and delta_deg < self.get_parameter(
+                        'min_correction_deg').value):
+                self.get_logger().info(
+                    f'view recognised (keyframe {best}); odometry already '
+                    f'consistent (Δ {delta_m:.2f} m, {delta_deg:.1f}°)')
+                return True
+        if (self.reset_pose_client is None
+                or not self.reset_pose_client.service_is_ready()):
+            self.get_logger().warn(
+                'recovered a pose but /reset_odom_to_pose is not ready',
+                throttle_duration_sec=5.0)
+            return False
+        roll, pitch, yaw = euler_from_rotation(t_odom_base[:3, :3])
+        request = self.reset_pose_type.Request()
+        request.x, request.y, request.z = (
+            float(v) for v in t_odom_base[:3, 3])
+        request.roll, request.pitch = float(roll), float(pitch)
+        request.yaw = float(yaw)
+        self.reset_pose_client.call_async(request)
+        self.get_logger().info(
+            f'relocalized against keyframe {best}: snapping odometry '
+            f'(Δ {delta_m:.2f} m, {delta_deg:.1f}°)')
+        return True
+
+    def _depth_points(self, pixels):
+        """Nx2 pixels → (Nx3 optical-frame points, valid mask), or None."""
+        max_age = self.get_parameter('depth_max_age').value
+        if (self.depth_image is None
+                or (self.get_clock().now()
+                    - self.depth_received_at).nanoseconds > max_age * 1e9):
+            return None, None
+        height, width = self.depth_image.shape
+        u = np.clip(pixels[:, 0].astype(int), 0, width - 1)
+        v = np.clip(pixels[:, 1].astype(int), 0, height - 1)
+        z = self.depth_image[v, u].astype(np.float64)
+        valid = (z > 0.05) & (z < 20.0)
+        fx, fy = self.k_matrix[0, 0], self.k_matrix[1, 1]
+        cx, cy = self.k_matrix[0, 2], self.k_matrix[1, 2]
+        return np.column_stack([(pixels[:, 0] - cx) * z / fx,
+                                (pixels[:, 1] - cy) * z / fy, z]), valid
+
+    def _lookup(self, target, source):
+        """Latest-only TF lookup as a 4x4, or None while it doesn't exist."""
+        try:
+            tf = self.tf_buffer.lookup_transform(target, source, Time())
+        except TransformException:
+            return None
+        q = tf.transform.rotation
+        t = tf.transform.translation
+        return make_transform(
+            rotation_from_quaternion(q.x, q.y, q.z, q.w),
+            np.array([t.x, t.y, t.z]))
+
+    @staticmethod
+    def _angle_between_deg(r_a, r_b):
+        cosine = (np.trace(r_a.T @ r_b) - 1.0) / 2.0
+        return float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))))
 
 
 def main():

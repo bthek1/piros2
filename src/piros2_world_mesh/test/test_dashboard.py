@@ -166,3 +166,11 @@ def test_arrivals_are_recorded_per_stream(node):
     # stamp, but it is never read (the camera's stamps are faulty).
     assert node.last_seen['camera'] is not None
     assert node.last_seen['keypoints'] is None
+
+
+def test_keyframe_line_appears_only_when_reported():
+    lines = make_lines(keyframe_count=17)
+    assert any('keyframes' in text and '17' in text for text, _ in lines)
+    # An old detector that never publishes the topic: no fabricated row.
+    lines = make_lines()
+    assert not any('keyframes' in text for text, _ in lines)

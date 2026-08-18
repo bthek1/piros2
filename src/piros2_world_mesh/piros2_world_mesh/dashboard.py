@@ -78,7 +78,7 @@ def rates(arrivals, now, window):
 
 
 def stats_lines(fps, totals, last_seen, now, stale_after,
-                keypoint_count, matched_count):
+                keypoint_count, matched_count, keyframe_count=None):
     """
     Build the stats panel as (text, BGR colour) lines.
 
@@ -108,6 +108,10 @@ def stats_lines(fps, totals, last_seen, now, stale_after,
         matched = '-'
     lines.append((f'keypoints in frame: {current}', GREY))
     lines.append((f'matched (window):   {matched}', GREY))
+    # The room memory (relocalization plan): how many keyframes the
+    # detector has stored. None = the topic never arrived (old detector).
+    if keyframe_count is not None:
+        lines.append((f'keyframes stored:   {keyframe_count}', GREY))
     return lines
 
 
@@ -143,6 +147,7 @@ class Dashboard(Node):
         self.last_seen = {name: None for name in PANELS}
         self.keypoint_count = None
         self.matched_count = None
+        self.keyframe_count = None
 
         self.create_subscription(
             CompressedImage, 'image_raw/compressed',
@@ -157,6 +162,8 @@ class Dashboard(Node):
             Int32, 'keypoints/count', self.on_count, BIG_FRAME_QOS)
         self.create_subscription(
             Int32, 'keypoints/matched', self.on_matched, BIG_FRAME_QOS)
+        self.create_subscription(
+            Int32, 'keypoints/keyframes', self.on_keyframes, BIG_FRAME_QOS)
 
         self.pub_stats = self.create_publisher(
             CompressedImage, 'world/stats/compressed', BIG_FRAME_QOS)
@@ -183,6 +190,9 @@ class Dashboard(Node):
     def on_matched(self, msg):
         self.matched_count = msg.data
 
+    def on_keyframes(self, msg):
+        self.keyframe_count = msg.data
+
     def on_timer(self):
         now = self.now_sec()
         fps = rates(self.arrivals, now,
@@ -190,7 +200,7 @@ class Dashboard(Node):
         lines = stats_lines(
             fps, self.totals, self.last_seen, now,
             self.get_parameter('stale_after').value,
-            self.keypoint_count, self.matched_count)
+            self.keypoint_count, self.matched_count, self.keyframe_count)
         panel = render_panel(lines, (self.get_parameter('cell_width').value,
                                      self.get_parameter('cell_height').value))
 

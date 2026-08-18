@@ -155,6 +155,9 @@ status.
 | [world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md) | `piros2_world_mesh` (`just world_mesh`, aliased `just dev` and `just run`): the world stack forked into its own package and diverged mesh-first — 6-DoF odometry by default, quality-biased TSDF, a saved PLY at the end — built 2026-08-12, closed by decision 2026-08-15, kept as the build log |
 | [wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link: escalation-ladder watchdog, outage-reaped camera sessions, `just wifi` — done 2026-08-12, kept as the build log |
 | [world-mesh-diagrams-plan.md](docs/plans/completed/world-mesh-diagrams-plan.md) | Redraw the `just world_mesh` diagrams page for the 2026-08-16 transport rework — done 2026-08-16, kept as the build log |
+| [mesh-completion-plan.md](docs/plans/in-progress/mesh-completion-plan.md) | Fill the live mesh's interior holes from surrounding detail (decimation instead of the sieve cap, per-component boundary-loop fill, Poisson-closed export tier) — built and live-verified 2026-08-18; the hand-sweep gate is the one open box |
+| [relocalization-plan.md](docs/plans/in-progress/relocalization-plan.md) | A keyframe store and recover-by-recognition pose snap — the relocalization piece after a camera flick or odometry reset; planned 2026-08-18, not started |
+| [relocalization-plan.md](docs/plans/in-progress/relocalization-plan.md) | Store the room's keypoints so a camera that flicks away and back recovers its pose — keyframe store, absolute-pose recovery for both odometry modes, saved room maps — drafted 2026-08-18, not started |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

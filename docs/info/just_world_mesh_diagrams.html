@@ -494,7 +494,7 @@ sequenceDiagram
             <td>/world/mesh_live</td><td>Marker (TRIANGLE_LIST)</td><td>tsdf_mesher</td>
             <td>RViz</td>
             <td>re-mesh every 15 s</td><td>latched (TRANSIENT_LOCAL)</td>
-            <td>1.5 cm TSDF voxels; 120k-triangle cap (the mesher warns with what it dropped); fill_hole_radius 0.06 — the mesh-first values, provisional until the sweep</td>
+            <td>1.5 cm TSDF voxels; extraction runs the completion pass (2026-08-18: debris components pruned, interior holes filled from their rings — each component's frontier stays open) and the 120k budget is enforced by quadric decimation, never dropped triangles; TSDF quality values provisional until the sweep</td>
           </tr>
           <tr>
             <td>/world/stats/compressed</td><td>CompressedImage</td><td>dashboard</td>
@@ -523,7 +523,7 @@ sequenceDiagram
           </tr>
           <tr>
             <td>/tsdf_mesher/save</td><td>std_srvs/Trigger</td><td>tsdf_mesher</td>
-            <td>extract now and write <code>meshes/live_&lt;stamp&gt;.ply</code> at full detail — hand-written ASCII PLY, no triangle cap; <code>just mesh-save</code> is the wrapper (in-session check still an open gate)</td>
+            <td>extract now and write <code>meshes/live_&lt;stamp&gt;.ply</code> at full detail (hand-written ASCII PLY; <code>just mesh-save</code> is the wrapper — ran live 2026-08-18), plus a Poisson-closed <code>_closed.ply</code> companion when <code>save_watertight</code> is on: genuinely watertight, frontier included, assumed geometry by declaration</td>
           </tr>
           <tr>
             <td>/reset_odom · /pause_odom · /resume_odom · /reset_odom_to_pose</td><td>std_srvs / rtabmap_msgs</td><td>rgbd_odometry</td>
@@ -565,7 +565,7 @@ sequenceDiagram
             <td>its <code>delay=</code> runs 1.1–1.6 s headless and 1.6–2.6 s under RViz load — the measured reason the clouds are posed upstream rather than making RViz wait; 30-deep sync queues (shrinking them starves exact sync — measured, don't)</td>
           </tr>
           <tr>
-            <td>tsdf_mesher</td><td>dev box · venv · GPU</td><td>28–107 ms/frame integrate at 1.5 cm (live, static scene)</td>
+            <td>tsdf_mesher</td><td>dev box · venv · GPU</td><td>28–107 ms/frame integrate at 1.5 cm; completion ~200–260 ms per extraction (373 debris pruned + 142 holes filled live, 2026-08-18)</td>
             <td>extraction on the 15 s timer, not per frame: 1.4–2.0 s per ~100k triangles; TSDF quality values still provisional until the sweep</td>
           </tr>
           <tr>

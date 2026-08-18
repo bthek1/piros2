@@ -420,3 +420,96 @@ def test_reset_service_rezeros_orientation(node):
     response = node.on_reset(None, Trigger.Response())
     assert response.success
     assert np.allclose(node.orientation, np.eye(3))
+
+
+# --- relocalization (relocalization plan) ---------------------------------
+
+K_TEST = np.array([[500.0, 0.0, 320.0],
+                   [0.0, 500.0, 240.0],
+                   [0.0, 0.0, 1.0]])
+
+
+def synthetic_view(orientation, seed=3, count=60):
+    """
+    Fake "the camera looks at the same wall again", pure geometry.
+
+    Returns descriptors, the pixels a fixed landmark field projects to
+    at the given orientation (R_odom_cam), and the landmark directions
+    themselves (odom frame).
+    """
+    rng = np.random.default_rng(seed)
+    descriptors = rng.integers(0, 256, size=(count, 32), dtype=np.uint8)
+    spread = rng.uniform(-0.25, 0.25, size=(count, 2))
+    dirs = np.column_stack([spread, np.ones(count)])
+    dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+    rays_cam = dirs @ orientation  # R.T @ d, row layout
+    pixels = np.column_stack([
+        K_TEST[0, 0] * rays_cam[:, 0] / rays_cam[:, 2] + K_TEST[0, 2],
+        K_TEST[1, 1] * rays_cam[:, 1] / rays_cam[:, 2] + K_TEST[1, 2]])
+    return descriptors, pixels, dirs
+
+
+def rotation_about_y(deg):
+    a = np.radians(deg)
+    return np.array([[np.cos(a), 0.0, np.sin(a)],
+                     [0.0, 1.0, 0.0],
+                     [-np.sin(a), 0.0, np.cos(a)]])
+
+
+def test_keyframe_capture_stores_rays_in_odom(node):
+    node.k_matrix = K_TEST
+    true_orientation = rotation_about_y(20.0)
+    node.orientation = true_orientation
+    descriptors, pixels, dirs = synthetic_view(true_orientation)
+    node.maybe_store_keyframe(pixels, descriptors)
+
+    assert len(node.store) == 1
+    # Stored rays must be the landmark directions in odom — independent
+    # of the orientation the camera happened to have at capture.
+    assert np.allclose(node.store.keyframes[0].rays, dirs, atol=1e-9)
+
+
+def test_relocalization_recovers_a_corrupted_orientation(node):
+    node.k_matrix = K_TEST
+    true_orientation = rotation_about_y(20.0)
+    node.orientation = true_orientation
+    descriptors, pixels, _ = synthetic_view(true_orientation)
+    node.maybe_store_keyframe(pixels, descriptors)
+
+    # The flick: composition lost the motion, the compass is wrong.
+    node.orientation = np.eye(3)
+    assert node.attempt_relocalization(pixels, descriptors)
+    assert node._angle_between_deg(
+        node.orientation, true_orientation) < 0.01
+
+
+def test_relocalization_refuses_an_unknown_view(node):
+    node.k_matrix = K_TEST
+    node.orientation = np.eye(3)
+    descriptors, pixels, _ = synthetic_view(np.eye(3), seed=3)
+    node.maybe_store_keyframe(pixels, descriptors)
+
+    stranger_desc, stranger_px, _ = synthetic_view(np.eye(3), seed=99)
+    before = node.orientation.copy()
+    assert not node.attempt_relocalization(stranger_px, stranger_desc)
+    assert np.allclose(node.orientation, before)
+
+
+def test_lost_tracking_arms_relocalization(node):
+    node.k_matrix = K_TEST
+    descriptors, pixels, _ = synthetic_view(np.eye(3))
+    for _ in range(node.get_parameter('relocalize_after').value):
+        node.track_room_memory(rotation_ok=False, could_estimate=True,
+                               points=pixels, descriptors=descriptors)
+    assert node.needs_relocalization
+
+
+def test_reset_clears_the_room_memory(node):
+    node.k_matrix = K_TEST
+    descriptors, pixels, _ = synthetic_view(np.eye(3))
+    node.orientation = np.eye(3)
+    node.maybe_store_keyframe(pixels, descriptors)
+    assert len(node.store) == 1
+
+    node.on_reset(Trigger.Request(), Trigger.Response())
+    assert len(node.store) == 0

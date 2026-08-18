@@ -26,9 +26,11 @@ import cv2
 import numpy as np
 from piros2_world_mesh.se3 import (
     BASE_FROM_OPTICAL,
+    euler_from_rotation,
     invert,
     make_transform,
     quaternion_from_rotation,
+    rigid_transform_3d,
     rotation_from_quaternion,
     transform_points,
 )
@@ -109,3 +111,49 @@ def test_optical_pan_conjugates_to_base_yaw():
     base = BASE_FROM_OPTICAL @ pan @ BASE_FROM_OPTICAL.T
     assert np.allclose(base, rotation_matrix([0., 0., -1.], np.deg2rad(30)),
                        atol=1e-12)
+
+
+# --- euler and rigid 3D fits (relocalization plan) ----------------------
+
+def test_euler_round_trips_through_zyx_composition():
+    roll, pitch, yaw = 0.3, -0.4, 1.2
+    rotation = (rotation_matrix([0., 0., 1.], yaw)
+                @ rotation_matrix([0., 1., 0.], pitch)
+                @ rotation_matrix([1., 0., 0.], roll))
+    assert np.allclose(euler_from_rotation(rotation), (roll, pitch, yaw))
+
+
+def test_rigid_transform_recovers_a_known_pose():
+    rng = np.random.default_rng(11)
+    src = rng.uniform(-2.0, 2.0, size=(40, 3))
+    rotation = rotation_matrix([0.3, -0.5, 0.8], 0.9)
+    translation = np.array([1.0, -2.0, 0.5])
+    dst = src @ rotation.T + translation
+    fit = rigid_transform_3d(src, dst)
+    assert fit is not None
+    assert np.allclose(fit[0], rotation, atol=1e-9)
+    assert np.allclose(fit[1], translation, atol=1e-9)
+
+
+def test_rigid_transform_survives_noise_and_outliers():
+    rng = np.random.default_rng(12)
+    src = rng.uniform(-2.0, 2.0, size=(60, 3))
+    rotation = rotation_matrix([0., 1., 0.], 0.4)
+    translation = np.array([0.2, 0.0, -0.7])
+    dst = src @ rotation.T + translation
+    dst += rng.normal(0.0, 0.005, size=dst.shape)
+    dst[:6] += 3.0  # a few gross outliers, as bad matches produce
+    fit = rigid_transform_3d(src, dst)
+    assert fit is not None
+    # The reject-worst refits must shrug the outliers off.
+    assert np.allclose(fit[0], rotation, atol=0.01)
+    assert np.allclose(fit[1], translation, atol=0.02)
+
+
+def test_rigid_transform_refuses_thin_or_inconsistent_input():
+    rng = np.random.default_rng(13)
+    src = rng.uniform(-1.0, 1.0, size=(5, 3))
+    assert rigid_transform_3d(src, src) is None  # too few pairs
+    src = rng.uniform(-1.0, 1.0, size=(40, 3))
+    garbage = rng.uniform(-1.0, 1.0, size=(40, 3))
+    assert rigid_transform_3d(src, garbage) is None  # no rigid fit exists

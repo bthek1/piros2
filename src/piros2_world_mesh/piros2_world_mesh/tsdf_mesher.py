@@ -42,6 +42,7 @@ from geometry_msgs.msg import Point
 import message_filters
 import numpy as np
 from piros2_world_mesh.depth_align import ScaleAligner
+from piros2_world_mesh.mesh_fill import complete_mesh
 from piros2_world_mesh.se3 import invert, make_transform, rotation_from_quaternion
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -71,20 +72,6 @@ LATCHED_QOS = QoSProfile(
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
     history=HistoryPolicy.KEEP_LAST,
     depth=1)
-
-
-def cap_triangles(triangles, max_triangles):
-    """
-    Evenly subsample a triangle index array to at most max_triangles.
-
-    Even striding (not a prefix) keeps coverage of the whole surface;
-    the caller logs what was dropped — no silent truncation.
-    """
-    if len(triangles) <= max_triangles:
-        return triangles, 0
-    step = int(np.ceil(len(triangles) / max_triangles))
-    kept = triangles[::step]
-    return kept, len(triangles) - len(kept)
 
 
 def marker_from_mesh(vertices, triangles, colours, frame_id, stamp):
@@ -163,8 +150,21 @@ class TsdfMesher(Node):
         self.declare_parameter('refresh_period', 10.0)
         # Voxels seen fewer times than this don't mesh (TSDF weight).
         self.declare_parameter('weight_threshold', 3.0)
-        self.declare_parameter('fill_hole_radius', 0.06)
-        # Marker size cap; capped refreshes log what was dropped.
+        # Mesh completion (mesh-completion plan P2, replacing the old
+        # fill_hole_radius): drop noise-flake components below this
+        # triangle count (the P0 census found ~370 of them under ~64
+        # triangles on a live scan)…
+        self.declare_parameter('min_component_triangles', 30)
+        # …then close every interior boundary loop — each component's
+        # largest loop is its frontier and stays open; this guard stops
+        # a frontier-sized loop being bridged silently.
+        self.declare_parameter('fill_max_hole_radius', 0.25)
+        # Filled patches are *assumed* surface; tint them magenta to see
+        # exactly what was invented.
+        self.declare_parameter('fill_debug_tint', False)
+        # Marker triangle budget — enforced by quadric decimation, never
+        # by dropping triangles (the old even-subsampling cap peppered
+        # the whole surface with pinholes; mesh-completion plan P1).
         self.declare_parameter('max_triangles', 60000)
         # Per-frame depth scale alignment (live mesh plan P2): ray-cast
         # the TSDF from the frame's pose, median-ratio the overlap, and
@@ -176,6 +176,12 @@ class TsdfMesher(Node):
         # recipes pin to the repo root); git-ignored like the offline
         # pipeline's meshes.
         self.declare_parameter('save_dir', 'meshes')
+        # Also write a Poisson-closed companion (live_<stamp>_closed.ply)
+        # on save: genuinely watertight — it closes the frontier too,
+        # smoothly and blobbily, which is fiction the live mesh refuses
+        # but downstream tools that demand closed input want. Never
+        # replaces the honest PLY (mesh-completion plan P4).
+        self.declare_parameter('save_watertight', False)
 
         # open3d state, created lazily on the first synced pair.
         self.o3d = None
@@ -334,26 +340,58 @@ class TsdfMesher(Node):
         Extract the current surface as (vertices, triangles, colours).
 
         Shared by the timed refresh and ~/save; returns None while the
-        volume meshes to nothing. Small interior gaps are closed by
-        triangulating boundary edges — the radius bound keeps this
-        honest: pinholes from noise or held-back low-weight voxels get
-        bridged, while the scan's open outer boundary (a "hole" of
-        room-sized radius) stays open — unseen space is never invented.
-        Measured ~16 ms at 80k triangles; colours and vertex count are
-        preserved. fill_hole_radius 0 disables.
+        volume meshes to nothing. Extraction is followed by the
+        completion pass (mesh_fill.py): noise-flake components are
+        pruned, and every *interior* boundary loop is closed with a
+        patch assumed from its surroundings — while each component's
+        frontier (its largest loop) stays open, because unseen space is
+        never invented. The old single-radius `fill_holes` bound could
+        not tell a large hole from the frontier and left every hole
+        wider than 6 cm open (P0 measured the survivors at p50 7.3 cm).
         """
         mesh = self.volume.extract_triangle_mesh(
             weight_threshold=self.get_parameter('weight_threshold').value)
-        fill_radius = self.get_parameter('fill_hole_radius').value
-        if fill_radius > 0:
-            mesh = mesh.fill_holes(hole_size=fill_radius)
         legacy = mesh.to_legacy()
         vertices = np.asarray(legacy.vertices)
         triangles = np.asarray(legacy.triangles)
         colours = np.asarray(legacy.vertex_colors)
         if len(triangles) == 0:
             return None
+        tint = (1.0, 0.0, 1.0) \
+            if self.get_parameter('fill_debug_tint').value else None
+        vertices, triangles, colours, stats = complete_mesh(
+            vertices, triangles, colours,
+            self.get_parameter('min_component_triangles').value,
+            self.get_parameter('fill_max_hole_radius').value, tint)
+        if len(triangles) == 0:
+            return None
+        if stats['pruned'] or stats['filled']:
+            self.get_logger().info(
+                f"completion: pruned {stats['pruned']} debris components, "
+                f"filled {stats['filled']} interior holes",
+                throttle_duration_sec=30.0)
         return vertices, triangles, colours
+
+    def decimate_to_budget(self, vertices, triangles, colours, budget):
+        """
+        Quadric-decimate to the Marker budget (mesh-completion plan P1).
+
+        Simplification, not deletion: the old even-subsampling cap
+        removed every Nth triangle across the whole surface, turning an
+        intact mesh into a sieve (P0 measured 37k boundary edges at a
+        50% cap). Decimation keeps the surface closed at lower detail —
+        vertex colours survive (verified on 0.19), ~126 ms per 57k
+        input triangles, only paid when over budget.
+        """
+        mesh = self.o3d.geometry.TriangleMesh()
+        mesh.vertices = self.o3d.utility.Vector3dVector(vertices)
+        mesh.triangles = self.o3d.utility.Vector3iVector(triangles)
+        mesh.vertex_colors = self.o3d.utility.Vector3dVector(colours)
+        decimated = mesh.simplify_quadric_decimation(
+            target_number_of_triangles=budget)
+        return (np.asarray(decimated.vertices),
+                np.asarray(decimated.triangles),
+                np.asarray(decimated.vertex_colors))
 
     def on_refresh(self):
         if self.volume is None or self.integrated == 0:
@@ -363,13 +401,14 @@ class TsdfMesher(Node):
         if extracted is None:
             return
         vertices, triangles, colours = extracted
-        triangles, dropped = cap_triangles(
-            triangles, self.get_parameter('max_triangles').value)
-        if dropped:
-            self.get_logger().warn(
-                f'mesh capped: showing {len(triangles)} of '
-                f'{len(triangles) + dropped} triangles — raise '
-                'max_triangles or voxel_size for full detail',
+        budget = self.get_parameter('max_triangles').value
+        if len(triangles) > budget:
+            before = len(triangles)
+            vertices, triangles, colours = self.decimate_to_budget(
+                vertices, triangles, colours, budget)
+            self.get_logger().info(
+                f'decimated {before} → {len(triangles)} triangles '
+                '(marker budget; the saved PLY keeps full detail)',
                 throttle_duration_sec=30.0)
         marker = marker_from_mesh(
             vertices, triangles, colours, 'odom',
@@ -417,8 +456,47 @@ class TsdfMesher(Node):
         response.success = True
         response.message = (f'{path}: {len(vertices)} vertices, '
                             f'{len(triangles)} triangles')
+        if self.get_parameter('save_watertight').value:
+            closed_path = path[:-4] + '_closed.ply'
+            n_tris = self.save_watertight(closed_path)
+            response.message += (f' + {closed_path}: {n_tris} triangles '
+                                 '(Poisson-closed, frontier included — '
+                                 'assumed geometry)')
         self.get_logger().info(f'saved {response.message}')
         return response
+
+    def save_watertight(self, path):
+        """
+        Write a Poisson-closed companion mesh; returns its triangle count.
+
+        Screened Poisson over the TSDF's own point cloud (positions,
+        TSDF-gradient normals, colours): the solve produces a closed
+        surface by construction, extrapolating smoothly wherever the
+        scan is open — including the frontier, which is exactly the
+        fiction the live mesh refuses to publish. That is the tier
+        split: the honest PLY for looking at what was seen, the closed
+        one for tools that require watertight input. Written with
+        open3d's writer (this path is open3d-bound anyway; the honest
+        PLY keeps the hand-written unit-testable serialiser).
+        """
+        pcd = self.volume.extract_point_cloud(
+            weight_threshold=self.get_parameter(
+                'weight_threshold').value).to_legacy()
+        if not pcd.has_normals():
+            pcd.estimate_normals()
+        # Octree depth 9 ≈ 1-2 cm cells at room scale — matched to the
+        # 1.5 cm TSDF voxels; deeper reconstructs depth-model noise.
+        mesh, _ = self.o3d.geometry.TriangleMesh.\
+            create_from_point_cloud_poisson(pcd, depth=9)
+        # Poisson clips its surface at the reconstruction domain's box,
+        # leaving boundary loops there (measured: 223 edges on a room
+        # scan). This tier's whole promise is closed, so an unbounded
+        # fill pass finishes the job — no frontier honesty to protect
+        # in a file already labelled assumed geometry.
+        mesh = self.o3d.t.geometry.TriangleMesh.from_legacy(mesh)\
+            .fill_holes(hole_size=1e6).to_legacy()
+        self.o3d.io.write_triangle_mesh(path, mesh)
+        return len(mesh.triangles)
 
 
 def main():

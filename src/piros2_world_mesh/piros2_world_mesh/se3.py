@@ -102,3 +102,58 @@ def transform_points(t_ab, points_b):
     """
     points_b = np.asarray(points_b)
     return points_b @ t_ab[:3, :3].T + t_ab[:3, 3]
+
+
+def euler_from_rotation(rotation):
+    """
+    R -> (roll, pitch, yaw) with R = Rz(yaw) @ Ry(pitch) @ Rx(roll).
+
+    The ZYX convention every ROS rpy interface uses — including
+    RTAB-Map's reset_odom_to_pose service, which is why this exists.
+    """
+    r = rotation
+    pitch = -np.arcsin(np.clip(r[2, 0], -1.0, 1.0))
+    roll = np.arctan2(r[2, 1], r[2, 2])
+    yaw = np.arctan2(r[1, 0], r[0, 0])
+    return roll, pitch, yaw
+
+
+def rigid_transform_3d(src_points, dst_points, min_pairs=8,
+                       max_residual_m=0.08, refit_rounds=2,
+                       drop_fraction=0.2):
+    """
+    Best-fit (R, t) with dst ≈ R @ src + t, or None if untrustworthy.
+
+    Umeyama without the scale term — the 3D sibling of the detector's
+    Kabsch-on-rays: subtract centroids, one SVD on the covariance, and
+    the translation falls out of the rotated centroids. The same
+    reject-worst-and-refit rounds stand in for RANSAC (descriptor
+    matches carry a few percent of false pairs), and the same
+    fail-loudly rule applies: a thin or inconsistent pair set returns
+    None, never a confident-looking guess.
+    """
+    src = np.asarray(src_points, dtype=np.float64)
+    dst = np.asarray(dst_points, dtype=np.float64)
+    if len(src) < min_pairs:
+        return None
+
+    def fit(s, d):
+        cs, cd = s.mean(axis=0), d.mean(axis=0)
+        u, _, vt = np.linalg.svd((s - cs).T @ (d - cd))
+        rot = vt.T @ u.T
+        if np.linalg.det(rot) < 0:
+            vt[-1] *= -1
+            rot = vt.T @ u.T
+        return rot, cd - rot @ cs
+
+    rot, t = fit(src, dst)
+    for _ in range(refit_rounds):
+        residuals = np.linalg.norm(src @ rot.T + t - dst, axis=1)
+        keep_count = int(np.ceil(len(src) * (1.0 - drop_fraction)))
+        keep = np.argsort(residuals)[:keep_count]
+        src, dst = src[keep], dst[keep]
+        rot, t = fit(src, dst)
+    residuals = np.linalg.norm(src @ rot.T + t - dst, axis=1)
+    if len(src) < min_pairs or float(residuals.mean()) > max_residual_m:
+        return None
+    return rot, t

@@ -381,6 +381,13 @@ holder PID; a leaked usb_cam had fed a whole session unnoticed) —
 docs/info/troubleshooting.md#a-live-session-crawls-at-2-fps-while-the-pis-wi-fi-is-saturated.
 `just world`'s `odom:=rgbd` mode still carries the raw-topic collision
 — live it will saturate the link; its default `kp` mode is unaffected.
+The fork's mesher runs the mesh-completion pass since 2026-08-18
+(`mesh_fill.py`: debris components pruned, interior holes filled from
+their rings with each component's frontier left open, quadric
+decimation instead of the pinhole-punching subsample cap, and
+`save_watertight` writing a Poisson-closed `_closed.ply` beside the
+honest save — measured live: 373 debris pruned, 142 holes filled,
+zero interior loops ≤ 0.25 m surviving).
 
 The Wi-Fi watchdog (done 2026-08-12, the whole
 [watchdog plan](docs/plans/completed/wifi-watchdog-plan.md) planned,
@@ -400,7 +407,7 @@ released in ~60 s) instead of orphaning it.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
-is green (162 tests; `piros2_vision`, `piros2_perception`, `piros2_camera`,
+is green (172 tests; `piros2_vision`, `piros2_perception`, `piros2_camera`,
 `piros2_world` and its fork `piros2_world_mesh` (which carries the
 same suite minus the mapper tests, imports renamed, plus the
 camera_relay byte-identity tests) hold real unit tests — none need hardware or model weights: a fake ONNX
@@ -417,7 +424,10 @@ design — SE(3) geometry tests driving all four quaternion branches
 `piros2_world`'s mapper: noise averages toward the plane, min_weight
 holdback, capped
 inertia — and pure-function marker/alignment/PLY-serialisation tests
-for the live mesh and its `~/save`) as of 2026-08-16.
+for the live mesh and its `~/save`, and the mesh-completion
+suite: punched-plane/pinched-hole/debris/tint/idempotence fixtures
+for `mesh_fill.py`, plus a parameter-contract test pinning the
+completion knobs) as of 2026-08-18.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
 describes something not yet built, mark it as planned — the existing docs follow
@@ -696,6 +706,9 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/plans/completed/world-fusion-plan.md](docs/plans/completed/world-fusion-plan.md) | Learning plan for `info.md`'s topics — TSDF fusion, pose graphs, meshing, plane fitting — phases P0–P6: weighted cloud-map fusion, the `tools/recon/` offline pipeline, `depth_scale` pinned at 2.69; done 2026-08-10, kept as the build log |
 | [docs/plans/completed/world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md) | Fork `piros2_world` into a new package `piros2_world_mesh` (`just world_mesh`, aliased `just dev` and `just run`) and diverge it mesh-first — `odom:=rgbd` default, quality-biased TSDF params, mesh-centric RViz, a `~/save` PLY export; built 2026-08-12, closed by decision 2026-08-15 (live sweep gates unrun, moved to todo.md), kept as the build log |
 | [docs/plans/completed/world-mesh-diagrams-plan.md](docs/plans/completed/world-mesh-diagrams-plan.md) | Redraw `just_world_mesh_diagrams.html` for the 2026-08-16 transport rework (relay, `/depth/rgb` twin, pacing, odom-frame clouds) — done 2026-08-16 same day, kept as the build log; its regenerate-from-the-live-graph rule caught cloud_projector still pulling a second Wi-Fi copy |
+| [docs/plans/in-progress/mesh-completion-plan.md](docs/plans/in-progress/mesh-completion-plan.md) | Upgrade the fork's `tsdf_mesher` so interior holes get filled from surrounding detail — P0–P4 all built and live-verified 2026-08-18 (decimation replaces the sieve cap, per-component loop classification + fan fill, both P3 levers measured out, Poisson-closed export); one gate open: the hand-sweep check (needs a human; `fill_debug_tint` shows what was assumed) |
+| [docs/plans/in-progress/relocalization-plan.md](docs/plans/in-progress/relocalization-plan.md) | Remember the room, recover the pose: a session-persistent ORB keyframe store in the fork's detector, absolute Kabsch/Umeyama recovery after a flick or an rgbd reset (`/reset_odom_to_pose` delivers the snap in rgbd mode), optional map save/load — the relocalization piece the SLAM-minus-loop-closure stack lacks; phases P0–P4, planned 2026-08-18, not started |
+| [docs/plans/in-progress/relocalization-plan.md](docs/plans/in-progress/relocalization-plan.md) | Remember the room's keypoints, recover the pose: a novelty-gated keyframe store in the fork's `keypoint_detector` (descriptors + bearing rays + 3D landmarks in odom), absolute Kabsch/Umeyama recovery when tracking breaks — kp mode snaps its own orientation, rgbd mode snaps via RTAB-Map's `/reset_odom_to_pose` — plus saved room maps (`maps/*.npz`) that survive sessions; phases P0–P4, drafted 2026-08-18, not started |
 | [docs/plans/completed/wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link — `just wifi` visibility, power-save off, an escalation-ladder watchdog (reassociate → driver reload → guarded reboot) via the Ansible `wifi` role, and outages reap camera sessions instead of orphaning them; planned, built and drilled 2026-08-12 after two link-death incidents (kept as the build log) |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

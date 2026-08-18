@@ -24,7 +24,6 @@ node constructible on the system interpreter).
 
 import numpy as np
 from piros2_world_mesh.tsdf_mesher import (
-    cap_triangles,
     marker_from_mesh,
     ply_from_mesh,
     TsdfMesher,
@@ -37,23 +36,6 @@ from visualization_msgs.msg import Marker
 
 
 # --- pure functions -----------------------------------------------------
-
-def test_cap_triangles_passthrough_under_limit():
-    tris = np.arange(30).reshape(10, 3)
-    kept, dropped = cap_triangles(tris, 10)
-    assert dropped == 0
-    assert np.array_equal(kept, tris)
-
-
-def test_cap_triangles_subsamples_evenly():
-    tris = np.arange(300).reshape(100, 3)
-    kept, dropped = cap_triangles(tris, 40)
-    assert len(kept) + dropped == 100
-    assert len(kept) <= 40
-    # Even coverage: first and (near-)last triangles both survive.
-    assert kept[0][0] == 0
-    assert kept[-1][0] >= 290 - 3 * (100 // 40)
-
 
 def test_marker_from_mesh_flattens_triangles():
     vertices = np.array([[0., 0., 0.], [1., 0., 0.],
@@ -131,3 +113,18 @@ def test_save_before_first_frame_fails_cleanly(node):
     response = node.on_save(None, Trigger.Response())
     assert not response.success
     assert 'nothing' in response.message
+
+
+def test_completion_parameters_declare_the_contract(node):
+    """
+    Pin the completion parameter names and defaults.
+
+    A rename here silently reverts the mesher to sieve-and-gap
+    behaviour (mesh-completion plan), so the contract is worth a test.
+    """
+    assert node.get_parameter('min_component_triangles').value == 30
+    assert node.get_parameter('fill_max_hole_radius').value == 0.25
+    assert node.get_parameter('fill_debug_tint').value is False
+    # The watertight companion is opt-in at the node level; the fork's
+    # yaml turns it on for the session.
+    assert node.get_parameter('save_watertight').value is False

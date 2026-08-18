@@ -200,8 +200,8 @@ record in [networking.md](networking.md#wi-fi-link-reliability)):
 
 ## Testing
 
-`just test` (or the VSCode Testing sidebar — identical results): **162
-tests green** as of 2026-08-16, all style-clean, none needing hardware or
+`just test` (or the VSCode Testing sidebar — identical results): **172
+tests green** as of 2026-08-18, all style-clean, none needing hardware or
 model weights — fake ONNX sessions, synthetic depth planes and
 chessboards, seeded-noise rotation geometry, SE(3) quaternion-branch
 coverage, stubbed-TF weighted-fusion tests for the mapper,
@@ -229,16 +229,23 @@ busy-device pre-flight; `piros2_world_mesh` carries the same suite as
   orientation.
 - **Open items** (plus [todo.md](../../todo.md)'s standing ambition, a
   C/C++ rewrite):
-  - The world-mesh live gates: the lit-room hand sweep (settles the
-    provisional TSDF values) and an in-session `just mesh-save` check.
-  - Affine depth-to-TSDF alignment — the next lever now that the live
-    high-pass scale aligner landed (placement spread 4.0% → 2.9%; the
-    residual is spatially structured model error a global scale cannot
-    touch).
+  - The lit-room hand sweep — the one live gate several closes wait
+    on: it settles the provisional TSDF values and checks the
+    mesh-completion patches behave under motion (the in-session
+    `just mesh-save` check itself ran live 2026-08-18, both tiers).
+  - The [relocalization plan](../plans/in-progress/relocalization-plan.md)
+    (planned 2026-08-18, not started) — the named next build: a
+    keyframe store and recover-by-recognition pose snap, so a camera
+    flick or an rgbd reset no longer corrupts the pose for good.
+  - Affine depth-to-TSDF alignment — the next depth-quality lever now
+    that the live high-pass scale aligner landed (placement spread
+    4.0% → 2.9%; the residual is spatially structured model error a
+    global scale cannot touch).
   - Checkerboard calibration — optional accuracy upgrade over the
     approximate intrinsics.
-  - The "reduce compute" throttle for consumers now that the camera
-    delivers up to 60 fps.
+  - (The "reduce compute" throttle landed 2026-08-16 as the
+    estimator's `max_rate` pacing — the GPU does half the work it
+    used to.)
 
 ## Recurring lessons worth knowing before touching anything
 

@@ -28,6 +28,29 @@ keypoint_detector:
     # ~0.03 rad ≈ 1.7° ≈ 27 px at fx≈907. Looser admits bad geometry,
     # tighter starves the estimator in blurry motion.
     max_residual_rad: 0.03
+    # Relocalization (relocalization plan): the room memory. Keyframes
+    # are stored when the view direction is this far from every stored
+    # one — ~18° covers a room in a few dozen keyframes — up to the cap
+    # (100 ≈ 1.6 MB of descriptors; at the cap the nearest view is
+    # replaced, keeping coverage).
+    keyframe_novelty_deg: 18.0
+    keyframe_cap: 100
+    # Frames without consecutive-pair tracking before recognition takes
+    # over, and how often (in frames) a full store query may retry — a
+    # query is tens of ms, so it is rate-limited, not per-frame.
+    relocalize_after: 10
+    relocalize_retry: 5
+    # A snap needs this many cross-checked matches against one keyframe
+    # AND a winner that beats the runner-up by the margin — a wrong
+    # relocalization is worse than none (the two-posters problem).
+    relocalize_min_pairs: 12
+    relocalize_margin: 1.3
+    # rgbd mode: cached /depth older than this (seconds, receipt clock)
+    # is not trusted for 3D landmarks, and recovered poses within these
+    # bounds of the live odometry trigger no snap — rgbd is fine.
+    depth_max_age: 1.0
+    min_correction_m: 0.3
+    min_correction_deg: 10.0
 
 tsdf_mesher:
   ros__parameters:
@@ -45,14 +68,27 @@ tsdf_mesher:
     refresh_period: 15.0
     # TSDF voxels observed fewer times than this don't mesh.
     weight_threshold: 3.0
-    # Small gaps default to connected: interior holes up to this radius
-    # (metres) are triangulated closed at extraction. The scan's open
-    # outer boundary is far larger than this and stays open; the volume
-    # itself is untouched. 0 disables.
-    fill_hole_radius: 0.06
-    # MESH-FIRST (world.yaml: 60000): more surface allowed before the
-    # Marker cap truncates — finer voxels mean more triangles for the
-    # same room. A capped refresh still logs what it dropped.
+    # Mesh completion (mesh-completion plan; replaced fill_hole_radius
+    # 2026-08-18). Noise-flake components below this triangle count are
+    # pruned — the P0 census found ~370 of them on one static scan,
+    # masquerading as holes.
+    min_component_triangles: 30
+    # Every interior boundary loop is closed with a patch assumed from
+    # its ring (colour interpolated; each component's largest loop is
+    # its frontier and stays open — unseen space is never invented).
+    # Loops wider than this radius (metres) are left open as a guard;
+    # P0 measured real interior holes at p50 0.073 m.
+    fill_max_hole_radius: 0.25
+    # Tint assumed patches magenta to inspect what was invented.
+    fill_debug_tint: false
+    # ~/save also writes a Poisson-closed live_<stamp>_closed.ply —
+    # watertight for downstream tools, frontier included (assumed
+    # geometry, blobby by nature). The honest PLY is always written.
+    save_watertight: true
+    # MESH-FIRST (world.yaml: 60000): the Marker budget, enforced by
+    # quadric decimation (never by dropping triangles — the old
+    # even-subsampling cap peppered the surface with pinholes). The
+    # saved PLY always keeps full detail.
     max_triangles: 120000
     # Per-frame depth scale alignment: each frame is scaled by the
     # median ratio against a TSDF ray-cast from its own pose — the fix
