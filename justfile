@@ -119,7 +119,7 @@ wifi:
 [group('status')]
 stragglers:
     #!/usr/bin/env bash
-    pat='usb_cam|static_transform_publisher|ros2 launch|ros2 bag|image_transport/republish|piros2_vision|piros2_perception|piros2_world|rgbd_odometry|rtabmap|cameracalibrator|rviz2|rqt_image_view'
+    pat='usb_cam|static_transform_publisher|ros2 launch|ros2 bag|image_transport/republish|piros2_vision|piros2_perception|piros2_world|rgbd_odometry|rtabmap|cameracalibrator|rviz2|rqt_image_view|tools/verify'
     echo "── dev box ──"
     pgrep -af "$pat" || echo "clean"
     echo "── pi ──"
@@ -343,7 +343,7 @@ world_mesh *args:
     ssh -tt -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 pi "bash -lc 'source /opt/ros/jazzy/setup.bash && source ~/piros2/install/setup.bash && ros2 launch piros2_camera camera.launch.py {{ args }}'" </dev/null &
     cam_pid=$!
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py {{ args }}' &
-    trap 'pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world_mesh/config" 2>/dev/null; ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
+    trap 'pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "rtabmap_[s]lam" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world_mesh/config" 2>/dev/null; ssh -o BatchMode=yes -o ConnectTimeout=5 pi "pkill -f \"ros2 [l]aunch piros2_camera\"; pkill -f usb_cam_[n]ode_exe; pkill -f \"[s]tatic_transform_publisher\"" 2>/dev/null; kill %1 2>/dev/null' EXIT
     # warm-up + health check — see `cloud` for the why
     for _ in $(seq 8); do
         kill -0 "$cam_pid" 2>/dev/null || { echo "camera failed to start on the Pi (see errors above) — is the Pi reachable (ping 192.168.2.17) and the C922 plugged in? Check with 'just camera'." >&2; exit 1; }
@@ -480,6 +480,306 @@ build:
 [group('build')]
 test *args:
     bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && colcon test {{ args }} && colcon test-result --verbose'
+
+# ---------------------------------------------------------------- verify
+#
+# Checking output without a person watching (docs/info/verification.md).
+# The RViz window is the last place to look: everything it draws is on
+# a topic, hand motions the plans wanted a human for are edits to a bag
+# we already have, and an X window can be dumped to a PNG when a picture
+# really is the evidence.
+
+# Grabs one message from every session image topic (JPEG bytes → files),
+# the scalar/geometry topics (keypoint counts, /points size, live-mesh
+# triangles, odom → base_link) and every X window titled rviz/rqt/Open3D
+# (xwd → ffmpeg → PNG; the Wayland root can't be dumped, windows can),
+# into captures/verify/<name>_<stamp>/ with a summary.txt. Missing
+# topics are reported, not fatal — `just orient` honestly has empty
+# slots. Open the PNG/JPGs to see what the session sees.
+# Snapshot a running session's windows + topics to captures/verify/ (no eyes needed)
+[group('verify')]
+snap name='snap':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    cd "{{ justfile_directory() }}"
+    out="captures/verify/{{ name }}_$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$out"
+    tools/verify/window_snap.sh "$out"
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && /usr/bin/python3 tools/verify/topic_snap.py '$out'"
+    echo "snapshot → $out"
+
+# The world_mesh session fed by a bag instead of the Pi: plays the bag
+# ONCE (looping teleports the odometry), runs world_mesh.launch.py
+# against it (the relay reads the bag's /image_raw/compressed) and opens
+# world_mesh.rviz. Same nodes, same topics, no camera, no Wi-Fi — the
+# hand sweep the plans wanted becomes `just run-bag bags/sweep3`, and
+# `just snap` / `just mesh-save` work against it. Args reach the launch
+# (odom:=kp, map_path:=…). Closing RViz stops everything.
+# Run the world_mesh session from a bag (default bags/sweep3), no Pi needed
+[group('verify')]
+run-bag bag='bags/sweep3' *args:
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    [ -d "{{ bag }}" ] || { echo "no bag at {{ bag }} — 'just record 45 <name>' makes one, 'just gate-bags' the gate bags" >&2; exit 1; }
+    bash -lc 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py {{ args }}' &
+    trap 'pkill -f "ros2 bag [p]lay" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "rtabmap_[s]lam" 2>/dev/null; pkill -f "[r]viz2 -d src/piros2_world_mesh/config" 2>/dev/null' EXIT
+    # let the depth model load before frames arrive — the estimator logs
+    # its provider once the session is built
+    sleep 12
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play '{{ bag }}'" >/dev/null 2>&1 &
+    bash -lc 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && QT_QPA_PLATFORM=xcb rviz2 -d src/piros2_world_mesh/config/world_mesh.rviz'
+
+# Cuts a recorded sweep into the two relocalization gate bags
+# (tools/verify/make_gate_bag.py): gate_flick = A → noise → B → noise →
+# A' for kp mode, gate_occlude = A → noise → A' for rgbd mode, each with a
+# gate.json the check reads. A' repeats part of A, so the pipeline's own
+# poses during A are the reference for A'. Rebuild after re-recording.
+# Build bags/gate_flick + gate_occlude + gate_loop from a sweep bag (default bags/sweep3)
+[group('verify')]
+gate-bags src='bags/sweep3' *args:
+    bash -lc 'cd "{{ justfile_directory() }}" && source /opt/ros/jazzy/setup.bash && /usr/bin/python3 tools/verify/make_gate_bag.py flick "{{ src }}" bags/gate_flick --force {{ args }} && /usr/bin/python3 tools/verify/make_gate_bag.py occlude "{{ src }}" bags/gate_occlude --force {{ args }} && /usr/bin/python3 tools/verify/make_gate_bag.py loop "{{ src }}" bags/gate_loop --force'
+
+# Headless: launches world_mesh.launch.py in the gate's odom mode with
+# its output logged, starts the checker (records /tf and the frames),
+# plays the gate bag once, and exits with the checker's verdict — PASS
+# when A' comes back within gate.json's thresholds of A *and* the launch
+# log carries the expected lines (tracking lost → relocalized → snapping
+# odometry). Report, poses.csv and poses.png land in
+# captures/verify/gate_<which>_<stamp>/ — the png is the picture to read
+# instead of watching RViz. `just gate occlude`; `just gate flick`.
+# Run a relocalization gate end-to-end with no human: exit 0 = PASS
+[group('verify')]
+gate which='flick' bag='':
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    bag="{{ bag }}"; bag="${bag:-bags/gate_{{ which }}}"
+    [ -f "$bag/gate.json" ] || { echo "no $bag/gate.json — run 'just gate-bags' first" >&2; exit 1; }
+    odom=$(/usr/bin/python3 -c "import json; print(json.load(open('$bag/gate.json'))['odom'])")
+    out="captures/verify/gate_{{ which }}_$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$out"
+    echo "gate {{ which }}: $bag under odom:=$odom → $out"
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py odom:=$odom" > "$out/launch.log" 2>&1 &
+    trap 'pkill -f "ros2 bag [p]lay" 2>/dev/null; pkill -f "tools/verify/[g]ate_check.py" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "rtabmap_[s]lam" 2>/dev/null; for _ in $(seq 10); do pgrep -f "piros2_world_mesh.[t]sdf_mesher|[c]loud_projector|piros2_perception.[d]epth_estimator" >/dev/null || break; sleep 1; done' EXIT
+    # wait for the depth model to load (the estimator logs its provider),
+    # so the bag's first frames are not lost to warm-up
+    for _ in $(seq 60); do grep -q "inference provider" "$out/launch.log" && break; sleep 1; done
+    grep -q "inference provider" "$out/launch.log" || { echo "pipeline did not come up in 60 s — see $out/launch.log" >&2; exit 2; }
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && /usr/bin/python3 tools/verify/gate_check.py '$bag' --out '$out' --log '$out/launch.log'" &
+    check_pid=$!
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play '$bag'" >/dev/null 2>&1 &
+    wait "$check_pid"
+
+# The SLAM plan's loop gate (P0). bags/gate_loop is a sweep played out
+# and then back (`just gate-bags` builds it: make_gate_bag.py loop), so
+# every return-leg frame's reference is its own outbound pose. Runs the
+# world_mesh session headless in rgbd mode with the chosen backend
+# (`slam`: rtabmap = RTAB-Map's SLAM node as the yardstick, off = odometry
+# alone — expect FAIL, that is the point), records odom → base_link,
+# map → odom and the optimised path (traj_record.py), then scores
+# BACK-vs-OUT drift for the raw and the corrected trajectory
+# (traj_check.py loop): PASS when the correction closes the loop tighter
+# than the odometry. Report + poses.png in captures/verify/gate_loop_<stamp>/.
+# Run the loop-closure gate headless: exit 0 = correction beat odometry
+[group('verify')]
+gate-loop slam='rtabmap' bag='bags/gate_loop' *args:
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    [ -f "{{ bag }}/gate.json" ] || { echo "no {{ bag }}/gate.json — run 'just gate-bags' first (it builds bags/gate_loop too)" >&2; exit 1; }
+    out="captures/verify/gate_loop_$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$out"
+    echo "gate loop: {{ bag }} under odom:=rgbd slam:={{ slam }} → $out"
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py odom:=rgbd slam:={{ slam }} {{ args }}" > "$out/launch.log" 2>&1 &
+    trap 'pkill -f "ros2 bag [p]lay" 2>/dev/null; pkill -f "tools/verify/[t]raj_record.py" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "rtabmap_[s]lam" 2>/dev/null; for _ in $(seq 10); do pgrep -f "piros2_world_mesh.[t]sdf_mesher|[c]loud_projector|piros2_perception.[d]epth_estimator|rtabmap_[s]lam" >/dev/null || break; sleep 1; done' EXIT
+    for _ in $(seq 60); do grep -q "inference provider" "$out/launch.log" && break; sleep 1; done
+    grep -q "inference provider" "$out/launch.log" || { echo "pipeline did not come up in 60 s — see $out/launch.log" >&2; exit 2; }
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && /usr/bin/python3 tools/verify/traj_record.py --out '$out' --path /world/trajectory" &
+    rec_pid=$!
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play '{{ bag }}'" >/dev/null 2>&1 &
+    wait "$rec_pid"
+    if [ "{{ slam }}" = "rtabmap" ]; then
+        # RTAB-Map's optimised graph lives in its DB (its /mapPath poses
+        # carry no stamps); flush it by stopping the node, then dump the
+        # per-node odometry + optimised poses (TUM form + id) beside the
+        # recording as graph_rtabmap_{odom,slam}.txt — traj_check lifts
+        # them onto the dense odometry.
+        pkill -f "rtabmap_[s]lam" 2>/dev/null; sleep 3
+        (cd "$out" && bash -lc "source /opt/ros/jazzy/setup.bash && rtabmap-report --poses_raw ~/.ros/rtabmap.db" 2>/dev/null | grep -E "loops=|RMSE" | tail -1 || true)
+        mv ~/.ros/rtabmap_odom.txt "$out/graph_rtabmap_odom.txt" 2>/dev/null
+        mv ~/.ros/rtabmap_slam.txt "$out/graph_rtabmap_slam.txt" 2>/dev/null
+    fi
+    grep -iE "loop closure" "$out/launch.log" | tail -3 || true
+    bash -lc "source /opt/ros/jazzy/setup.bash && /usr/bin/python3 tools/verify/traj_check.py loop '{{ bag }}' '$out'"
+
+# The SLAM plan's ground-truth gate (P0). tools/verify/tum_player.py
+# plays a TUM RGB-D sequence (`just fetch-tum`; fr1/desk by default) into
+# the session as camera + depth — real depth, real mocap truth — with the
+# estimator out (depth_source:=external), records the trajectories and
+# scores ATE against groundtruth.txt (traj_check.py ate: stamp-associated,
+# Umeyama SE(3)-aligned RMSE). With slam=rtabmap the optimised graph is
+# lifted onto the odometry and scored too — PASS when it beats the raw
+# odometry; slam=off just reports the odometry's ATE. Report + PNGs in
+# captures/verify/gate_tum_<stamp>/. `just gate-tum` ; `just gate-tum off`.
+# Run the ATE gate on a TUM sequence headless: exit 0 = PASS
+[group('verify')]
+gate-tum slam='rtabmap' sequence='datasets/rgbd_dataset_freiburg1_desk' *args:
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    [ -f "{{ sequence }}/groundtruth.txt" ] || { echo "no {{ sequence }}/groundtruth.txt — 'just fetch-tum' downloads fr1/desk" >&2; exit 1; }
+    out="captures/verify/gate_tum_$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$out"
+    echo "gate tum: {{ sequence }} under odom:=rgbd slam:={{ slam }} depth_source:=external → $out"
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py odom:=rgbd slam:={{ slam }} depth_source:=external {{ args }}" > "$out/launch.log" 2>&1 &
+    trap 'pkill -f "tools/verify/[t]um_player.py" 2>/dev/null; pkill -f "tools/verify/[t]raj_record.py" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "rtabmap_[s]lam" 2>/dev/null; for _ in $(seq 10); do pgrep -f "piros2_world_mesh.[t]sdf_mesher|[c]loud_projector|rtabmap_[s]lam" >/dev/null || break; sleep 1; done' EXIT
+    # no estimator to wait for: the odometry node logs its parameters once up
+    for _ in $(seq 40); do grep -q "rgbd_odometry\]" "$out/launch.log" && break; sleep 1; done
+    sleep 6
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && /usr/bin/python3 tools/verify/traj_record.py --out '$out' --path /world/trajectory --wait 120" &
+    rec_pid=$!
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && /usr/bin/python3 tools/verify/tum_player.py '{{ sequence }}'" > "$out/player.log" 2>&1 &
+    wait "$rec_pid"
+    tail -1 "$out/player.log"
+    if [ "{{ slam }}" = "rtabmap" ]; then
+        pkill -f "rtabmap_[s]lam" 2>/dev/null; sleep 3
+        (cd "$out" && bash -lc "source /opt/ros/jazzy/setup.bash && rtabmap-report --poses_raw ~/.ros/rtabmap.db" 2>/dev/null | grep -E "loops=" | tail -1 || true)
+        mv ~/.ros/rtabmap_odom.txt "$out/graph_rtabmap_odom.txt" 2>/dev/null
+        mv ~/.ros/rtabmap_slam.txt "$out/graph_rtabmap_slam.txt" 2>/dev/null
+    fi
+    bash -lc "source /opt/ros/jazzy/setup.bash && /usr/bin/python3 tools/verify/traj_check.py ate '$out/odom.txt' '{{ sequence }}/groundtruth.txt' --out '$out'"
+    odom_rc=$?
+    if [ "{{ slam }}" = "off" ]; then exit $odom_rc; fi
+    corrected="$out/path_world_trajectory.txt"; lift=""
+    if [ ! -s "$corrected" ] || [ "$(grep -vc '^#' "$corrected")" -lt 2 ]; then corrected="$out/graph_rtabmap_slam.txt"; lift="--lift $out/odom.txt"; fi
+    [ -s "$corrected" ] || { echo "=== gate tum: FAIL — no corrected trajectory (no closure, no path)"; exit 1; }
+    bash -lc "source /opt/ros/jazzy/setup.bash && /usr/bin/python3 tools/verify/traj_check.py ate '$corrected' '{{ sequence }}/groundtruth.txt' $lift --out '$out'"
+    raw=$(/usr/bin/python3 -c "import json;print(json.load(open('$out/ate_odom.json'))['rmse_m'])")
+    cor=$(/usr/bin/python3 -c "import json,glob;f=[x for x in glob.glob('$out/ate_*.json') if not x.endswith('ate_odom.json')][0];print(json.load(open(f))['rmse_m'])")
+    /usr/bin/python3 -c "import sys;raw,cor=$raw,$cor;print(f'=== gate tum: {\"PASS\" if cor<raw else \"FAIL\"} — ATE RMSE odometry {raw:.3f} m → corrected {cor:.3f} m ===');sys.exit(0 if cor<raw else 1)"
+
+# The SLAM plan's map-correction gate (P3). Runs the loop bag headless
+# under the fork's own backend with the mesher remembering its frames,
+# saves the surface (~/save → PLY + live_<stamp>_frames.npz), renders it
+# (mesh-views) and scores it (tools/verify/mesh_split.py): the bag's OUT
+# and BACK halves re-integrated into separate volumes at the raw
+# odometry poses and again at the graph-corrected poses the rebuild
+# applied — PASS when the corrected halves coincide more closely
+# (nearest-neighbour gap between the two surfaces). A doubled wall,
+# measured, without needing a wall (the plane RANSAC in mesh_planes.py
+# is printed too but this close-range scene defeats it). Report in
+# captures/verify/gate_mesh_<stamp>/.
+# Run the map-correction gate headless: exit 0 = corrected surfaces coincide better
+[group('verify')]
+gate-mesh bag='bags/gate_loop':
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    [ -d "{{ bag }}" ] || { echo "no bag at {{ bag }}" >&2; exit 1; }
+    out="captures/verify/gate_mesh_$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$out"
+    trap 'pkill -f "ros2 bag [p]lay" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; pkill -f "rtabmap_[s]lam" 2>/dev/null; for _ in $(seq 15); do pgrep -f "piros2_world_mesh.[t]sdf_mesher|[c]loud_projector|piros2_perception.[d]epth_estimator|rgbd_[o]dometry" >/dev/null || break; sleep 1; done' EXIT
+    echo "gate mesh: {{ bag }} under odom:=rgbd slam:=own → $out"
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py odom:=rgbd slam:=own mesh_watertight:=false mesh_save_frames:=true" > "$out/launch.log" 2>&1 &
+    for _ in $(seq 60); do grep -q "inference provider" "$out/launch.log" && break; sleep 1; done
+    grep -q "inference provider" "$out/launch.log" || { echo "pipeline did not come up — see $out/launch.log" >&2; exit 2; }
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play '{{ bag }}'" >/dev/null 2>&1
+    sleep 15   # last pairs, last optimisation, a rebuild if one is due
+    reply=$(bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 service call /tsdf_mesher/save std_srvs/srv/Trigger" 2>/dev/null)
+    mesh=$(echo "$reply" | grep -o "meshes/live_[0-9-]*\.ply" | head -1)
+    frames=$(echo "$reply" | grep -o "meshes/live_[0-9-]*_frames\.npz" | head -1)
+    [ -n "$mesh" ] && [ -n "$frames" ] || { echo "save returned no mesh/frames path — see $out/launch.log" >&2; exit 2; }
+    cp "$mesh" "$out/mesh.ply"; cp "$frames" "$out/frames.npz"
+    echo "  saved $mesh + $frames ($(grep -c 'rebuilt TSDF' "$out/launch.log") rebuilds, $(grep -c 'loop closure' "$out/launch.log") loop closures)"
+    grep -E "rebuilt TSDF" "$out/launch.log" | sed -E 's/.*\[tsdf_mesher\]: //' | tail -3
+    ~/.venvs/piros2-perception/bin/python tools/verify/render_mesh.py "$out/mesh.ply" "$out/views" 2>/dev/null >/dev/null && echo "  views: $out/views/sheet.png"
+    ~/.venvs/piros2-perception/bin/python tools/verify/mesh_planes.py "$out/mesh.ply" 2> >(grep -v -E "^\[Open3D" >&2) || true
+    ~/.venvs/piros2-perception/bin/python tools/verify/mesh_split.py "$out/frames.npz" --out "$out" 2> >(grep -v -E "^\[Open3D" >&2)
+
+# Wall-flatness numbers for a saved mesh (tools/verify/mesh_planes.py):
+# RANSAC dominant planes, inlier fraction, thickness (rms / p95 of
+# vertex distance within a band). `--compare other.ply` prints the paired
+# verdict the P3 gate uses.
+# Measure wall flatness of a saved mesh (default: newest in meshes/)
+[group('verify')]
+mesh-planes mesh='' *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    mesh="{{ mesh }}"
+    [ -n "$mesh" ] || mesh=$(ls -t meshes/*.ply | head -1)
+    ~/.venvs/piros2-perception/bin/python tools/verify/mesh_planes.py "$mesh" {{ args }} 2> >(grep -v -E "^\[Open3D" >&2)
+
+# The SLAM plan's persistence gate (P4). Session one: the loop bag
+# headless under the fork's own backend, then ~/save_map (keyframes +
+# pose graph → maps/room_<stamp>.npz). Session two: the same bag with
+# map_path:=<that file> — it must relocalize against the loaded room
+# before trusting any pose (cold start, relocalization plan P3), close
+# loops against *loaded* keyframes (kf ids below the loaded count) and
+# still beat its own odometry on the loop gate (traj_check.py loop).
+# PASS = all three. Report in captures/verify/gate_map_<stamp>/.
+# Run the map-persistence gate headless: exit 0 = PASS
+[group('verify')]
+gate-map bag='bags/gate_loop':
+    #!/usr/bin/env bash
+    cd "{{ justfile_directory() }}"
+    [ -f "{{ bag }}/gate.json" ] || { echo "no {{ bag }}/gate.json — run 'just gate-bags'" >&2; exit 1; }
+    out="captures/verify/gate_map_$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$out"
+    kill_session() { pkill -f "ros2 bag [p]lay" 2>/dev/null; pkill -f "tools/verify/[t]raj_record.py" 2>/dev/null; pkill -f "ros2 [l]aunch piros2_world_mesh" 2>/dev/null; pkill -f "piros2_perception.[d]epth_estimator" 2>/dev/null; pkill -f "piros2_world_mesh/[k]eypoint_detector" 2>/dev/null; pkill -f "piros2_world_mesh/[d]ashboard" 2>/dev/null; pkill -f "piros2_world_mesh/[c]amera_relay" 2>/dev/null; pkill -f "[c]loud_projector" 2>/dev/null; pkill -f "piros2_world_mesh.[t]sdf_mesher" 2>/dev/null; pkill -f "rgbd_[o]dometry" 2>/dev/null; for _ in $(seq 15); do pgrep -f "piros2_world_mesh.[t]sdf_mesher|[c]loud_projector|piros2_perception.[d]epth_estimator|rgbd_[o]dometry" >/dev/null || break; sleep 1; done; }
+    trap kill_session EXIT
+    echo "gate map, session 1: {{ bag }} under slam:=own → save_map"
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py odom:=rgbd slam:=own mesh_watertight:=false" > "$out/launch_1.log" 2>&1 &
+    for _ in $(seq 60); do grep -q "inference provider" "$out/launch_1.log" && break; sleep 1; done
+    grep -q "inference provider" "$out/launch_1.log" || { echo "pipeline did not come up — see $out/launch_1.log" >&2; exit 2; }
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play '{{ bag }}'" >/dev/null 2>&1
+    sleep 6
+    map=$(bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 service call /keypoint_detector/save_map std_srvs/srv/Trigger" 2>/dev/null | grep -o "maps/room_[0-9-]*\.npz" | head -1)
+    [ -n "$map" ] || { echo "save_map returned no path — see $out/launch_1.log" >&2; exit 2; }
+    cp "$map" "$out/room.npz"
+    echo "  saved $map ($(grep -c 'loop closure' "$out/launch_1.log") loop closures in session 1)"
+    kill_session; sleep 2
+    echo "gate map, session 2: same bag with map_path:=$map"
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && PYTHONUNBUFFERED=1 ros2 launch piros2_world_mesh world_mesh.launch.py odom:=rgbd slam:=own mesh_watertight:=false map_path:=$map" > "$out/launch_2.log" 2>&1 &
+    for _ in $(seq 60); do grep -q "inference provider" "$out/launch_2.log" && break; sleep 1; done
+    grep -q "inference provider" "$out/launch_2.log" || { echo "pipeline did not come up — see $out/launch_2.log" >&2; exit 2; }
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && source install/setup.bash && /usr/bin/python3 tools/verify/traj_record.py --out '$out' --path /world/trajectory" &
+    rec_pid=$!
+    sleep 3
+    bash -lc "source /opt/ros/jazzy/setup.bash && ros2 bag play '{{ bag }}'" >/dev/null 2>&1 &
+    wait "$rec_pid"
+    kill_session
+    loaded=$(grep -oE "loaded [0-9]+ keyframes" "$out/launch_2.log" | grep -oE "[0-9]+" | head -1)
+    reloc=$(grep -c "relocalized against keyframe" "$out/launch_2.log")
+    old_loops=$(grep -oE "loop closure kf [0-9]+ -> kf [0-9]+" "$out/launch_2.log" | awk -v n="${loaded:-0}" '{if ($6+0 < n) c++} END {print c+0}')
+    echo "  session 2: loaded ${loaded:-0} keyframes, $reloc relocalizations, $old_loops loop closures against loaded keyframes"
+    bash -lc "source /opt/ros/jazzy/setup.bash && /usr/bin/python3 tools/verify/traj_check.py loop '{{ bag }}' '$out'"; loop_rc=$?
+    ok=1; [ "${loaded:-0}" -gt 0 ] && [ "$reloc" -gt 0 ] && [ "$old_loops" -gt 0 ] && [ "$loop_rc" -eq 0 ] && ok=0
+    echo "=== gate map: $([ $ok -eq 0 ] && echo PASS || echo FAIL) — loaded ${loaded:-0}, relocalized $reloc, loops-vs-loaded $old_loops, loop gate rc $loop_rc ==="
+    exit $ok
+
+# Deterministic renders of a saved mesh — from the camera's start pose,
+# straight down (walls as lines: doubling and drift show here), and an
+# oblique — via Open3D's offscreen renderer under the perception venv,
+# into captures/verify/mesh_<name>/ with a labelled sheet.png. The
+# picture `just view-mesh` would need a person to rotate into.
+# Render a saved mesh from fixed viewpoints to PNGs (default: newest in meshes/)
+[group('verify')]
+mesh-views mesh='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    mesh="{{ mesh }}"
+    if [ -z "$mesh" ]; then
+        mesh=$(ls -t meshes/*.ply | head -1)
+        echo "rendering newest: $mesh"
+    fi
+    out="captures/verify/mesh_$(basename "$mesh" .ply)"
+    ~/.venvs/piros2-perception/bin/python tools/verify/render_mesh.py "$mesh" "$out" 2> >(grep -v -E "^\[Open3D|EGL|FEngine|CircularBuffer|pci id|threading" >&2)
 
 # ---------------------------------------------------------------- recon
 

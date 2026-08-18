@@ -111,6 +111,20 @@ estimator paces the pipeline and feeds the odometry a stamp-identical
 raw twin; the point cloud arrives in RViz already posed in the world)
 while the frozen classic session was never touched.
 
+**Towards SLAM** ([slam-plan.md](docs/plans/in-progress/slam-plan.md),
+**in progress, most of it built 2026-08-18**): the fork gained the
+backend the honest scope line always said it lacked — always-on loop
+detection from its own keyframe store (PnP-verified, on exact-sync
+geometry), a hand-written SE(3) pose-graph optimiser (checked against
+the installed `g2o`) publishing `map → odom` and the optimised
+trajectory, and a TSDF that rebuilds from its frame memory when the
+graph moves. Measured on replays against RTAB-Map as the yardstick:
+loop gap 6.1 cm / 1.9° → 2.3 cm / 0.85° (RTAB-Map 0.7–1.4 cm /
+0.6–1.6°), TUM fr1/desk ATE 0.163 → 0.089 m (RTAB-Map 0.096 m). The
+scope line below has *not* been rewritten yet: the persistence gate
+and a credible map-correction metric are still open, and the claim
+flips when they close.
+
 Reliability groundwork
 ([wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md),
 **done 2026-08-12** after the Pi's Wi-Fi died twice while the OS ran on):
@@ -144,6 +158,7 @@ status.
 | [networking.md](docs/info/networking.md) | DDS discovery across the LAN, domain IDs, and the Docker-bridge gotcha |
 | [camera.md](docs/info/camera.md) | Driver choice, capture modes, image transport, calibration |
 | [troubleshooting.md](docs/info/troubleshooting.md) | Symptoms → causes for the failures you are most likely to hit |
+| [verification.md](docs/info/verification.md) | Checking output without a person: `just snap`, `just run-bag`, gate bags + `just gate`, `just mesh-views` — how the human gates became scripted ones (2026-08-18) |
 | [just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — dataflow, deployment, TF tree, lifecycle — plus topic/service/cost reference tables (open in a browser; mermaid renders via CDN; redrawn 2026-08-16 for the transport rework) |
 | [roadmap.md](docs/info/roadmap.md) | The learning path, milestone by milestone — concluded 2026-07-27 |
 | [perception.md](docs/info/perception.md) | Perception design: camera → depth → point-cloud room map |
@@ -155,9 +170,8 @@ status.
 | [world-mesh-plan.md](docs/plans/completed/world-mesh-plan.md) | `piros2_world_mesh` (`just world_mesh`, aliased `just dev` and `just run`): the world stack forked into its own package and diverged mesh-first — 6-DoF odometry by default, quality-biased TSDF, a saved PLY at the end — built 2026-08-12, closed by decision 2026-08-15, kept as the build log |
 | [wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link: escalation-ladder watchdog, outage-reaped camera sessions, `just wifi` — done 2026-08-12, kept as the build log |
 | [world-mesh-diagrams-plan.md](docs/plans/completed/world-mesh-diagrams-plan.md) | Redraw the `just world_mesh` diagrams page for the 2026-08-16 transport rework — done 2026-08-16, kept as the build log |
-| [mesh-completion-plan.md](docs/plans/in-progress/mesh-completion-plan.md) | Fill the live mesh's interior holes from surrounding detail (decimation instead of the sieve cap, per-component boundary-loop fill, Poisson-closed export tier) — built and live-verified 2026-08-18; the hand-sweep gate is the one open box |
-| [relocalization-plan.md](docs/plans/in-progress/relocalization-plan.md) | Store the room's keypoints so a camera that flicks away and back recovers its pose — keyframe store, absolute-pose recovery for both odometry modes, saved room maps that survive sessions, an RViz keyframe view — all built and live-verified 2026-08-18; the two hand-motion gates stay open |
-| [relocalization-plan.md](docs/plans/in-progress/relocalization-plan.md) | Store the room's keypoints so a camera that flicks away and back recovers its pose — keyframe store, absolute-pose recovery for both odometry modes, saved room maps — P0–P2 built and live-verified 2026-08-18 (hand-motion gates open), P3–P4 open |
+| [mesh-completion-plan.md](docs/plans/completed/mesh-completion-plan.md) | Fill the live mesh's interior holes from surrounding detail (decimation instead of the sieve cap, per-component boundary-loop fill, Poisson-closed export tier) — built and live-verified 2026-08-18; the hand-sweep gate ran by replay the same evening |
+| [relocalization-plan.md](docs/plans/completed/relocalization-plan.md) | Store the room's keypoints so a camera that flicks away and back recovers its pose — keyframe store, absolute-pose recovery for both odometry modes, saved room maps that survive sessions, an RViz keyframe view — built 2026-08-18; the two "hand-motion" gates closed the same evening as replayable gate bags (`just gate flick` / `just gate occlude`), which also found and fixed a blackout-isn't-loss bug |
 | [ansible-plan.md](docs/plans/completed/ansible-plan.md) | Build order for the `ansible/` tree — completed, kept as the build log |
 
 ## Why this shape

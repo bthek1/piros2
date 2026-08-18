@@ -506,6 +506,30 @@ def test_lost_tracking_arms_relocalization(node):
     assert node.needs_relocalization
 
 
+def test_blackout_after_tracking_counts_as_lost(node):
+    # A featureless view (lens covered, black frames) yields no
+    # descriptors: could_estimate is False, yet it is a loss if we were
+    # tracking before — the black-fill gate bag proved the counter
+    # otherwise never moved and the pose came back wrong by 19°.
+    node.k_matrix = K_TEST
+    descriptors, pixels, _ = synthetic_view(np.eye(3))
+    node.track_room_memory(rotation_ok=True, could_estimate=True,
+                           points=pixels, descriptors=descriptors)
+    for _ in range(node.get_parameter('relocalize_after').value):
+        node.track_room_memory(rotation_ok=False, could_estimate=False,
+                               points=np.zeros((0, 2)), descriptors=None)
+    assert node.needs_relocalization
+
+
+def test_blackout_before_any_tracking_is_not_a_loss(node):
+    # Startup in the dark is "nothing to track yet", not a loss.
+    node.k_matrix = K_TEST
+    for _ in range(node.get_parameter('relocalize_after').value + 1):
+        node.track_room_memory(rotation_ok=False, could_estimate=False,
+                               points=np.zeros((0, 2)), descriptors=None)
+    assert not node.needs_relocalization
+
+
 def test_reset_clears_the_room_memory(node):
     node.k_matrix = K_TEST
     descriptors, pixels, _ = synthetic_view(np.eye(3))
@@ -572,3 +596,102 @@ def test_keyframe_marker_deletes_when_store_is_empty():
     marker = keyframe_marker([], TimeMsg())
     assert marker.action == marker.DELETE
     assert marker.points == []
+
+
+# ---------------------------------------------------------------- SLAM P1
+
+def test_pnp_recovers_a_known_camera_pose():
+    from piros2_world_mesh.keypoint_detector import pnp_pose
+    from piros2_world_mesh.se3 import invert as inv, make_transform as mk
+    rng = np.random.default_rng(5)
+    k = np.array([[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]])
+    # A cloud of landmarks 1-3 m ahead of a camera posed in "world".
+    r_wc = rotation_matrix(np.array([0.0, 1.0, 0.0]), np.radians(12.0))
+    t_wc = np.array([0.3, -0.1, 0.05])
+    t_world_cam = mk(r_wc, t_wc)
+    pts_cam = np.column_stack([rng.uniform(-1, 1, 80), rng.uniform(-0.7, 0.7, 80),
+                               rng.uniform(1.0, 3.0, 80)])
+    pts_world = pts_cam @ r_wc.T + t_wc
+    proj = pts_cam @ k.T
+    pixels = proj[:, :2] / proj[:, 2:3] + rng.normal(0, 0.3, (80, 2))
+    # A few wrong correspondences — RANSAC's job.
+    pixels[:6] = rng.uniform(0, 600, (6, 2))
+    result = pnp_pose(pts_world, pixels, k)
+    assert result is not None
+    pose, inliers = result
+    assert inliers >= 60
+    err = inv(t_world_cam) @ pose
+    assert np.linalg.norm(err[:3, 3]) < 0.01
+    assert np.degrees(np.arccos((np.trace(err[:3, :3]) - 1) / 2)) < 0.3
+
+
+def test_pnp_refuses_thin_input():
+    from piros2_world_mesh.keypoint_detector import pnp_pose
+    k = np.array([[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]])
+    assert pnp_pose(np.zeros((3, 3)), np.zeros((3, 2)), k) is None
+
+
+def test_graph_marker_colours_loop_edges():
+    from builtin_interfaces.msg import Time as TimeMsg
+    from piros2_world_mesh.keypoint_detector import graph_marker
+    from piros2_world_mesh.pose_graph import PoseGraph
+    graph = PoseGraph()
+    for x in range(4):
+        pose = np.eye(4)
+        pose[0, 3] = float(x)
+        graph.add_node(pose)
+    for i in range(3):
+        graph.add_odometry_edge(i, i + 1)
+    graph.add_edge(3, 0, np.eye(4), kind='loop')
+    marker = graph_marker(graph.poses, graph.edges, TimeMsg(), 'map')
+    assert marker.header.frame_id == 'map'
+    assert len(marker.points) == 8 and len(marker.colors) == 8
+    # Odom edges grey, the loop edge magenta (last two vertices).
+    assert marker.colors[0].r == marker.colors[0].g == marker.colors[0].b
+    assert marker.colors[-1].r == 1.0 and marker.colors[-1].g < 0.5
+    empty = graph_marker([], [], TimeMsg(), 'map')
+    assert empty.action == empty.DELETE
+
+
+# ---------------------------------------------------------------- SLAM P4
+
+def test_save_map_carries_the_graph_and_load_restores_it(node, tmp_path):
+    from piros2_world_mesh.pose_graph import information_matrix
+    # Two keyframes with a graph: two nodes, an odom edge, a loop edge,
+    # a non-identity correction.
+    rng = np.random.default_rng(1)
+    node.store.maybe_add(rng.integers(0, 256, (40, 32), dtype=np.uint8),
+                         np.array([0.0, 0.0, 1.0]))
+    node.store.maybe_add(rng.integers(0, 256, (40, 32), dtype=np.uint8),
+                         np.array([0.0, 1.0, 0.0]))
+    p0, p1 = np.eye(4), np.eye(4)
+    p1[0, 3] = 0.5
+    node.graph.add_node(p0)
+    node.graph.add_node(p1)
+    node.node_odom = [np.eye(4), p1 @ np.diag([1.0, 1.0, 1.0, 1.0])]
+    node.node_stamp = [12.5, 13.5]
+    node.node_wall = [0.0, 1.0]
+    node.graph.add_odometry_edge(0, 1, information_matrix(0.02, 0.02))
+    node.graph.add_edge(1, 0, np.eye(4), information_matrix(0.03, 0.03),
+                        kind='loop')
+    node.loop_edges = [(1, 0)]
+    node.map_odom = np.eye(4)
+    node.map_odom[1, 3] = 0.07
+    node.store.keyframes[0].node_id = 0
+    node.store.keyframes[1].node_id = 1
+    path = tmp_path / 'room.npz'
+    node.save_map(str(path))
+
+    node.graph = type(node.graph)()
+    node.node_odom, node.node_stamp = [], []
+    node.map_odom = np.eye(4)
+    node.load_map(str(path))
+    assert len(node.store) == 2 and len(node.graph) == 2
+    assert [kf.node_id for kf in node.store.keyframes] == [0, 1]
+    assert np.allclose(node.graph.poses[1], p1)
+    assert node.node_stamp == [12.5, 13.5]
+    assert len(node.graph.edges) == 2
+    assert node.graph.edges[1].kind == 'loop' and node.loop_edges == [(1, 0)]
+    assert np.isclose(node.map_odom[1, 3], 0.07)
+    # Loaded nodes are eligible for loop queries straight away.
+    assert node.node_wall == [0.0, 0.0]

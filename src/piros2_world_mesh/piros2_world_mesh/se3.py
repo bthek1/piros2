@@ -157,3 +157,96 @@ def rigid_transform_3d(src_points, dst_points, min_pairs=8,
     if len(src) < min_pairs or float(residuals.mean()) > max_residual_m:
         return None
     return rot, t
+
+
+# ----------------------------------------------------------------------
+# Lie group / algebra (SLAM plan P2): the pose-graph optimiser lives on
+# the manifold. A rigid motion has 6 degrees of freedom but 12 numbers
+# in its 4x4 form; the twist (rho, phi) — 3 of translation-ish, 3 of
+# rotation — is the minimal local coordinate, and exp/log convert
+# between "a small motion as 6 numbers" and "a transform". Optimising in
+# twist space is what lets a Gauss-Newton step be an ordinary 6-vector
+# and the update T <- T @ exp(delta) stay a valid rotation for free.
+# Twist order [rho, phi] = [translation, rotation], the g2o/Sophus
+# convention.
+
+def hat(phi):
+    """Return the skew-symmetric matrix of a 3-vector (so it acts as a cross product)."""
+    x, y, z = phi
+    return np.array([[0.0, -z, y],
+                     [z, 0.0, -x],
+                     [-y, x, 0.0]])
+
+
+def so3_exp(phi):
+    """Rotation vector (axis * angle) -> rotation matrix (Rodrigues)."""
+    phi = np.asarray(phi, dtype=np.float64)
+    angle = np.linalg.norm(phi)
+    k = hat(phi)
+    if angle < 1e-9:
+        return np.eye(3) + k
+    return (np.eye(3) + np.sin(angle) / angle * k
+            + (1.0 - np.cos(angle)) / angle ** 2 * (k @ k))
+
+
+def so3_log(rotation):
+    """Rotation matrix -> rotation vector; so3_exp inverted."""
+    r = np.asarray(rotation, dtype=np.float64)
+    cos = np.clip((np.trace(r) - 1.0) / 2.0, -1.0, 1.0)
+    angle = np.arccos(cos)
+    if angle < 1e-9:
+        return np.array([r[2, 1] - r[1, 2], r[0, 2] - r[2, 0],
+                         r[1, 0] - r[0, 1]]) / 2.0
+    if np.pi - angle < 1e-6:
+        # Near pi the sine formula degenerates; read the axis off the
+        # symmetric part instead.
+        sym = (r + np.eye(3)) / 2.0
+        axis = np.sqrt(np.clip(np.diag(sym), 0.0, None))
+        # Fix signs from the off-diagonals.
+        i = int(np.argmax(axis))
+        for j in range(3):
+            if j != i and axis[j] > 0 and sym[i, j] < 0:
+                axis[j] = -axis[j]
+        return axis / np.linalg.norm(axis) * angle
+    return angle / (2.0 * np.sin(angle)) * np.array(
+        [r[2, 1] - r[1, 2], r[0, 2] - r[2, 0], r[1, 0] - r[0, 1]])
+
+
+def _left_jacobian_so3(phi):
+    angle = np.linalg.norm(phi)
+    k = hat(phi)
+    if angle < 1e-9:
+        return np.eye(3) + 0.5 * k
+    return (np.eye(3) + (1.0 - np.cos(angle)) / angle ** 2 * k
+            + (angle - np.sin(angle)) / angle ** 3 * (k @ k))
+
+
+def se3_exp(twist):
+    """Twist [rho, phi] -> 4x4 transform."""
+    twist = np.asarray(twist, dtype=np.float64)
+    rho, phi = twist[:3], twist[3:]
+    return make_transform(so3_exp(phi), _left_jacobian_so3(phi) @ rho)
+
+
+def se3_log(t_mat):
+    """4x4 transform -> twist [rho, phi]; se3_exp inverted."""
+    phi = so3_log(t_mat[:3, :3])
+    rho = np.linalg.solve(_left_jacobian_so3(phi), t_mat[:3, 3])
+    return np.concatenate([rho, phi])
+
+
+def adjoint(t_mat):
+    """
+    Return the adjoint of T, which moves a twist between frames: Ad(T) @ xi.
+
+    T @ exp(xi) == exp(Ad(T) @ xi) @ T — the identity that lets a
+    perturbation applied on one side of a transform be expressed on the
+    other, which is exactly what the pose-graph Jacobians need.
+    """
+    r = t_mat[:3, :3]
+    t = t_mat[:3, 3]
+    ad = np.zeros((6, 6))
+    ad[:3, :3] = r
+    ad[3:, 3:] = r
+    ad[:3, 3:] = hat(t) @ r
+    return ad

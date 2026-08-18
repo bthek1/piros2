@@ -718,3 +718,104 @@ the camera for 37 minutes on 2026-08-15 while a second session ran
 unknowingly on the leak's frames; the abort above was the only clue).
 If a launch reports `camera is already in use`, believe it — run
 `just stragglers`.
+
+## `xwd -root` fails with `BadMatch`; a Qt window can still be dumped
+
+Symptom: trying to screenshot the desktop for a check gives
+`X Error of failed request: BadMatch (X_GetImage)` and an empty file.
+
+The dev-box session is Wayland; the X server is rootless Xwayland, whose
+root window has no backing pixmap. Individual X windows do — rviz2 and
+rqt (the `QT_QPA_PLATFORM=xcb` pin) and Open3D's viewer
+(`XDG_SESSION_TYPE=x11`) all are — so dump them by id:
+`xwininfo -root -tree` for the id, `xwd -id <id> | ffmpeg -i - out.png`
+(no ImageMagick here; ffmpeg decodes XWD). `just snap` does exactly this
+for every rviz/rqt/`.ply` window and writes the topics alongside —
+[verification.md](verification.md). A minimised or covered window dumps
+whatever the server holds, possibly stale.
+
+## A shell dies with exit code 144 the moment a session recipe ends
+
+Symptom: a command that ran `just world_mesh` / `just gate` / `just
+run-bag` and then something else never reaches the something else;
+the shell reports exit code 144 (killed — the number is what the
+harness prints for a signalled shell, not a bash status).
+
+The recipe's EXIT trap runs `pkill -f` on node patterns such as
+`piros2_world_mesh/[k]eypoint_detector`; if the *calling* shell's own
+command line contains that text — a source path like
+`src/piros2_world_mesh/piros2_world_mesh/keypoint_detector.py`, or a
+`pkill -f rqt_graph` alongside a recipe that mentions rqt — the trap
+matches the shell and kills it. Keep node paths and pkill patterns off
+the command line that runs a session recipe (bracket-escape them:
+`[k]eypoint_detector`), or run them as separate commands.
+
+## rviz2 survives the first `pkill`
+
+Symptom: `pkill -f "[r]viz2 -d …"` reports the kill (with `-e`), the
+process is still there seconds later; a second `pkill` ends it.
+
+Observed 2026-08-18 while scripting session closes; the cause was not
+chased (rviz2's own SIGTERM handling appears to swallow the first
+signal while the render thread is busy). Session recipes are unaffected
+— they end when the window closes, and their traps kill nodes, not
+RViz. A scripted close should send the signal, pause, send it again if
+`pgrep` still finds it, and confirm with `just stragglers`.
+
+## Loop closures disagree with each other by degrees; keyframe landmarks look misplaced
+
+**Symptom.** In rgbd mode the detector's loop closures against the same
+keyframe report drifts that differ by 0.2–0.5 m / tens of degrees
+within seconds of each other, with only 20–55 PnP/rigid-fit inliers.
+
+**Cause.** Landmark geometry was built from the *latest* `/depth` and
+the *latest* odom TF at the moment the RGB frame was processed — the
+relocalization plan's accepted latest-only rule. Depth lands ~80 ms and
+the odometry TF ~200 ms after the frame; at hand-pan speed (30°/s)
+that poses every stored keyframe a few degrees wrong, and two wrong
+keyframes disagree.
+
+**Fix (2026-08-18).** rgbd geometry runs on exact triples: the frame's
+own ORB output, its own `/depth` (same stamp), and TF looked up *at
+that stamp* — a small depth queue drained by a 10 Hz timer once the TF
+exists (`sync_min_delay_s`). Same bag afterwards: closures agree to
+±0.4° with 105–360 inliers. The latest-only rule still holds for the
+mapper/mesher/projector — they pose *now*; the store poses the *past*.
+
+## RTAB-Map's optimised poses "equal" its odometry after a loop closure
+
+**Symptom.** `rtabmap-report --poses_raw` gives `_odom.txt` and
+`_slam.txt`; lifting the per-node correction `slam ∘ odom⁻¹` onto the
+recorded `/tf` odometry shows no improvement even though `map → odom`
+clearly moved.
+
+**Cause.** The DB's odometry column is re-based whenever `rgbd_odometry`
+auto-resets ("Odometry automatically reset to latest computed pose" —
+RTAB-Map starts a new map session), so it is not the TF you recorded;
+after a reset the two differ by a constant transform.
+
+**Fix.** Derive the correction from the recorded TF at the node stamp
+— `optimised ∘ tf_odom(t_k)⁻¹` — never from the DB odometry
+(`traj_check.py dense_from_graph`). Also: `/mapPath` poses share one
+stamp, so read the graph from the DB after stopping the node.
+
+## The live mesh stops growing after the first refresh
+
+**Symptom.** `tsdf_mesher` logs `N frames integrated` and the count
+barely moves after ~25 s; the surface never shows the second half of a
+bag; `refresh: … in 13000 ms`.
+
+**Cause.** At 1.5 cm voxels a close-range scene meshes to 0.7–1.6 M
+triangles; the completion pass (~6.5 s) plus quadric decimation to the
+120k marker budget (~5.6 s) ran inline on the single executor thread
+every 15 s, and the synced depth pairs (KEEP_LAST 1) were dropped
+while it ran.
+
+**Fix (2026-08-18).** Extraction stays on the executor thread; the
+rest (decimate first, then complete the budgeted mesh — ~1 s instead of
+6.5 — then build and publish the Marker) runs on a worker thread, and a
+refresh is skipped while the previous one is finishing. Integration
+keeps its cadence at ~160 ms/frame under contention. The saved PLY
+still completes at full detail; its Poisson-closed companion is minutes
+at that size — `mesh_watertight:=false` for headless runs.
+

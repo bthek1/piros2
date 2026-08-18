@@ -49,6 +49,21 @@ composed orientation; in rgbd mode it is delivered to the pose's owner
 via RTAB-Map's /reset_odom_to_pose. A wrong snap is worse than none, so
 recovery demands a match margin and a robust-fit gate before acting.
 
+SLAM (the SLAM plan, P1-P2): in rgbd mode the keyframes are also the
+nodes of a pose graph. Each stored keyframe becomes a node with an
+odometry edge to the previous one; every `loop_query_every` frames the
+current view is matched against the *older* keyframes (the recent ones
+excluded — matching your own last view is not a revisit) and a
+survivor of the rigid-fit inlier test becomes a *loop edge*. That is
+loop-closure detection while tracking is healthy, which the
+loss-triggered relocalization above never did. Each new loop edge runs
+the Gauss-Newton in pose_graph.py over the whole graph, and the
+correction — optimised newest node ∘ its odometry pose⁻¹ — is published
+as `map → odom` (REP-105: odom stays continuous, map absorbs the
+correction) with the optimised keyframe poses on /world/trajectory.
+That reach-back-and-fix-the-past step is what makes it SLAM rather than
+odometry plus a place memory.
+
 Runs on the dev box against the compressed stream already in flight; only
 JPEG ever crosses the Wi-Fi.
 """
@@ -60,8 +75,10 @@ import zlib
 
 import cv2
 from geometry_msgs.msg import Point, PoseStamped, TransformStamped
+from nav_msgs.msg import Path
 import numpy as np
 from piros2_world_mesh.keyframe_store import KeyframeStore
+from piros2_world_mesh.pose_graph import information_matrix, PoseGraph
 from piros2_world_mesh.se3 import (BASE_FROM_OPTICAL, euler_from_rotation,
                                    invert, make_transform,
                                    quaternion_from_rotation,
@@ -75,7 +92,7 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
-from std_msgs.msg import Int32
+from std_msgs.msg import ColorRGBA, Int32
 from std_srvs.srv import Trigger
 from tf2_ros import (Buffer, TransformBroadcaster, TransformException,
                      TransformListener)
@@ -135,6 +152,89 @@ def keyframe_marker(keyframes, stamp, frame_id='odom', axis_length=0.15):
         marker.points.append(Point(x=float(tip[0]), y=float(tip[1]),
                                    z=float(tip[2])))
     return marker
+
+
+def path_msg(poses, stamps, frame_id, header_stamp):
+    """nav_msgs/Path from 4x4 poses + per-pose stamps (float s or None)."""
+    path = Path()
+    path.header.stamp = header_stamp
+    path.header.frame_id = frame_id
+    for pose, stamp in zip(poses, stamps):
+        ps = PoseStamped()
+        if stamp is not None:
+            ps.header.stamp.sec = int(stamp)
+            ps.header.stamp.nanosec = int(round((stamp - int(stamp)) * 1e9))
+        ps.header.frame_id = frame_id
+        ps.pose.position.x = float(pose[0, 3])
+        ps.pose.position.y = float(pose[1, 3])
+        ps.pose.position.z = float(pose[2, 3])
+        qx, qy, qz, qw = quaternion_from_rotation(pose[:3, :3])
+        ps.pose.orientation.x = float(qx)
+        ps.pose.orientation.y = float(qy)
+        ps.pose.orientation.z = float(qz)
+        ps.pose.orientation.w = float(qw)
+        path.poses.append(ps)
+    return path
+
+
+def graph_marker(poses, edges, stamp, frame_id='map'):
+    """
+    LINE_LIST Marker of a pose graph: odom edges grey, loop edges magenta.
+
+    SLAM plan P1: the picture that shows *which* keyframes the detector
+    believes are the same place. Pure function, unit-testable.
+    """
+    marker = Marker()
+    marker.header.stamp = stamp
+    marker.header.frame_id = frame_id
+    marker.ns = 'keyframe_graph'
+    marker.id = 0
+    marker.type = Marker.LINE_LIST
+    marker.action = Marker.ADD if edges else Marker.DELETE
+    marker.pose.orientation.w = 1.0
+    marker.scale.x = 0.006
+    marker.color.a = 1.0
+    grey = ColorRGBA(r=0.6, g=0.6, b=0.6, a=0.8)
+    magenta = ColorRGBA(r=1.0, g=0.1, b=0.9, a=1.0)
+    for edge in edges:
+        if edge.i >= len(poses) or edge.j >= len(poses):
+            continue
+        for k in (edge.i, edge.j):
+            p = poses[k][:3, 3]
+            marker.points.append(Point(x=float(p[0]), y=float(p[1]),
+                                       z=float(p[2])))
+            marker.colors.append(magenta if edge.kind == 'loop' else grey)
+    return marker
+
+
+def pnp_pose(landmarks, pixels, k_matrix, reprojection_px=6.0,
+             min_points=6, iterations=300):
+    """
+    Camera pose from 3D landmarks ↔ 2D pixels: RANSAC PnP + LM refine.
+
+    Returns (T_world_optical, inlier_count) or None. `landmarks` are in
+    some world frame (the store's odom coordinates); the pose comes back
+    as that world's transform of the optical frame — the pose of the
+    camera that saw `pixels`. Pure function around cv2 so it is
+    testable on a synthetic scene.
+    """
+    obj = np.ascontiguousarray(landmarks, dtype=np.float64).reshape(-1, 3)
+    img = np.ascontiguousarray(pixels, dtype=np.float64).reshape(-1, 2)
+    if len(obj) < min_points or len(obj) != len(img):
+        return None
+    ok, rvec, tvec, inliers = cv2.solvePnPRansac(
+        obj, img, np.asarray(k_matrix, dtype=np.float64), None,
+        iterationsCount=iterations, reprojectionError=reprojection_px,
+        confidence=0.999, flags=cv2.SOLVEPNP_EPNP)
+    if not ok or inliers is None or len(inliers) < min_points:
+        return None
+    idx = inliers.ravel()
+    rvec, tvec = cv2.solvePnPRefineLM(
+        obj[idx], img[idx], np.asarray(k_matrix, dtype=np.float64), None,
+        rvec, tvec)
+    r_optical_world, _ = cv2.Rodrigues(rvec)
+    t_optical_world = make_transform(r_optical_world, tvec.ravel())
+    return invert(t_optical_world), int(len(idx))
 
 
 def rays_from_pixels(pixels, k_matrix):
@@ -256,6 +356,42 @@ class KeypointDetector(Node):
         # relative to the stored room (the map's frame wins).
         self.declare_parameter('map_dir', 'maps')
         self.declare_parameter('map_path', '')
+        # SLAM plan P1: the second novelty axis (metres between
+        # same-heading keyframes) and the loop-detection gates — how
+        # often the store is queried, which keyframes are too recent to
+        # count as a revisit, how many rigid-fit inliers (and how tight)
+        # a closure needs, and the drift beyond which a "closure" is
+        # more likely a lookalike wall than a loop.
+        self.declare_parameter('keyframe_novelty_m', 0.3)
+        # How long a depth frame may wait for its odometry TF before it
+        # is dropped, and how old it must be before the first lookup is
+        # tried (rgbd_odometry stamps TF at the image stamp, ~0.2 s late).
+        self.declare_parameter('sync_min_delay_s', 0.25)
+        self.declare_parameter('sync_max_delay_s', 1.5)
+        self.declare_parameter('loop_query_every', 3)
+        self.declare_parameter('loop_min_age_s', 5.0)
+        self.declare_parameter('loop_exclude_recent', 2)
+        self.declare_parameter('loop_min_inliers', 30)
+        self.declare_parameter('loop_reprojection_px', 6.0)
+        self.declare_parameter('loop_crosscheck_m', 0.15)
+        self.declare_parameter('loop_crosscheck_deg', 8.0)
+        self.declare_parameter('loop_max_drift_m', 1.0)
+        self.declare_parameter('loop_max_drift_deg', 45.0)
+        self.declare_parameter('loop_cooldown_s', 3.0)
+        # SLAM plan P2: the backend. Whether to optimise on each loop
+        # edge, the Huber width (chi units) that keeps one wrong closure
+        # from folding the map, the edge sigmas (odometry: locally
+        # trusted; loop: a rigid fit on ~50 landmarks) and whether this
+        # node owns map → odom (never alongside RTAB-Map's SLAM node —
+        # one owner per frame).
+        self.declare_parameter('graph_optimize', True)
+        self.declare_parameter('graph_huber', 2.0)
+        self.declare_parameter('graph_odom_sigma_m', 0.02)
+        self.declare_parameter('graph_odom_sigma_deg', 1.0)
+        self.declare_parameter('graph_loop_sigma_m', 0.03)
+        self.declare_parameter('graph_loop_sigma_deg', 2.0)
+        self.declare_parameter('publish_map_tf', False)
+        self.declare_parameter('map_frame', 'map')
         self.orb = cv2.ORB_create(
             nfeatures=self.get_parameter('max_features').value)
         # Brute force is fine at <=500 features; NORM_HAMMING because ORB
@@ -282,19 +418,54 @@ class KeypointDetector(Node):
         self.rgbd_mode = not self.get_parameter('publish_tf').value
         self.store = KeyframeStore(
             novelty_deg=self.get_parameter('keyframe_novelty_deg').value,
-            cap=self.get_parameter('keyframe_cap').value)
+            cap=self.get_parameter('keyframe_cap').value,
+            novelty_m=self.get_parameter('keyframe_novelty_m').value)
+        # The pose graph (SLAM plan P1/P2): node k's optimised pose lives
+        # in graph.poses[k]; node_odom[k] is the odom → base_link the
+        # odometry reported at capture (the frame the keyframe's
+        # landmarks are stored in), node_stamp[k] the frame's header
+        # stamp (so /world/trajectory can be scored against a bag or a
+        # ground truth), node_wall[k] the receipt clock (loop-age gate).
+        self.graph = PoseGraph()
+        self.node_odom = []
+        self.node_stamp = []
+        self.node_wall = []
+        self.loop_edges = []            # (i, j) for the marker
+        self.map_odom = np.eye(4)       # the correction, T_map_odom
+        self.frames_since_query = 0
+        self.last_loop_wall = None
+        self.current_stamp = None
+        # Exact-sync geometry (SLAM plan P1): rgbd keyframes and loop
+        # checks are built from a frame's *own* depth and the odometry
+        # TF *at its stamp*, not the latest of each — depth lands ~80 ms
+        # and the odom TF ~200 ms after the RGB frame, and at hand-pan
+        # speed "latest" misplaces every stored landmark by degrees.
+        # recent_frames keeps ORB output per stamp; pending_depth queues
+        # depth frames until their TF exists (a 10 Hz timer drains it).
+        self.recent_frames = {}          # stamp_ns -> (points, descriptors)
+        self.recent_order = deque(maxlen=120)
+        self.pending_depth = deque(maxlen=20)   # (stamp_ns, depth, wall_ns)
+        self.tracking_healthy = False
         self.lost_frames = 0
         self.needs_relocalization = False
         self.retry_countdown = 0
+        # Set once tracking has ever succeeded: from then on a frame with
+        # nothing to match is a *lost* frame, not "nothing to track yet".
+        # Found by the black-fill gate bag (2026-08-18): a lens covered by
+        # something featureless yields no descriptors at all, so
+        # `could_estimate` alone never counted the blackout and the
+        # detector woke up in a reset odometry believing it was healthy.
+        self.was_tracking = False
         map_path = os.path.expanduser(self.get_parameter('map_path').value)
         if map_path:
             # Fail loudly: a misspelt path silently starting an empty
             # room would defeat the whole point of loading one.
-            self.store = KeyframeStore.load(map_path)
+            self.load_map(map_path)
             self.needs_relocalization = True
             self.get_logger().info(
-                f'loaded {len(self.store)} keyframes from {map_path} — '
-                'relocalizing before trusting any pose')
+                f'loaded {len(self.store)} keyframes and a {len(self.graph)}'
+                f'-node graph from {map_path} — relocalizing before '
+                'trusting any pose')
         self.depth_image = None
         self.depth_received_at = None
         self.tf_buffer = None
@@ -310,6 +481,7 @@ class KeypointDetector(Node):
             self.tf_listener = TransformListener(self.tf_buffer, self)
             self.sub_depth = self.create_subscription(
                 Image, 'depth', self.on_depth, BIG_FRAME_QOS)
+            self.create_timer(0.1, self.process_pending_depth)
             try:
                 # Imported lazily: rtabmap_msgs is a dev-box package;
                 # the Pi builds this package without it and never runs
@@ -360,6 +532,22 @@ class KeypointDetector(Node):
         self.pub_keyframe_marker = self.create_publisher(
             Marker, 'world/keyframes', LATCHED_QOS)
         self.create_timer(2.0, self.publish_keyframe_marker)
+        # SLAM plan P1/P2: the graph as RViz sees it — optimised keyframe
+        # poses as a Path (in the map frame), edges as a LINE_LIST (odom
+        # edges grey, loop edges magenta) — and, when this node owns it,
+        # map → odom on a timer (TF wants a heartbeat; identity until
+        # the first closure, so the tree exists from the start).
+        self.pub_path = self.create_publisher(
+            Path, 'world/trajectory', LATCHED_QOS)
+        # The same nodes' odom → base_link at capture, same order and
+        # stamps: a consumer (tsdf_mesher's rebuild) turns the pair into
+        # a per-node correction without needing a TF history.
+        self.pub_path_odom = self.create_publisher(
+            Path, 'world/trajectory_odom', LATCHED_QOS)
+        self.pub_graph_marker = self.create_publisher(
+            Marker, 'world/keyframe_graph', LATCHED_QOS)
+        if self.get_parameter('publish_map_tf').value:
+            self.create_timer(0.1, self.publish_map_tf)
 
     def on_camera_info(self, msg: CameraInfo):
         if self.k_matrix is not None:
@@ -383,8 +571,15 @@ class KeypointDetector(Node):
         self.store.clear()
         self.lost_frames = 0
         self.needs_relocalization = False
+        self.was_tracking = False
+        self.graph = PoseGraph()
+        self.node_odom, self.node_stamp, self.node_wall = [], [], []
+        self.loop_edges = []
+        self.map_odom = np.eye(4)
+        self.publish_graph()
         response.success = True
-        response.message = 'orientation reset to identity, keyframes cleared'
+        response.message = ('orientation reset to identity, keyframes and '
+                            'pose graph cleared')
         return response
 
     def publish_keyframe_marker(self):
@@ -399,20 +594,87 @@ class KeypointDetector(Node):
         map_dir = self.get_parameter('map_dir').value
         os.makedirs(map_dir, exist_ok=True)
         path = os.path.join(map_dir, time.strftime('room_%Y%m%d-%H%M%S.npz'))
-        self.store.save(path)
+        self.save_map(path)
         response.success = True
-        response.message = f'{path}: {len(self.store)} keyframes'
+        response.message = (f'{path}: {len(self.store)} keyframes, '
+                            f'{len(self.graph)} graph nodes, '
+                            f'{len(self.loop_edges)} loop edges')
         self.get_logger().info(f'saved {response.message}')
         return response
+
+    # ------------------------------------------------------------------
+    # SLAM plan P4: the graph outlives the session with the keyframes.
+    # One npz of plain arrays (no pickle): the store's own columns plus
+    # the graph — optimised poses, the odom pose at each node's capture,
+    # stamps, and every edge with its measurement, information and kind.
+    # A loaded graph is extended, not restarted: after the cold-start
+    # relocalization adopts the map's frame (relocalization plan P3),
+    # the next keyframe chains an odometry edge from the last stored
+    # node, and loop closures against stored keyframes tie the sessions.
+
+    def graph_arrays(self):
+        n, e = len(self.graph), len(self.graph.edges)
+        return {
+            'graph_poses': np.array(self.graph.poses).reshape(n, 4, 4),
+            'graph_node_odom': np.array(self.node_odom).reshape(n, 4, 4),
+            'graph_node_stamp': np.array(
+                [-1.0 if t is None else t for t in self.node_stamp]),
+            'graph_edge_i': np.array([ed.i for ed in self.graph.edges],
+                                     dtype=np.int64),
+            'graph_edge_j': np.array([ed.j for ed in self.graph.edges],
+                                     dtype=np.int64),
+            'graph_edge_measurement': np.array(
+                [ed.measurement for ed in self.graph.edges]).reshape(e, 4, 4),
+            'graph_edge_information': np.array(
+                [ed.information for ed in self.graph.edges]).reshape(e, 6, 6),
+            'graph_edge_loop': np.array(
+                [ed.kind == 'loop' for ed in self.graph.edges], dtype=bool),
+            'map_odom': self.map_odom,
+        }
+
+    def save_map(self, path):
+        np.savez_compressed(path, **self.store.to_arrays(),
+                            **self.graph_arrays())
+
+    def load_map(self, path):
+        with np.load(path, allow_pickle=False) as data:
+            arrays = dict(data.items())
+        self.store = KeyframeStore.from_arrays(arrays)
+        self.graph = PoseGraph()
+        self.node_odom, self.node_stamp, self.node_wall = [], [], []
+        self.loop_edges = []
+        if 'graph_poses' not in arrays:
+            return
+        for pose, odom, stamp in zip(arrays['graph_poses'],
+                                     arrays['graph_node_odom'],
+                                     arrays['graph_node_stamp']):
+            self.graph.add_node(pose)
+            self.node_odom.append(np.array(odom))
+            self.node_stamp.append(None if stamp < 0 else float(stamp))
+            self.node_wall.append(0.0)      # old enough for any loop query
+        for i, j, z, info, loop in zip(
+                arrays['graph_edge_i'], arrays['graph_edge_j'],
+                arrays['graph_edge_measurement'],
+                arrays['graph_edge_information'], arrays['graph_edge_loop']):
+            self.graph.add_edge(int(i), int(j), z, info,
+                                'loop' if loop else 'odom')
+            if loop:
+                self.loop_edges.append((int(i), int(j)))
+        if 'map_odom' in arrays:
+            self.map_odom = np.array(arrays['map_odom'])
 
     def on_depth(self, msg: Image):
         self.depth_image = np.frombuffer(msg.data, np.float32).reshape(
             msg.height, msg.width)
         # Receipt clock, never header.stamp — the 0.73 s stamp fault.
         self.depth_received_at = self.get_clock().now()
+        self.pending_depth.append(
+            (msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec,
+             self.depth_image, self.depth_received_at.nanoseconds))
 
     def on_frame(self, msg: CompressedImage):
         entry = self.get_clock().now()
+        self.current_stamp = msg.header.stamp
 
         # Byte-identical to the previous frame = usb_cam's duplicate
         # republish. Zero motion, zero information: skip before even
@@ -435,6 +697,15 @@ class KeypointDetector(Node):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         keypoints, descriptors = self.orb.detectAndCompute(gray, None)
         keypoints = keypoints or ()
+        if self.rgbd_mode:
+            stamp_ns = msg.header.stamp.sec * 1_000_000_000 \
+                + msg.header.stamp.nanosec
+            if len(self.recent_order) == self.recent_order.maxlen:
+                self.recent_frames.pop(self.recent_order[0], None)
+            self.recent_order.append(stamp_ns)
+            self.recent_frames[stamp_ns] = (
+                np.array([kp.pt for kp in keypoints],
+                         dtype=np.float64).reshape(-1, 2), descriptors)
 
         # Match against the pooled descriptors of the window, then reject
         # matches whose Hamming distance says "similar-looking corner",
@@ -581,7 +852,8 @@ class KeypointDetector(Node):
         """Feed the store while healthy; switch to recognition when lost."""
         if rotation_ok:
             self.lost_frames = 0
-        elif could_estimate:
+            self.was_tracking = True
+        elif could_estimate or self.was_tracking:
             self.lost_frames += 1
             if (self.lost_frames
                     == self.get_parameter('relocalize_after').value):
@@ -604,21 +876,32 @@ class KeypointDetector(Node):
                 if self.attempt_relocalization(points, descriptors):
                     self.needs_relocalization = False
                     self.lost_frames = 0
-        elif rotation_ok:
+        self.tracking_healthy = rotation_ok and not self.needs_relocalization
+        if self.tracking_healthy and not self.rgbd_mode:
+            # kp mode stores straight from the frame (rays need no depth
+            # and the compass is this node's own, so nothing is late).
+            # rgbd keyframes wait for their exact depth + TF instead
+            # (process_pending_depth).
             self.maybe_store_keyframe(points, descriptors)
 
-    def maybe_store_keyframe(self, points, descriptors):
+    def maybe_store_keyframe(self, points, descriptors, exact=None):
         """Offer the frame to the store; the novelty gate decides."""
         if descriptors is None or len(points) == 0:
             return
         if self.rgbd_mode:
-            # Geometry and pose come from the odometry's own authority:
-            # a latest-only TF lookup and per-keypoint depth. No fresh
-            # depth or no odom yet → no keyframe, no fallback guessing.
-            transform = self._lookup('odom', 'camera_optical_frame')
+            # Geometry and pose come from the odometry's own authority.
+            # `exact` = (depth, T_odom_optical, T_odom_base, stamp) for
+            # this very frame (process_pending_depth); without it fall
+            # back to latest depth + latest TF. No depth or no odom yet →
+            # no keyframe, no fallback guessing.
+            if exact is not None:
+                depth, transform, t_odom_base, stamp = exact
+            else:
+                depth, t_odom_base, stamp = None, None, None
+                transform = self._lookup('odom', 'camera_optical_frame')
             if transform is None:
                 return
-            pts_cam, valid = self._depth_points(points)
+            pts_cam, valid = self._depth_points(points, depth)
             min_pairs = self.get_parameter('relocalize_min_pairs').value
             if pts_cam is None or valid.sum() < 2 * min_pairs:
                 return
@@ -627,6 +910,8 @@ class KeypointDetector(Node):
                 points=transform_points(transform, pts_cam[valid]),
                 pose=transform)
             view_dir = transform[:3, 2]
+            if slot is not None:
+                self.add_graph_node(slot, t_odom_base, stamp)
         else:
             # The compass's own frame: rays rotated into odom-optical by
             # the composed orientation (R maps camera-frame vectors into
@@ -642,6 +927,269 @@ class KeypointDetector(Node):
                 f'keyframe {slot} stored (yaw {yaw:.0f}°, '
                 f'store {len(self.store)}/'
                 f'{self.get_parameter("keyframe_cap").value})')
+
+    # ------------------------------------------------------------------
+    # SLAM plan P1/P2: the keyframe graph, loop detection, the backend.
+
+    def add_graph_node(self, slot, t_odom_base=None, stamp_ns=None):
+        """Give a just-stored rgbd keyframe a pose-graph node (+ odom edge)."""
+        if t_odom_base is None:
+            t_odom_base = self._lookup('odom', 'base_link')
+        if t_odom_base is None:
+            return None
+        # Initial estimate in the map frame: the current correction
+        # applied to the odometry pose, so a new node lands consistent
+        # with the already-optimised graph rather than in raw odom.
+        node = self.graph.add_node(self.map_odom @ t_odom_base)
+        self.node_odom.append(t_odom_base)
+        if stamp_ns is None and self.current_stamp is not None:
+            stamp_ns = self.current_stamp.sec * 1_000_000_000 \
+                + self.current_stamp.nanosec
+        self.node_stamp.append(
+            None if stamp_ns is None else stamp_ns * 1e-9)
+        self.node_wall.append(self.get_clock().now().nanoseconds * 1e-9)
+        self.store.keyframes[slot].node_id = node
+        if node > 0:
+            # The odometry edge: what rgbd_odometry says the motion
+            # between the two captures was. Odom is continuous, so the
+            # relative pose is valid even after map → odom has moved.
+            z = invert(self.node_odom[node - 1]) @ t_odom_base
+            self.graph.add_edge(
+                node - 1, node, z, self._odom_information(), kind='odom')
+        self.publish_graph()
+        return node
+
+    def _odom_information(self):
+        return information_matrix(
+            self.get_parameter('graph_odom_sigma_m').value,
+            np.radians(self.get_parameter('graph_odom_sigma_deg').value))
+
+    def _loop_information(self):
+        return information_matrix(
+            self.get_parameter('graph_loop_sigma_m').value,
+            np.radians(self.get_parameter('graph_loop_sigma_deg').value))
+
+    def process_pending_depth(self):
+        """
+        Drain the depth queue: exact (frame, depth, TF-at-stamp) triples.
+
+        Each depth frame waits at least sync_min_delay_s (its odometry
+        TF is stamped at the image stamp and arrives ~0.2 s later), then
+        is paired with the ORB output of the frame with the same stamp
+        and the odom → base_link / camera_optical_frame transforms *at
+        that stamp* (tf2 interpolates between odometry samples). Only
+        then are keyframes stored and loops checked — landmark geometry
+        built this way is exact instead of ~200 ms stale.
+        """
+        if not self.pending_depth:
+            return
+        now_ns = self.get_clock().now().nanoseconds
+        min_wait = self.get_parameter('sync_min_delay_s').value * 1e9
+        max_wait = self.get_parameter('sync_max_delay_s').value * 1e9
+        while self.pending_depth:
+            stamp_ns, depth, received_ns = self.pending_depth[0]
+            age = now_ns - received_ns
+            if age < min_wait:
+                break
+            frame = self.recent_frames.get(stamp_ns)
+            if frame is None:
+                self.pending_depth.popleft()      # no ORB for this stamp
+                continue
+            t_odom_base = self._lookup_at('odom', 'base_link', stamp_ns)
+            if t_odom_base is None:
+                if age < max_wait:
+                    break                          # TF not there yet
+                self.pending_depth.popleft()
+                continue
+            t_odom_optical = self._lookup_at('odom', 'camera_optical_frame',
+                                             stamp_ns)
+            self.pending_depth.popleft()
+            if t_odom_optical is None:
+                continue
+            points, descriptors = frame
+            if not self.tracking_healthy or descriptors is None:
+                continue
+            exact = (depth, t_odom_optical, t_odom_base, stamp_ns)
+            self.maybe_store_keyframe(points, descriptors, exact)
+            self.maybe_detect_loop(points, descriptors, exact)
+
+    def maybe_detect_loop(self, points, descriptors, exact):
+        """
+        Loop-closure detection while tracking is healthy (rgbd mode).
+
+        Every `loop_query_every` frames: match the live view against the
+        keyframes old enough to be a revisit, verify the winner with a
+        rigid fit of live 3D landmarks onto the keyframe's stored ones
+        (an inlier count, not just a match count — descriptors lie,
+        geometry less so), reject a "closure" whose implied drift is
+        absurd, and otherwise store the frame as a keyframe node with a
+        loop edge to the recognised one. Then the backend runs.
+        """
+        if not self.rgbd_mode or descriptors is None or len(points) == 0:
+            return
+        depth, t_odom_optical_now, t_odom_base_now, stamp_ns = exact
+        self.frames_since_query += 1
+        if self.frames_since_query < self.get_parameter(
+                'loop_query_every').value:
+            return
+        self.frames_since_query = 0
+        now = self.get_clock().now().nanoseconds * 1e-9
+        cooldown = self.get_parameter('loop_cooldown_s').value
+        if self.last_loop_wall is not None and now - self.last_loop_wall \
+                < cooldown:
+            return
+        n_nodes = len(self.graph)
+        recent = self.get_parameter('loop_exclude_recent').value
+        min_age = self.get_parameter('loop_min_age_s').value
+        exclude = set()
+        for i, kf in enumerate(self.store.keyframes):
+            if kf.node_id < 0 or kf.points is None:
+                exclude.add(i)
+            elif kf.node_id >= n_nodes - recent:
+                exclude.add(i)
+            elif now - self.node_wall[kf.node_id] < min_age:
+                exclude.add(i)
+        if len(exclude) >= len(self.store.keyframes):
+            return
+        result = self.store.match(
+            descriptors,
+            max_distance=self.get_parameter('match_max_distance').value,
+            min_pairs=self.get_parameter('relocalize_min_pairs').value,
+            margin=self.get_parameter('relocalize_margin').value,
+            exclude=exclude)
+        if result is None:
+            return
+        best, kf_idx, query_idx = result
+        keyframe = self.store.keyframes[best]
+        # Geometric verification by PnP: the keyframe's stored 3D
+        # landmarks (odom coordinates at its capture) against the live
+        # frame's 2D pixels. One frame's depth instead of two (monocular
+        # depth is the noisy input here), RANSAC instead of drop-worst
+        # refits, and LM refinement on the inliers. The result is the
+        # live camera's pose *as the keyframe's landmarks see it* — in
+        # the odom coordinates those landmarks were stored in; relative
+        # to the keyframe's own node that is a drift-free kf → now.
+        pnp = pnp_pose(keyframe.points[kf_idx], points[query_idx],
+                       self.k_matrix,
+                       reprojection_px=self.get_parameter(
+                           'loop_reprojection_px').value)
+        if pnp is None:
+            return
+        t_odom_optical_implied, inliers = pnp
+        if inliers < self.get_parameter('loop_min_inliers').value:
+            self.get_logger().info(
+                f'loop candidate kf {best} rejected: {inliers} PnP inliers',
+                throttle_duration_sec=5.0)
+            return
+        # Cross-check with the 3D-3D rigid fit (live depth vs stored
+        # landmarks): two independent geometries that disagree mean one
+        # of the depths lied — refuse rather than guess.
+        pts_cam, valid = self._depth_points(points[query_idx], depth)
+        if pts_cam is not None and valid.sum() > 0:
+            fit = rigid_transform_3d(
+                pts_cam[valid], keyframe.points[kf_idx][valid],
+                min_pairs=self.get_parameter('relocalize_min_pairs').value)
+            if fit is not None:
+                gap = invert(make_transform(*fit)) @ t_odom_optical_implied
+                gap_m = float(np.linalg.norm(gap[:3, 3]))
+                gap_deg = self._angle_between_deg(np.eye(3), gap[:3, :3])
+                if (gap_m > self.get_parameter('loop_crosscheck_m').value
+                        or gap_deg > self.get_parameter(
+                            'loop_crosscheck_deg').value):
+                    self.get_logger().warn(
+                        f'loop candidate kf {best} rejected: PnP and 3D fit '
+                        f'disagree by {gap_m:.3f} m / {gap_deg:.1f}°')
+                    return
+        if self.t_base_optical is None:
+            self.t_base_optical = self._lookup('base_link',
+                                               'camera_optical_frame')
+            if self.t_base_optical is None:
+                return
+        t_odom_base_implied = t_odom_optical_implied @ invert(
+            self.t_base_optical)
+        t_kf = self.node_odom[keyframe.node_id]
+        z_loop = invert(t_kf) @ t_odom_base_implied
+        z_odom = invert(t_kf) @ t_odom_base_now
+        drift = invert(z_odom) @ z_loop
+        drift_m = float(np.linalg.norm(drift[:3, 3]))
+        drift_deg = self._angle_between_deg(np.eye(3), drift[:3, :3])
+        if (drift_m > self.get_parameter('loop_max_drift_m').value
+                or drift_deg > self.get_parameter('loop_max_drift_deg').value):
+            self.get_logger().warn(
+                f'loop candidate kf {best} rejected: implied drift '
+                f'{drift_m:.2f} m / {drift_deg:.1f}° is not a loop')
+            return
+        # Store the live frame as a keyframe *node* (novelty gate
+        # bypassed — the graph needs a node exactly here) and connect it.
+        all_pts, all_valid = self._depth_points(points, depth)
+        if all_pts is None or all_valid.sum() < 2 * self.get_parameter(
+                'relocalize_min_pairs').value:
+            return
+        slot = self.store.maybe_add(
+            descriptors[all_valid], t_odom_optical_now[:3, 2],
+            points=transform_points(t_odom_optical_now, all_pts[all_valid]),
+            pose=t_odom_optical_now, force=True)
+        node = self.add_graph_node(slot, t_odom_base_now, stamp_ns)
+        if node is None:
+            return
+        self.graph.add_edge(keyframe.node_id, node, z_loop,
+                            self._loop_information(), kind='loop')
+        self.loop_edges.append((keyframe.node_id, node))
+        self.last_loop_wall = now
+        self.get_logger().info(
+            f'loop closure kf {slot} -> kf {best}: {inliers} inliers, '
+            f'drift {drift_m:.3f} m / {drift_deg:.1f}°')
+        if self.get_parameter('graph_optimize').value:
+            self.optimize_graph()
+
+    def optimize_graph(self):
+        """P2: run the backend, then move the correction to map → odom."""
+        stats = self.graph.optimize(
+            fixed=(0,), huber=self.get_parameter('graph_huber').value)
+        newest = len(self.graph) - 1
+        self.map_odom = self.graph.poses[newest] @ invert(
+            self.node_odom[newest])
+        corr_m = float(np.linalg.norm(self.map_odom[:3, 3]))
+        corr_deg = self._angle_between_deg(np.eye(3), self.map_odom[:3, :3])
+        self.get_logger().info(
+            f'graph optimised: {len(self.graph)} nodes, '
+            f'{len(self.loop_edges)} loops, chi2 {stats["chi2_before"]:.1f}'
+            f' -> {stats["chi2_after"]:.1f} in {stats["iterations"]} it, '
+            f'max shift {stats["max_shift_m"]:.3f} m / '
+            f'{stats["max_shift_deg"]:.1f}°; map->odom now '
+            f'{corr_m:.3f} m / {corr_deg:.1f}°')
+        self.publish_graph()
+        return stats
+
+    def publish_map_tf(self):
+        tf = TransformStamped()
+        tf.header.stamp = self.get_clock().now().to_msg()
+        tf.header.frame_id = self.get_parameter('map_frame').value
+        tf.child_frame_id = 'odom'
+        x, y, z = (float(v) for v in self.map_odom[:3, 3])
+        tf.transform.translation.x = x
+        tf.transform.translation.y = y
+        tf.transform.translation.z = z
+        qx, qy, qz, qw = quaternion_from_rotation(self.map_odom[:3, :3])
+        tf.transform.rotation.x = float(qx)
+        tf.transform.rotation.y = float(qy)
+        tf.transform.rotation.z = float(qz)
+        tf.transform.rotation.w = float(qw)
+        self.tf_broadcaster.sendTransform(tf)
+
+    def publish_graph(self):
+        """Optimised keyframe poses as a Path, edges as a marker."""
+        frame = self.get_parameter('map_frame').value
+        # Header stamp zero = "latest TF" to RViz: these live in the map
+        # frame, whose transform is published on a timer, and a marker
+        # stamped 'now' would wait on a TF that lands 100 ms later.
+        zero = Time().to_msg()
+        self.pub_path.publish(path_msg(self.graph.poses, self.node_stamp,
+                                       frame, zero))
+        self.pub_path_odom.publish(path_msg(self.node_odom, self.node_stamp,
+                                            'odom', zero))
+        self.pub_graph_marker.publish(graph_marker(
+            self.graph.poses, self.graph.edges, zero, frame))
 
     def attempt_relocalization(self, points, descriptors):
         """One recognition attempt; True clears the lost state."""
@@ -743,27 +1291,35 @@ class KeypointDetector(Node):
                 f'(Δ {delta_m:.2f} m, {delta_deg:.1f}°)')
         return True
 
-    def _depth_points(self, pixels):
+    def _depth_points(self, pixels, depth=None):
         """Nx2 pixels → (Nx3 optical-frame points, valid mask), or None."""
-        max_age = self.get_parameter('depth_max_age').value
-        if (self.depth_image is None
-                or (self.get_clock().now()
-                    - self.depth_received_at).nanoseconds > max_age * 1e9):
-            return None, None
-        height, width = self.depth_image.shape
+        if depth is None:
+            max_age = self.get_parameter('depth_max_age').value
+            if (self.depth_image is None
+                    or (self.get_clock().now()
+                        - self.depth_received_at).nanoseconds
+                    > max_age * 1e9):
+                return None, None
+            depth = self.depth_image
+        height, width = depth.shape
         u = np.clip(pixels[:, 0].astype(int), 0, width - 1)
         v = np.clip(pixels[:, 1].astype(int), 0, height - 1)
-        z = self.depth_image[v, u].astype(np.float64)
+        z = depth[v, u].astype(np.float64)
         valid = (z > 0.05) & (z < 20.0)
         fx, fy = self.k_matrix[0, 0], self.k_matrix[1, 1]
         cx, cy = self.k_matrix[0, 2], self.k_matrix[1, 2]
         return np.column_stack([(pixels[:, 0] - cx) * z / fx,
                                 (pixels[:, 1] - cy) * z / fy, z]), valid
 
-    def _lookup(self, target, source):
-        """Latest-only TF lookup as a 4x4, or None while it doesn't exist."""
+    def _lookup_at(self, target, source, stamp_ns):
+        """TF at an exact stamp (interpolated) as a 4x4, or None."""
+        return self._lookup(target, source, Time(nanoseconds=int(stamp_ns)))
+
+    def _lookup(self, target, source, when=None):
+        """TF lookup (latest by default) as a 4x4, or None if unavailable."""
         try:
-            tf = self.tf_buffer.lookup_transform(target, source, Time())
+            tf = self.tf_buffer.lookup_transform(
+                target, source, Time() if when is None else when)
         except TransformException:
             return None
         q = tf.transform.rotation

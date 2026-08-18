@@ -45,8 +45,16 @@ def generate_launch_description():
 
     odom = LaunchConfiguration('odom')
     map_path = LaunchConfiguration('map_path')
+    slam = LaunchConfiguration('slam')
+    depth_source = LaunchConfiguration('depth_source')
+    mesh_watertight = LaunchConfiguration('mesh_watertight')
+    mesh_save_frames = LaunchConfiguration('mesh_save_frames')
     rgbd_mode = IfCondition(
         PythonExpression(["'", odom, "' == 'rgbd'"]))
+    rtabmap_slam = IfCondition(
+        PythonExpression(["'", slam, "' == 'rtabmap'"]))
+    own_depth = IfCondition(
+        PythonExpression(["'", depth_source, "' == 'estimator'"]))
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -59,6 +67,41 @@ def generate_launch_description():
             description='odom → base_link source: rgbd = RTAB-Map '
                         'rgbd_odometry (6-DoF, the default here), kp = '
                         'the keypoint detector rotation-only compass'),
+        # SLAM plan P0: the yardstick. RTAB-Map's own SLAM node on the same
+        # synced pair — bag-of-words loop closure + graph optimisation —
+        # owning map → odom (REP-105: the correction frame; odom →
+        # base_link stays continuous and stays rgbd's). Off by default:
+        # the session is unchanged unless asked, and the fork's own
+        # backend (P2) will be the other owner of the same frame — one
+        # owner per frame, never both.
+        DeclareLaunchArgument(
+            'slam', default_value='off',
+            description='map → odom source: off (default), own = the '
+                        "fork's keypoint_detector backend (loop closure "
+                        'from its keyframe store + the hand-written '
+                        'pose-graph optimiser, SLAM plan P1/P2), or '
+                        "rtabmap = RTAB-Map's SLAM node as the reference "
+                        'the fork is measured against; needs odom:=rgbd'),
+        # SLAM plan P0: a TUM RGB-D sequence (tools/verify/tum_player.py)
+        # carries real depth with real ground truth, so it publishes /depth
+        # + /depth/rgb itself — the estimator must then stay out of the
+        # session or two publishers fight over /depth.
+        # ~/save's Poisson-closed companion is minutes of work on a
+        # million-triangle surface; the headless gates turn it off.
+        DeclareLaunchArgument(
+            'mesh_watertight', default_value='true',
+            description='tsdf_mesher save_watertight: also write the '
+                        'Poisson-closed PLY on ~/save (true, the '
+                        'default) or only the honest one (false)'),
+        DeclareLaunchArgument(
+            'mesh_save_frames', default_value='false',
+            description='tsdf_mesher save_frames: dump the frame memory '
+                        'beside the PLY on ~/save (the P3 gate reads it)'),
+        DeclareLaunchArgument(
+            'depth_source', default_value='estimator',
+            description='estimator (default) = run the depth net; '
+                        'external = something else publishes /depth and '
+                        '/depth/rgb (the TUM player)'),
         # The session's single Wi-Fi reader (see camera_relay.py): every
         # other consumer of the camera stream subscribes the relay's
         # loopback copy, because five RELIABLE readers each pulling a
@@ -87,6 +130,7 @@ def generate_launch_description():
                  '-p', 'publish_rgb:=true',
                  '-p', 'max_rate:=5.0',
                  '-r', 'image_raw/compressed:=/camera_relay/compressed'],
+            condition=own_depth,
             output='screen'),
         Node(
             package='piros2_world_mesh',
@@ -95,6 +139,13 @@ def generate_launch_description():
             parameters=[mesh_config, {
                 'publish_tf': ParameterValue(
                     PythonExpression(["'", odom, "' != 'rgbd'"]),
+                    value_type=bool),
+                # slam:=own — the detector's backend owns map → odom;
+                # loop detection and the graph run in rgbd mode either
+                # way (they only log and publish /world/trajectory
+                # otherwise), so RTAB-Map's frame is never contested.
+                'publish_map_tf': ParameterValue(
+                    PythonExpression(["'", slam, "' == 'own'"]),
                     value_type=bool),
                 'map_path': map_path}],
             remappings=[('image_raw/compressed', '/camera_relay/compressed')],
@@ -127,6 +178,35 @@ def generate_launch_description():
                         ('rgb/camera_info', '/camera_info'),
                         ('depth/image', '/depth')],
             output='screen'),
+        # slam:=rtabmap — the reference SLAM (SLAM plan P0). Same synced
+        # pair and queue hardening as the odometry above; -d wipes
+        # ~/.ros/rtabmap.db so every run is a fresh graph. It publishes
+        # map → odom on closure and the optimised trajectory as
+        # /rtabmap/mapPath — the numbers `just gate loop` reads.
+        Node(
+            package='rtabmap_slam',
+            executable='rtabmap',
+            name='rtabmap',
+            condition=rtabmap_slam,
+            arguments=['-d'],
+            parameters=[{
+                'frame_id': 'base_link',
+                'map_frame_id': 'map',
+                'odom_frame_id': 'odom',
+                'subscribe_depth': True,
+                'approx_sync': False,
+                'topic_queue_size': 30,
+                'sync_queue_size': 30,
+                # Publish the graph path on every update, not only in the
+                # GUI: the recorder takes the last message as the final
+                # optimised trajectory.
+                'publish_tf': True,
+                'Rtabmap/DetectionRate': '2',
+            }],
+            remappings=[('rgb/image', '/depth/rgb'),
+                        ('rgb/camera_info', '/camera_info'),
+                        ('depth/image', '/depth')],
+            output='screen'),
         Node(
             package='piros2_world_mesh',
             executable='dashboard',
@@ -149,9 +229,19 @@ def generate_launch_description():
         # Live TSDF + timed re-mesh. Venv ExecuteProcess for the same
         # reason as the depth estimator: open3d is PyPI-only and
         # colcon's shebang misses the venv.
+        # SLAM plan P3: with a backend on, the surface lives in the map
+        # frame (integrated at map ← optical, so it is corrected from
+        # the start), and with the fork's own backend it also rebuilds
+        # from its frame memory when the optimised trajectory moves.
         ExecuteProcess(
             cmd=[VENV_PYTHON, '-m', 'piros2_world_mesh.tsdf_mesher',
                  '--ros-args', '--params-file', mesh_config,
+                 '-p', ['world_frame:=', PythonExpression(
+                     ["'odom' if '", slam, "' == 'off' else 'map'"])],
+                 '-p', ['rebuild:=', PythonExpression(
+                     ["'true' if '", slam, "' == 'own' else 'false'"])],
+                 '-p', ['save_watertight:=', mesh_watertight],
+                 '-p', ['save_frames:=', mesh_save_frames],
                  '-r', 'image_raw/compressed:=/camera_relay/compressed'],
             output='screen'),
     ])

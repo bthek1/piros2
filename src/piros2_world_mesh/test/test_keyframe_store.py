@@ -149,3 +149,61 @@ def test_saved_map_is_plain_arrays_not_pickle(tmp_path):
     with np.load(path, allow_pickle=False) as data:
         assert 'kf0_descriptors' in data.files
         assert int(data['manifest_count']) == 1
+
+
+# ---------------------------------------------------------------- SLAM P1
+
+def pose_at(x, y, yaw_deg):
+    c, s = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
+    pose = np.eye(4)
+    pose[:3, :3] = [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]
+    pose[:3, 3] = [x, y, 0.0]
+    return pose
+
+
+def test_translation_novelty_stores_a_walked_view():
+    # Same heading, camera moved 1 m: a compass would refuse; a walked
+    # room needs the second novelty axis.
+    store = KeyframeStore(novelty_deg=18.0, cap=10, novelty_m=0.3)
+    assert store.maybe_add(descriptors(1), direction(0), pose=pose_at(0, 0, 0)) == 0
+    assert store.maybe_add(descriptors(2), direction(0), pose=pose_at(1, 0, 0)) == 1
+    # ...but 10 cm away is still the same place.
+    assert store.maybe_add(descriptors(3), direction(0), pose=pose_at(1.1, 0, 0)) is None
+
+
+def test_translation_novelty_off_by_default():
+    store = KeyframeStore(novelty_deg=18.0, cap=10)
+    store.maybe_add(descriptors(1), direction(0), pose=pose_at(0, 0, 0))
+    assert store.maybe_add(descriptors(2), direction(0), pose=pose_at(5, 0, 0)) is None
+
+
+def test_force_bypasses_the_novelty_gate():
+    store = KeyframeStore(novelty_deg=18.0, cap=10)
+    store.maybe_add(descriptors(1), direction(0))
+    assert store.maybe_add(descriptors(1), direction(0)) is None
+    assert store.maybe_add(descriptors(1), direction(0), force=True) == 1
+
+
+def test_match_exclude_skips_named_slots():
+    store = KeyframeStore(novelty_deg=18.0, cap=10)
+    store.maybe_add(descriptors(1), direction(0))
+    store.maybe_add(descriptors(2), direction(40))
+    # A query identical to keyframe 1 finds it...
+    assert store.match(descriptors(2), min_pairs=12)[0] == 1
+    # ...unless it is excluded (a just-stored view is not a revisit).
+    assert store.match(descriptors(2), min_pairs=12, exclude={1}) is None
+    # Excluding everything is a clean None, not an error.
+    assert store.match(descriptors(2), min_pairs=12, exclude={0, 1}) is None
+
+
+def test_node_id_and_novelty_m_survive_a_save_load(tmp_path):
+    store = KeyframeStore(novelty_deg=18.0, cap=10, novelty_m=0.4)
+    store.maybe_add(descriptors(1), direction(0), pose=pose_at(0, 0, 0))
+    store.maybe_add(descriptors(2), direction(40), pose=pose_at(0, 0, 40))
+    store.keyframes[0].node_id = 7
+    store.keyframes[1].node_id = 9
+    path = tmp_path / 'room.npz'
+    store.save(path)
+    back = KeyframeStore.load(path)
+    assert [kf.node_id for kf in back.keyframes] == [7, 9]
+    assert back.novelty_m == 0.4

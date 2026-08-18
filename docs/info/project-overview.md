@@ -200,7 +200,7 @@ record in [networking.md](networking.md#wi-fi-link-reliability)):
 
 ## Testing
 
-`just test` (or the VSCode Testing sidebar — identical results): **172
+`just test` (or the VSCode Testing sidebar — identical results): **199
 tests green** as of 2026-08-18, all style-clean, none needing hardware or
 model weights — fake ONNX sessions, synthetic depth planes and
 chessboards, seeded-noise rotation geometry, SE(3) quaternion-branch
@@ -211,9 +211,18 @@ byte-identity, the estimator's stamp-twin and pacing, the projector's
 odom-frame output through a stubbed TF buffer, and a fake-`/proc`
 busy-device pre-flight, and the relocalization plan's keyframe-store,
 recovery-geometry, rigid-3D-fit, map-persistence and keyframe-marker
-tests; `piros2_world_mesh` carries
+tests (plus the two blackout-counts-as-lost tests a scripted gate
+forced); `piros2_world_mesh` carries
 the same suite as `piros2_world`, imports renamed, minus the mapper
 tests.
+
+Beyond unit tests, live behaviour is checked without a person since
+2026-08-18 ([verification.md](verification.md)): `just snap` writes a
+running session's topics and windows to files, `just run-bag` runs the
+whole `world_mesh` session from a bag, `just gate flick|occlude` replays
+*gate bags* cut from a real sweep and exits pass/fail on the pose
+returning (both PASS; the black-fill variant found and fixed a real
+bug), and `just mesh-views` renders a saved mesh from fixed viewpoints.
 
 ## Where it stands now
 
@@ -228,18 +237,29 @@ tests.
   landed as `bbe8c73` on 2026-08-11. The GitHub repo carries a one-line
   description and topics (`ros2`, `robotics`, `computer-vision`,
   `point-cloud`, `raspberry-pi`, `onnx`) as of the same day; "SLAM" is
-  deliberately not among them — the honest scope is rotation-only
-  orientation.
+  deliberately not among them — the honest scope was rotation-only
+  orientation, and the SLAM plan (above) says when that changes.
 - **Open items** (plus [todo.md](../../todo.md)'s standing ambition, a
   C/C++ rewrite):
-  - The lit-room hand sweep — the one live gate several closes wait
-    on: it settles the provisional TSDF values and checks the
-    mesh-completion patches behave under motion (the in-session
-    `just mesh-save` check itself ran live 2026-08-18, both tiers).
-  - The [relocalization plan](../plans/in-progress/relocalization-plan.md)
-    (planned 2026-08-18, not started) — the named next build: a
-    keyframe store and recover-by-recognition pose snap, so a camera
-    flick or an rgbd reset no longer corrupts the pose for good.
+  - The provisional TSDF values (1.5 cm / 120k triangles / 15 s) are
+    still unmeasured against a lit-room sweep — the sweep itself no
+    longer waits on a hand (`just run-bag bags/sweep3` replays a real
+    one; the mesh-completion patches held under it 2026-08-18), what
+    remains is a tuning loop over the replay.
+  - The [relocalization plan](../plans/completed/relocalization-plan.md)
+    (built and closed 2026-08-18): keyframe store and
+    recover-by-recognition pose snap; its gates run as `just gate flick`
+    / `just gate occlude`. Store hygiene deferred until live evidence
+    asks for it.
+  - The [SLAM plan](../plans/in-progress/slam-plan.md) (started
+    2026-08-18, P0–P2 done and gated, P3/P4 built): loop-closure
+    detection while tracking is healthy, a hand-written pose-graph
+    backend owning `map → odom` (`slam:=own`; RTAB-Map's SLAM node as
+    the yardstick under `slam:=rtabmap`), and a TSDF that rebuilds from
+    frame memory. Gates `just gate-loop`, `gate-tum`, `gate-mesh`,
+    `gate-map`. Open: run `gate-map`, make the P3 surface metric
+    credible, then flip the scope claim, the diagrams page and the
+    GitHub topics.
   - Affine depth-to-TSDF alignment — the next depth-quality lever now
     that the live high-pass scale aligner landed (placement spread
     4.0% → 2.9%; the residual is spatially structured model error a

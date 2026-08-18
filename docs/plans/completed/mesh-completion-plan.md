@@ -187,7 +187,15 @@ clips at its reconstruction box (measured: 223 boundary edges left at
 the clip; after the pass, **zero** — verified closed, colours
 interpolated). Writes `live_<stamp>_closed.ply` beside the honest PLY,
 never instead of it. Gates: the in-session save ran live twice
-(2026-08-18, both tiers) — that gate is closed; **the hand-sweep gate
-stays open** (walls stay put, filled patches behave under motion —
-needs a human with the camera; `fill_debug_tint: true` shows exactly
-what was assumed).
+(2026-08-18, both tiers) — that gate is closed. The hand-sweep gate
+was written as "needs a human with the camera"; it ran the same evening
+by replay instead ([docs/info/verification.md](../../info/verification.md)):
+`just run-bag bags/sweep3` (a real 44 s hand sweep through the full
+rgbd session), `just snap` (120k live triangles latched, 6 keyframe
+strokes), `just mesh-save` (723 604 honest triangles + the
+Poisson-closed tier) and `just mesh-views` rendering the PLY from
+above — one far sheet, no visible doubling at plan scale
+(`captures/verify/mesh_live_20260818-175522/sheet.png`). Reading that
+render is still a judgement, but about a file anyone can reopen;
+`fill_debug_tint: true` still shows exactly what was assumed if the
+patches are the question.

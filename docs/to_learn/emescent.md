@@ -20,6 +20,10 @@ them, not until a tutorial does.**
 
 ## 1. Company and product domain
 
+**Researched 2026-08-18 → [emesent-company-domain.md](emesent-company-domain.md)** — every item
+below has a sourced section there, plus a "could not verify" list and one-liners for the room.
+Boxes stay unticked until the material is *held*, per the honest-claim rule above.
+
 - [ ] Emesent history: CSIRO Data61 spinout, 2018, what was commercialised
 - [ ] Hovermap product line and what it does
 - [ ] Cortex: software and control architecture, handheld through to autonomous
@@ -34,6 +38,10 @@ them, not until a tutorial does.**
 **The second-priority gap in [goals.md](goals.md), and the one most likely to be tested by a
 robotics employer.** `piros2` is rotation-only and is NOT SLAM; see
 [projects.md](projects.md).
+
+**Study file, written 2026-08-18 → [slam.md](slam.md)** — one section per item below (concept,
+the sentence an interviewer wants, and an honest `piros2` line), plus a Wildcat section read
+from the paper and the boundary answer to "have you built SLAM?". Boxes stay unticked until held.
 
 - [ ] Definition: simultaneous localization and mapping, and why the two are coupled
 - [ ] Frontend vs backend

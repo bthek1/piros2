@@ -57,6 +57,54 @@ keypoint_detector:
     # the stored room. Empty = start with an empty memory.
     map_dir: maps
     map_path: ''
+    # SLAM plan P1 — loop-closure detection while tracking is healthy
+    # (rgbd mode). keyframe_novelty_m: a same-heading view is still
+    # novel once the camera has moved this far (view direction alone is
+    # a compass gate; a walked room needs a distance gate too).
+    keyframe_novelty_m: 0.3
+    # rgbd geometry runs on exact triples — a frame's ORB output, its
+    # own depth and the odometry TF *at its stamp* — so a depth frame
+    # waits at least sync_min_delay_s for its TF (rgbd stamps TF at the
+    # image stamp, ~0.2 s late) and is dropped after sync_max_delay_s.
+    sync_min_delay_s: 0.25
+    sync_max_delay_s: 1.5
+    # Query the store every N depth-paired frames (~5 Hz in, so 3 ≈
+    # 0.6 s; a query is tens of ms), skipping keyframes newer than
+    # loop_min_age_s or among
+    # the last loop_exclude_recent nodes — matching your own last view
+    # is not a revisit. A winner must survive RANSAC PnP with at least
+    # loop_min_inliers landmarks within loop_reprojection_px, and
+    # the drift it implies must be plausible (beyond loop_max_drift_* it
+    # is a lookalike wall, not a loop — the two-posters problem again).
+    # loop_cooldown_s spaces closures so a camera at rest doesn't add
+    # the same edge every query.
+    loop_query_every: 3
+    loop_min_age_s: 5.0
+    loop_exclude_recent: 2
+    loop_min_inliers: 30
+    loop_reprojection_px: 6.0
+    # PnP (keyframe landmarks vs live pixels) is the loop measurement;
+    # the 3D-3D fit against live depth cross-checks it — a disagreement
+    # beyond these means one depth lied, and the candidate is refused.
+    loop_crosscheck_m: 0.15
+    loop_crosscheck_deg: 8.0
+    loop_max_drift_m: 1.0
+    loop_max_drift_deg: 45.0
+    loop_cooldown_s: 3.0
+    # SLAM plan P2 — the backend (pose_graph.py). Optimise on every new
+    # loop edge; Huber width in chi units so one wrong closure bends the
+    # graph rather than folding it; edge sigmas: odometry between two
+    # keyframes (locally trusted, drifts globally) and a loop edge (a
+    # rigid fit on tens of landmarks — measured a few cm). publish_map_tf
+    # is set by the launch (slam:=own); map_frame names the corrected
+    # frame per REP-105.
+    graph_optimize: true
+    graph_huber: 2.0
+    graph_odom_sigma_m: 0.02
+    graph_odom_sigma_deg: 1.0
+    graph_loop_sigma_m: 0.03
+    graph_loop_sigma_deg: 2.0
+    map_frame: map
 
 tsdf_mesher:
   ros__parameters:
@@ -107,6 +155,19 @@ tsdf_mesher:
     # Correction clamp: a disagreement beyond this is a wrong pose or a
     # depth failure, not a wobble; refuse to fold the map.
     align_max_correction: 0.15
+    # SLAM plan P3 — the surface follows the graph. world_frame and
+    # rebuild are set by the launch from `slam:=` (map + rebuild under
+    # the fork's own backend; map only under rtabmap; odom otherwise).
+    # The frame memory: how many integrated frames to keep (thinned
+    # evenly when full — 400 at half resolution ≈ 200 MB), the depth
+    # downsample they are kept at, how far the optimised trajectory
+    # must move a frame before a rebuild is worth its ~10 ms/frame, and
+    # the minimum spacing between rebuilds.
+    rebuild_keep: 400
+    rebuild_downsample: 2
+    rebuild_min_shift_m: 0.02
+    rebuild_min_shift_deg: 1.0
+    rebuild_min_interval_s: 8.0
 
 dashboard:
   ros__parameters:

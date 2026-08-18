@@ -1,14 +1,19 @@
 # Relocalization plan — remember the room, recover the pose
 
-**Status (2026-08-18): all five phases built, unit-tested (35 new
-tests, suite at 197) and live-verified as far as a static camera
-allows — the whole plan in the drafting day's sitting.** What remains
-is only the two live gates that need a human hand: the P1 flick test
-(`just world_mesh odom:=kp`, pan hard away and back, watch for
-`relocalized against keyframe N`) and the P2 cover-the-lens test
-(default `just run`, occlude until rgbd resets, uncover on a stored
-view, the mesh continues in place). P3's gate — save, restart with the
-map, relocalize cold — passed live without a hand. Per-phase
+**Status (2026-08-18, evening): done — all five phases built,
+unit-tested (37 new tests, suite at 199) and every gate closed; moved
+to `completed/`.** The two gates that were written as "needs a human
+hand" — the P1 flick and the P2 cover-the-lens — closed the same
+evening *without* one: both are re-orderings of views a bag already
+holds, so they became replayable gate bags
+(`just gate flick`, `just gate occlude` —
+[docs/info/verification.md](../../info/verification.md)) with a
+numeric verdict instead of a watched RViz window. Both PASS; the
+black-fill variant of the occlusion gate first FAILED and exposed a
+real bug (a covered lens produced no descriptors, so the loss counter
+never moved) that is fixed and unit-tested below. P3's gate — save,
+restart with the map, relocalize cold — had already passed live. A live
+hand flick remains a pleasant confirmation, not a gate. Per-phase
 annotations below; deviations from the spec are recorded after P2.
 
 **Goal:** store the keypoint detections that matter, so that when the
@@ -106,7 +111,7 @@ live the same day: a static rgbd session logged
 `keyframe 0 stored (yaw 0°, store 1/100)` with no false captures and
 the store count on the stats panel.
 
-### P1 — orientation recovery (kp mode first) ✓ built 2026-08-18 — live flick gate open
+### P1 — orientation recovery (kp mode first) ✓ built 2026-08-18 — flick gate PASSED by replay the same evening
 
 Loss detection in the detector (no consecutive pairs for
 `relocalize_after` frames), then store lookup and absolute Kabsch:
@@ -123,11 +128,19 @@ at known rotations, corrupt the composed state, and recover it exactly.
 Built and unit-tested (synthetic landmark fields at known rotations:
 capture stores rays in odom exactly, a corrupted compass recovers to
 <0.01°, unknown views are refused, loss arms recognition, `~/reset`
-clears the memory). The **live flick test needs a human hand** — run
-`just world_mesh odom:=kp`, pan hard away and back, watch for the
-`relocalized against keyframe N` log and the axes returning.
+clears the memory). The flick test was written as "needs a human hand"
+and closed without one (2026-08-18 evening): `bags/gate_flick` =
+sweep3's wardrobe view (0–8 s) → 3 s of noise frames → the drawer
+close-up (32–40 s) → noise → the wardrobe view again (3–8 s), and
+`just gate flick` measured the return pass against the first: **PASS**,
+`A′` within 0.48° median / 0.64° max of `A` over 82 poses, log
+`tracking lost for 10 frames` twice and `relocalized against keyframe
+0: orientation snapped, correction 65.3°` — the compass had carried the
+away view's 60° pan and snapped back within the first return frames
+(`captures/verify/gate_flick_20260818-173958/poses.png` shows it). A
+live hand flick is now a confirmation, not a gate.
 
-### P2 — position too: 3D landmarks and the rgbd snap ✓ built 2026-08-18 — live cover-the-lens gate open
+### P2 — position too: 3D landmarks and the rgbd snap ✓ built 2026-08-18 — cover-the-lens gate PASSED by replay the same evening (and found a bug first)
 
 Keyframes additionally store 3D landmark points: captured only when a
 fresh `/depth` (≤ ~0.5 s old, latest-wins sub — the room is static and
@@ -157,10 +170,31 @@ base_link` exactly that pose — the service takes precisely the
 `T_odom_base` our snap computes, in the odom frame. A bonus artifact
 of that test proved the capture path end-to-end: after the synthetic
 teleport the static scene was re-stored as `keyframe 1 (yaw 46°)`,
-i.e. capture demonstrably reads the live TF. The **cover-the-lens
-gate needs a human**: under default `just run`, occlude until rgbd
-resets, uncover on a stored view, and the mesh should continue in
-place with a `snapping odometry` log.
+i.e. capture demonstrably reads the live TF. The cover-the-lens gate
+was written as "needs a human" and closed without one the same evening:
+`bags/gate_occlude` = sweep3 0–14 s → 3 s of blocking frames → 3–9 s
+again, under default rgbd, `just gate occlude` comparing the return
+pass with the first. Two fills, two verdicts:
+
+- **noise fill** (blobs with hundreds of unmatchable keypoints —
+  motion-blur-shaped): **PASS**, tail 0.95° / 3 cm from the reference,
+  `snapping odometry (Δ 0.05 m, 18.4°)` — rgbd had kept publishing the
+  pre-gap pose, 18° from where the uncover view belonged.
+- **black fill** (near-black, no keypoints — hand-over-lens-shaped):
+  **FAIL** on the first run — 19.7° median error and *no* `tracking
+  lost` line. Cause: a featureless frame yields no descriptors, so
+  `could_estimate` was False and `lost_frames` never incremented; the
+  detector woke up in rgbd's reset odometry believing it was healthy,
+  and recovery only runs while lost. **Fix:** a frame with nothing to
+  match counts as lost once tracking has ever succeeded (`was_tracking`,
+  cleared by `~/reset`), with two unit tests (blackout after tracking
+  arms recognition; blackout before any tracking does not). Rerun:
+  **PASS**, 0.41° / 2 cm, all three log lines. Toggling the fix off
+  reproduces the 19.7° failure — the counter-check is a rerun.
+
+The real hand over the lens is closer to the black fill than the noise
+one, so the human gate as written would have failed on the day; the
+scripted one found it in ninety seconds.
 
 **Where the build deviated from the spec** (all deliberate, none
 regressions):
@@ -236,6 +270,10 @@ has not yet shown a store-quality problem on the static runs.
 - ORB under motion blur recovers nothing *during* the flick — by
   design; the promise is recovery after settling, typically within
   `relocalize_after` frames + one match (~1 s at the paced 5 Hz).
+- ~~A blackout (no keypoints at all) is not a loss~~ — **it is, and it
+  wasn't counted** until the black-fill gate bag failed on 2026-08-18;
+  see P2. Loss now means "tracked before, nothing usable now", whether
+  the frame has unmatchable features or none.
 - A wrong relocalization is worse than none: matches must clear a
   margin (best-vs-second-best keyframe score, minimum inlier pairs
   after the robust refit) before any snap fires; below it, log and keep
