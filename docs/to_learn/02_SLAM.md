@@ -2,9 +2,15 @@
 
 Written 2026-08-18. One section per checklist item: what it is, the sentence an interviewer
 is fishing for, and an honest **`piros2` line** — what this repo actually touches, so the
-claim in the room matches the code. Per the honest-claim rule: `piros2` is rotation-only
-orientation + TSDF meshing + a keyframe relocaliser. **It is not SLAM**, and none of the
-sections below change that; they mark which *pieces* of SLAM it has exercised.
+claim in the room matches the code. Per the honest-claim rule: when this file was written
+`piros2` was rotation-only orientation + TSDF meshing + a keyframe relocaliser and **not SLAM**.
+**That changed the same night** ([slam-plan.md](../plans/completed/slam-plan.md), 2026-08-18/19):
+the fork now detects loop closures while tracking is healthy, optimises a pose graph with a
+hand-written SE(3) Gauss-Newton (checked against `g2o`), publishes `map → odom`, rebuilds its
+TSDF from frame memory when the graph moves, and persists the graph — measured on replays against
+RTAB-Map and TUM ground truth. The honest wording is now "monocular RGB-D-style SLAM in one room,
+hand-written backend"; the `piros2` lines below predate that and mark which pieces were exercised
+*before* the build.
 
 The Wildcat facts come from the paper itself (Ramezani et al., *"Wildcat: Online
 Continuous-Time 3D Lidar-Inertial SLAM"*, [arXiv 2205.12595](https://arxiv.org/abs/2205.12595),
@@ -463,12 +469,58 @@ PGO off; how the Aura re-process differs (full PGO + non-rigid correction); ROS 
   matrix degenerate (why Kabsch was chosen at all). Recognising a degenerate estimate and
   counting it as *lost* rather than *zero motion* is exactly the `was_tracking` change.
 
+## What the fork has now (2026-08-18/19) — the numbers to say out loud
+
+Built the night the question "what would make `world_mesh` a SLAM project?" was asked, in five
+phases, each closed by a script rather than an opinion
+([slam-plan.md](../plans/completed/slam-plan.md)). What was missing was precisely the backend:
+
+| Piece | Before | Now |
+| --- | --- | --- |
+| Front-end odometry | `rgbd_odometry` (RTAB-Map) on the depth net's `/depth` + `/depth/rgb` twin at 5 Hz, or the rotation-only `keypoint_detector` compass | unchanged |
+| Place recognition | keyframe store queried **only after tracking was lost** — a healthy return to a seen wall was never noticed | **always-on** loop detection from the same store (P1) |
+| Backend | none — a relocalization *snapped* the present and corrected no past pose | **hand-written SE(3) pose-graph optimiser** owning `map → odom`, checked against the installed `g2o` on the same graph (P2) |
+| Map correction | none — the TSDF bakes the pose into every voxel at integration time | TSDF **rebuilds from its frame memory** when the graph moves (P3) |
+| Persistence | keyframes only | graph + keyframes survive a session and reload (P4) |
+
+Measured on replays, against RTAB-Map as the yardstick and TUM fr1/desk as ground truth:
+
+- **Loop closure** (`just gate-loop`, on a *palindrome* bag — `sweep3` forward then reversed, so
+  every return frame has its outbound twin as reference): loop gap **6.1 cm / 1.9° → 2.3 cm /
+  0.85°** (RTAB-Map on the same bag: 0.7–1.4 cm / 0.6–1.6°). The control run with the backend off
+  **FAILs** with "no loop closed" — the gate can detect its own absence.
+- **Absolute trajectory error** (`just gate-tum`, fr1/desk): **ATE RMSE 0.163 → 0.089 m**
+  (RTAB-Map 0.212 → 0.096 m on the same sequence).
+- **Map correction** (`just gate-mesh`): paired-surface gap between out-and-back halves
+  **7.8 → 5.7 cm**.
+- **Persistence** (`just gate-map`): a 19-keyframe room saved, reloaded in a second session,
+  **relocalized cold**, closed loops against the loaded keyframes, and shut its own loop
+  **16.4 cm / 7.5° → 0.7 cm / 2.4°**.
+
+`slam:=own` is the session default since the flip. The limits stay written down and should be
+said in the same breath: **monocular depth** (scale pinned by tape measure at 2.69, with
+structured per-frame error a global scale cannot remove), **one room**, **no IMU**, a **hand-pan
+palindrome bag rather than a walked loop**, and a mesher whose rebuild costs 20–30 s at this
+scene's 1.5–2.6 M triangles.
+
 ## What to say if asked "have you built SLAM?"
 
-"No — `piros2` estimates rotation-only orientation from ORB matches, fuses monocular depth
-into a TSDF under those poses, and relocalises against a keyframe store; it has a frontend
-and a relocaliser, no backend, no loop closure, no IMU. I've *run and tuned* RTAB-Map's
-RGB-D odometry and used its optimised poses offline, and I've measured what unoptimised
-poses do to a mesh. I can talk through Wildcat's structure — surfels, the sliding-window
-B-spline, 6-second submaps, Cauchy IRLS — and where my pipeline would need a backend to
-become SLAM." Then stop.
+"Yes, as of this week — and I'll be precise about what kind. `piros2`'s fork had a front-end and
+a map but no backend: nothing noticed a revisit while tracking was healthy, and a relocalization
+snapped the current pose without correcting any past one. So I built the missing half — always-on
+loop detection off the existing keyframe store, a hand-written SE(3) pose-graph optimiser that
+owns `map → odom` and that I checked against `g2o` on the same graph, a TSDF that rebuilds from
+frame memory when the graph moves, and a graph that survives a session. It's gated by scripts,
+not by me watching RViz: on a palindrome replay the loop gap goes from 6.1 cm and 1.9 degrees to
+2.3 cm and 0.85, RTAB-Map gets 0.7 to 1.4 on the same bag; on TUM fr1/desk the ATE RMSE goes
+from 0.163 to 0.089 metres against RTAB-Map's 0.096; and the control run with the backend off
+fails the gate, which is how I know the gate works.
+
+The honest description is monocular RGB-D-style SLAM in one room with a hand-written backend.
+The depth is a neural net whose scale I pinned with a tape measure and whose per-frame error is
+structured, there's no IMU, no LiDAR, and my loop bag is a hand pan played forwards and
+backwards rather than a walked loop. Compared with something like Wildcat — continuous-time
+lidar-inertial, surfels, six-second submaps, decentralised multi-agent — mine is a teaching
+implementation of the same skeleton. But I've now written the backend rather than only read
+about it, and I know exactly which parts I'd have to earn next: an IMU, a real loop, and a map
+representation that can be deformed rather than rebuilt."

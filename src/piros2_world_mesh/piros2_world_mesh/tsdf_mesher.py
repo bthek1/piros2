@@ -48,7 +48,6 @@ open3d and unit-testable on the system interpreter.
 """
 
 import os
-import threading
 import time
 
 import cv2
@@ -58,6 +57,7 @@ from nav_msgs.msg import Path
 import numpy as np
 from piros2_world_mesh.depth_align import ScaleAligner
 from piros2_world_mesh.mesh_fill import complete_mesh
+from piros2_world_mesh.mesh_worker import MeshFinisher
 from piros2_world_mesh.se3 import invert, make_transform, rotation_from_quaternion
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -252,10 +252,16 @@ class TsdfMesher(Node):
         self.traj_odom = None       # (stamps, 4x4 list) odom at capture
         self.rebuilds = 0
         self.last_rebuild_at = None
-        # The refresh's heavy half runs off the executor thread (P3
-        # finding: complete + decimate cost 12-15 s at 720k triangles and
-        # starved integration to a handful of frames per minute).
-        self.refresh_thread = None
+        # The refresh's heavy half runs in a separate *process* (P3
+        # finding: complete + decimate cost 12-21 s at 0.7-1.6 M
+        # triangles and starved integration to a handful of frames a
+        # minute — and a thread did not help, Open3D's decimation holds
+        # the GIL). mesh_worker.py; polled by a 0.5 s timer.
+        self.finisher = MeshFinisher()
+        self.refresh_started = None
+        self.refresh_extract_ms = 0.0
+        self.refresh_before = 0
+        self.create_timer(0.5, self.poll_refresh)
         if self.get_parameter('rebuild').value:
             self.create_subscription(
                 Path, 'world/trajectory', self.on_trajectory, LATCHED_QOS)
@@ -600,19 +606,20 @@ class TsdfMesher(Node):
 
     def on_refresh(self):
         """
-        Re-mesh on the timer: extract on this thread, finish on a worker.
+        Re-mesh on the timer: extract here, finish in the worker process.
 
         Only extraction touches the volume; decimation, completion and
-        the Marker build work on plain arrays and run on a background
-        thread so integration keeps its cadence (measured: complete +
-        decimate at 720k triangles is 12-15 s, longer than the refresh
-        period — done inline it starved the mesher to a few frames a
+        the Marker build work on plain arrays and run in mesh_worker.py's
+        process so integration keeps its cadence (measured: complete +
+        decimate at 0.7-1.6 M triangles is 12-21 s, longer than the
+        refresh period — done inline, or on a thread under Open3D's
+        GIL-holding decimation, it starved the mesher to a few frames a
         minute and the surface never saw the second half of a bag). A
         refresh is skipped while the previous one is still finishing.
         """
         if self.volume is None or self.integrated == 0:
             return
-        if self.refresh_thread is not None and self.refresh_thread.is_alive():
+        if self.finisher.busy:
             self.get_logger().info('refresh skipped — previous still busy',
                                    throttle_duration_sec=30.0)
             return
@@ -620,42 +627,51 @@ class TsdfMesher(Node):
         extracted = self.extract_mesh_arrays(complete=False)
         if extracted is None:
             return
-        extract_ms = (time.monotonic() - entry) * 1000.0
-        self.refresh_thread = threading.Thread(
-            target=self.finish_refresh, args=(*extracted, extract_ms),
-            daemon=True)
-        self.refresh_thread.start()
+        vertices, triangles, colours = extracted
+        self.refresh_extract_ms = (time.monotonic() - entry) * 1000.0
+        self.refresh_before = len(triangles)
+        self.refresh_started = time.monotonic()
+        tint = (1.0, 0.0, 1.0) \
+            if self.get_parameter('fill_debug_tint').value else None
+        # Decimate first, then complete: completion on the budgeted mesh
+        # is ~1 s where the full-detail one is ~6 s, and the marker is a
+        # view — the saved PLY still completes at full detail (on_save).
+        self.finisher.submit(
+            vertices, triangles, colours,
+            self.get_parameter('max_triangles').value,
+            self.get_parameter('min_component_triangles').value,
+            self.get_parameter('fill_max_hole_radius').value, tint)
 
-    def finish_refresh(self, vertices, triangles, colours, extract_ms):
-        entry = time.monotonic()
-        budget = self.get_parameter('max_triangles').value
-        before = len(triangles)
-        if len(triangles) > budget:
-            # Decimate first, then complete: completion on the budgeted
-            # mesh is ~1 s where the full-detail one is ~6 s, and the
-            # marker is a view — the saved PLY still completes at full
-            # detail (on_save).
-            vertices, triangles, colours = self.decimate_to_budget(
-                vertices, triangles, colours, budget)
-        completed = self.complete_arrays(vertices, triangles, colours)
-        if completed is None:
+    def poll_refresh(self):
+        if not self.finisher.busy:
             return
-        vertices, triangles, colours = completed
+        try:
+            result = self.finisher.poll()
+        except RuntimeError as exc:
+            self.get_logger().error(f'mesh worker failed: {exc}')
+            return
+        if result is None:
+            return
+        vertices, triangles, colours, stats = result
+        if stats['pruned'] or stats['filled']:
+            self.get_logger().info(
+                f"completion: pruned {stats['pruned']} debris components, "
+                f"filled {stats['filled']} interior holes",
+                throttle_duration_sec=30.0)
         # Header stamp zero = "latest TF" to RViz — the surface may live
         # in the map frame, whose transform is published on a timer.
         marker = marker_from_mesh(
             vertices, triangles, colours,
             self.get_parameter('world_frame').value, Time().to_msg())
-        # Shutdown can land mid-refresh and invalidate the publisher — a
-        # teardown race, not a fault worth a traceback.
         try:
             self.pub_mesh.publish(marker)
         except rclpy._rclpy_pybind11.RCLError:
             return
-        cost = (time.monotonic() - entry) * 1000.0
+        cost = (time.monotonic() - self.refresh_started) * 1000.0
         self.get_logger().info(
-            f'refresh: {before} → {len(triangles)} triangles, extract '
-            f'{extract_ms:.0f} ms + finish {cost:.0f} ms off-thread')
+            f'refresh: {self.refresh_before} → {len(triangles)} triangles, '
+            f'extract {self.refresh_extract_ms:.0f} ms + finish {cost:.0f} ms '
+            'in the worker process')
 
     def on_reset(self, request, response):
         self.volume = None
@@ -762,6 +778,7 @@ def main():
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
+        node.finisher.close()
         node.destroy_node()
         rclpy.try_shutdown()
 

@@ -128,3 +128,33 @@ def test_completion_parameters_declare_the_contract(node):
     # The watertight companion is opt-in at the node level; the fork's
     # yaml turns it on for the session.
     assert node.get_parameter('save_watertight').value is False
+
+
+# ---------------------------------------------------------------- SLAM P3
+
+def test_mesh_finisher_completes_in_its_own_process():
+    """The worker returns the completion pass's arrays across the pipe."""
+    from piros2_world_mesh.mesh_worker import finish_mesh, MeshFinisher
+    import time as _time
+    # A unit square split into two triangles, no budget: completion is a
+    # no-op that must round-trip through the worker unchanged.
+    v = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], float)
+    t = np.array([[0, 1, 2], [0, 2, 3]])
+    c = np.ones((4, 3))
+    direct = finish_mesh(v, t, c, 0, 1, 0.25, None)
+    finisher = MeshFinisher()
+    try:
+        assert finisher.submit(v, t, c, 0, 1, 0.25, None)
+        assert finisher.busy and not finisher.submit(v, t, c, 0, 1, 0.25, None)
+        deadline = _time.monotonic() + 30.0
+        result = None
+        while result is None and _time.monotonic() < deadline:
+            result = finisher.poll()
+            _time.sleep(0.05)
+        assert result is not None, 'worker did not answer in 30 s'
+        assert not finisher.busy
+        assert np.allclose(result[0], direct[0])
+        assert np.array_equal(result[1], direct[1])
+        assert result[3] == direct[3]
+    finally:
+        finisher.close()

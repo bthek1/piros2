@@ -159,11 +159,11 @@ tsdf_mesher:
     # rebuild are set by the launch from `slam:=` (map + rebuild under
     # the fork's own backend; map only under rtabmap; odom otherwise).
     # The frame memory: how many integrated frames to keep (thinned
-    # evenly when full — 400 at half resolution ≈ 200 MB), the depth
+    # evenly when full — 500 at half resolution ≈ 250 MB), the depth
     # downsample they are kept at, how far the optimised trajectory
     # must move a frame before a rebuild is worth its ~10 ms/frame, and
     # the minimum spacing between rebuilds.
-    rebuild_keep: 400
+    rebuild_keep: 500
     rebuild_downsample: 2
     rebuild_min_shift_m: 0.02
     rebuild_min_shift_deg: 1.0

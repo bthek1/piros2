@@ -67,21 +67,21 @@ def generate_launch_description():
             description='odom → base_link source: rgbd = RTAB-Map '
                         'rgbd_odometry (6-DoF, the default here), kp = '
                         'the keypoint detector rotation-only compass'),
-        # SLAM plan P0: the yardstick. RTAB-Map's own SLAM node on the same
-        # synced pair — bag-of-words loop closure + graph optimisation —
-        # owning map → odom (REP-105: the correction frame; odom →
-        # base_link stays continuous and stays rgbd's). Off by default:
-        # the session is unchanged unless asked, and the fork's own
-        # backend (P2) will be the other owner of the same frame — one
-        # owner per frame, never both.
+        # SLAM plan: who owns map → odom (REP-105: the correction frame;
+        # odom → base_link stays continuous and stays rgbd's). `own` is
+        # the fork's backend inside keypoint_detector (P1/P2, default
+        # once its gates passed); `rtabmap` is RTAB-Map's SLAM node on
+        # the same synced pair — the yardstick (P0). One owner per
+        # frame, never both.
         DeclareLaunchArgument(
-            'slam', default_value='off',
-            description='map → odom source: off (default), own = the '
-                        "fork's keypoint_detector backend (loop closure "
-                        'from its keyframe store + the hand-written '
-                        'pose-graph optimiser, SLAM plan P1/P2), or '
-                        "rtabmap = RTAB-Map's SLAM node as the reference "
-                        'the fork is measured against; needs odom:=rgbd'),
+            'slam', default_value='own',
+            description='map → odom source: own (default since 2026-08-18, '
+                        "the SLAM plan's P4 flip) = the fork's "
+                        'keypoint_detector backend (loop closure from its '
+                        'keyframe store + the hand-written pose-graph '
+                        "optimiser), rtabmap = RTAB-Map's SLAM node as the "
+                        'reference the fork is measured against, off = '
+                        'odometry only; needs odom:=rgbd for own/rtabmap'),
         # SLAM plan P0: a TUM RGB-D sequence (tools/verify/tum_player.py)
         # carries real depth with real ground truth, so it publishes /depth
         # + /depth/rgb itself — the estimator must then stay out of the

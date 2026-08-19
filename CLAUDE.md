@@ -211,9 +211,9 @@ voxel map (5 cm, hard-capped, `max_range` 6 m; weighted-average fusion
 since the world fusion plan's P2, see below) and
 republishes `/world/map_points` at 1 Hz in `odom`. The repo's first
 services: `/keypoint_detector/reset` and `/cloud_mapper/clear` — the
-drift strategy in lieu of loop closure; honest scope is orientation
+drift strategy in lieu of loop closure; honest scope *was* orientation
 without position (a panorama, not a walkable map — RTAB-Map keeps that
-job). `just orient` (axes only) runs the lightweight session; the full
+job) — superseded 2026-08-19 by the fork's own SLAM backend, below. `just orient` (axes only) runs the lightweight session; the full
 stack runs under `just world` since the combined-plan merge (below). All
 phases were bag-verified against `bags/static1` (orientation within
 ~0.001° of identity on a static scene, map ≈ live cloud) and
@@ -433,10 +433,10 @@ top-down). Notes for Claude: rviz2 sometimes needs two SIGTERMs; never
 put a node's source path on the same command line as a session recipe
 (its EXIT trap's `pkill -f` matches your shell — exit 144).
 
-The SLAM build (started and mostly built 2026-08-18, late — the plan is
-still in-progress:
-[docs/plans/in-progress/slam-plan.md](docs/plans/in-progress/slam-plan.md)):
-the fork gained the backend it lacked. `keypoint_detector` (rgbd mode)
+The SLAM build (built and gated 2026-08-18/19, one night —
+[docs/plans/completed/slam-plan.md](docs/plans/completed/slam-plan.md)):
+the fork gained the backend it lacked, and **`just run` is a SLAM
+session now (`slam:=own` default)**. `keypoint_detector` (rgbd mode)
 keeps a **keyframe pose graph** — every stored keyframe is a node with
 an odometry edge, and every few depth-paired frames the live view is
 matched against the *older* keyframes, verified by RANSAC PnP on the
@@ -445,40 +445,45 @@ implied-drift bound) and, if it survives, added as a **loop edge**;
 `pose_graph.py` (pure numpy, `se3.py`'s new `hat/so3_exp/so3_log/
 se3_exp/se3_log/adjoint`) then runs Gauss-Newton on SE(3) with Huber
 on loop edges and the correction goes out as **`map → odom`**
-(REP-105; `slam:=own`), the optimised keyframe poses on
-`/world/trajectory` (+ `/world/trajectory_odom`, its odom twin) and
-the edges on `/world/keyframe_graph` (RViz `Trajectory`,
-`KeyframeGraph`). `tsdf_mesher` integrates in `map` when a backend
-owns it and, under `slam:=own`, remembers its frames (aligned depth,
-JPEG, odom pose, applied correction) and **rebuilds the volume from
-memory** when the trajectory moves (~100 frames in 2–3.5 s); its refresh
-now finishes off-thread (decimate → complete → publish) because at
-1.5 cm voxels this scene's 0.7–1.6 M triangles cost 12–21 s inline and
-starved integration to ~50 frames a run. `~/save_map` writes the graph
-beside the keyframes; `map_path:=` restores and extends it. The
-launch: `slam:=off|own|rtabmap` (rtabmap = RTAB-Map's SLAM node as the
-yardstick, never alongside ours), `depth_source:=estimator|external`,
-`mesh_watertight:=`, `mesh_save_frames:=`. **Gates, all headless
+(REP-105), the optimised keyframe poses on `/world/trajectory` (+
+`/world/trajectory_odom`, its odom twin) and the edges on
+`/world/keyframe_graph` (RViz `Trajectory`, `KeyframeGraph`).
+`tsdf_mesher` integrates in `map` when a backend owns it and, under
+`slam:=own`, remembers its frames (aligned depth, JPEG, odom pose,
+applied correction) and **rebuilds the volume from memory** when the
+trajectory moves (240–327 frames in 5–7 s); its refresh's heavy half
+runs in a **separate process** (`mesh_worker.py`) because at 1.5 cm
+voxels this scene's 1.4–2.6 M triangles cost 20–30 s to decimate +
+complete, inline that starved integration to ~50 frames a run, and a
+thread did not help — Open3D's decimation holds the GIL. `~/save_map`
+writes the graph beside the keyframes; `map_path:=` restores and
+extends it. Launch args: `slam:=own|rtabmap|off` (rtabmap = RTAB-Map's
+SLAM node as the yardstick, never alongside ours),
+`depth_source:=estimator|external`, `mesh_watertight:=`,
+`mesh_save_frames:=`. **Gates, all headless and all PASS
 (docs/info/verification.md):** `just gate-loop [own|rtabmap|off]` on
 `bags/gate_loop` (a *palindrome* of `sweep3` — out then back —
 `make_gate_bag.py loop`; scored by `traj_check.py loop` on files
 `traj_record.py` wrote: own 6.1 cm / 1.9° → 2.3 cm / 0.85°, RTAB-Map
-0.7–1.4 cm / 0.6–1.6°, off FAIL), `just gate-tum [own|rtabmap|off]`
+0.7–1.4 cm / 0.6–1.6°, off FAIL as the control), `just gate-tum`
 (`tum_player.py` plays fr1/desk as camera + real depth + static TF;
 `traj_check.py ate` vs ground truth: own 0.163 → 0.089 m, RTAB-Map
-0.212 → 0.096 m), `just gate-mesh` (`mesh_split.py`: OUT vs BACK halves
-re-integrated at odom vs corrected poses — PASS directionally but not
-yet credible, see the plan), `just gate-map` (persistence — written,
-unrun). Three findings worth remembering: landmark geometry built from
-the *latest* depth + *latest* TF was off by degrees at hand-pan speed
-(depth lands ~80 ms, odom TF ~200 ms after the frame) — the rgbd
-geometry now runs on exact (frame, own depth, TF-at-stamp) triples via
-a short queue; RTAB-Map's DB odometry column is re-based on every
-odometry auto-reset, so a correction is `optimised ∘ tf_odom(t_k)⁻¹`
-from the recorded TF, never from that column; and `/mapPath`'s poses
-carry no per-pose stamps. **The SLAM claim has not flipped**: scope
-lines, the GitHub topic and `docs/to_learn/emescent.md` wait for
-`gate-map` and a credible P3 metric.
+0.212 → 0.096 m), `just gate-mesh` (`mesh_split.py`: BACK frames paired
+with their mirrored-stamp OUT twins, re-integrated at odom vs corrected
+poses — surface gap 7.8 → 5.7 cm), `just gate-map` (save a room, load
+it, relocalize cold, close loops against loaded keyframes — 16.4 cm /
+7.5° → 0.7 cm / 2.4°). Three findings worth remembering: landmark
+geometry built from the *latest* depth + *latest* TF was off by degrees
+at hand-pan speed (depth lands ~80 ms, odom TF ~200 ms after the frame)
+— the rgbd geometry now runs on exact (frame, own depth, TF-at-stamp)
+triples via a short queue; RTAB-Map's DB odometry column is re-based on
+every odometry auto-reset, so a correction is `optimised ∘
+tf_odom(t_k)⁻¹` from the recorded TF, never from that column; and
+`/mapPath`'s poses carry no per-pose stamps. Honest limits, still
+true: monocular depth (tape-measured scale, structured error), one
+room, no IMU, a hand-pan loop bag rather than a walked loop
+(todo.md), and a live mesh that refreshes every ~30 s at this
+density.
 
 Testing: `just test` (colcon test + result aggregation) or the VSCode Testing
 sidebar — both report identically. All packages are style-clean and the suite
@@ -509,7 +514,7 @@ for `mesh_fill.py`, plus a parameter-contract test pinning the
 completion knobs, and the relocalization suite — keyframe store,
 recovery geometry, rigid 3D fit, map persistence, keyframe marker, and
 the two blackout-counts-as-lost tests the black-fill gate bag forced)
-— 227 tests as of 2026-08-18 night (the fork alone 122). `tools/` scripts (recon, verify) sit outside colcon and
+— 228 tests as of 2026-08-19 (the fork alone 123). `tools/` scripts (recon, verify) sit outside colcon and
 are exercised by running them, not by the suite.
 
 Don't write docs or code that imply a package exists when it does not. If a doc
@@ -773,9 +778,10 @@ dev-box-only.)
 The Ansible `workspace` role does the same as part of a run. Remote is
 `git@github.com:bthek1/piros2.git`. The GitHub repo carries a one-line
 description and the topics `ros2`, `robotics`, `computer-vision`,
-`point-cloud`, `raspberry-pi`, `onnx` (set 2026-08-11) — "SLAM" is
-deliberately excluded, matching the repo's honest rotation-only scope;
-don't add it.
+`point-cloud`, `raspberry-pi`, `onnx` (set 2026-08-11) and, since
+2026-08-19, `slam` — added the night the SLAM plan's four gates passed;
+before that it was deliberately excluded to match the honest
+rotation-only scope.
 
 ## Documentation map
 
@@ -786,7 +792,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | --- | --- |
 | [README.md](README.md) | Overview and entry point |
 | [docs/info/project-overview.md](docs/info/project-overview.md) | Single-page account of the project and progress so far — packages, timeline, current state |
-| [docs/info/just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle — plus reference tables of every topic, service, and per-node measured cost (renamed from just-world-diagrams.html 2026-08-15 when the fork became the day-to-day session; the old name is gone — fix links, don't resurrect it; redrawn 2026-08-16 for the transport rework, topic list regenerated from the live graph). Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes, topics, or measured figures change |
+| [docs/info/just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html) | The `just world_mesh` session drawn four ways — node/topic dataflow, two-machine deployment, TF ownership, recipe lifecycle — plus reference tables of every topic, service, and per-node measured cost (renamed from just-world-diagrams.html 2026-08-15 when the fork became the day-to-day session; the old name is gone — fix links, don't resurrect it; redrawn 2026-08-16 for the transport rework, topic list regenerated from the live graph; carries a dated 2026-08-19 addendum for the SLAM session — `map` frame, `/world/trajectory[_odom]`, `/world/keyframe_graph`, the mesher's worker process — pending the full redraw in todo.md). Mermaid rendered in-browser (loads mermaid.js from a CDN); open it, don't read it as source. Keep it in step with the session when nodes, topics, or measured figures change |
 | [docs/info/hardware.md](docs/info/hardware.md) | Measured specs of both machines and the camera's capture modes |
 | [docs/info/setup.md](docs/info/setup.md) | Reflashing the Pi, provisioning both machines, rejected alternatives |
 | [docs/info/ansible.md](docs/info/ansible.md) | The playbook: inventory, roles, gotchas |
@@ -806,7 +812,7 @@ into `in-progress/` and `completed/` (see Conventions).
 | [docs/plans/completed/world-mesh-diagrams-plan.md](docs/plans/completed/world-mesh-diagrams-plan.md) | Redraw `just_world_mesh_diagrams.html` for the 2026-08-16 transport rework (relay, `/depth/rgb` twin, pacing, odom-frame clouds) — done 2026-08-16 same day, kept as the build log; its regenerate-from-the-live-graph rule caught cloud_projector still pulling a second Wi-Fi copy |
 | [docs/plans/completed/mesh-completion-plan.md](docs/plans/completed/mesh-completion-plan.md) | Upgrade the fork's `tsdf_mesher` so interior holes get filled from surrounding detail — P0–P4 all built and live-verified 2026-08-18 (decimation replaces the sieve cap, per-component loop classification + fan fill, both P3 levers measured out, Poisson-closed export); the hand-sweep gate ran by replay the same evening (`just run-bag bags/sweep3` → `mesh-save` → `mesh-views`, docs/info/verification.md) |
 | [docs/plans/completed/relocalization-plan.md](docs/plans/completed/relocalization-plan.md) | Remember the room's keypoints, recover the pose: a novelty-gated keyframe store in the fork's `keypoint_detector` (descriptors + bearing rays + 3D landmarks in odom), absolute Kabsch/Umeyama recovery when tracking breaks — kp mode snaps its own orientation, rgbd mode snaps via RTAB-Map's `/reset_odom_to_pose` (semantics verified live) — saved room maps (`~/save_map` / `just map-save` → `maps/room_<stamp>.npz`, loaded back with `just run map_path:=…`; the cold-start relocalize-before-any-odom gate passed live) and a latched `/world/keyframes` marker (`Keyframes` display, off by default). All five phases built, 37 tests, 2026-08-18; the two "hand-motion" gates closed the same evening as replayable gate bags (`just gate flick` / `just gate occlude`, both PASS — and the black-fill variant found and fixed the blackout-isn't-loss bug); store hygiene deferred by decision until live evidence asks for it |
-| [docs/plans/in-progress/slam-plan.md](docs/plans/in-progress/slam-plan.md) | Make `world_mesh` SLAM: the gap table (front-end + TSDF map + loss-only relocalization, but no loop detection while healthy, no backend, no map correction, no `map → odom`) and phases P0–P4. P0 done (palindrome loop bag, `slam:=rtabmap` yardstick, `traj_record`/`traj_check`/`tum_player`, `gate-loop`/`gate-tum`), P1 done (keyframe graph, always-on PnP-verified loop detection on exact-sync geometry), P2 done (hand-written SE(3) pose-graph optimiser checked against `g2o`, `map → odom`, `/world/trajectory`; own 2.3 cm / 0.85° vs RTAB-Map 0.7–1.4 cm / 0.6–1.6° on the loop bag, fr1/desk ATE 0.163 → 0.089 m), P3 built (TSDF rebuild from frame memory, threaded refresh; `gate-mesh` metric provisional), P4 built (graph persistence; `gate-map` unrun). Claims not flipped yet — 2026-08-18 |
+| [docs/plans/completed/slam-plan.md](docs/plans/completed/slam-plan.md) | Make `world_mesh` SLAM: the gap table (front-end + TSDF map + loss-only relocalization, but no loop detection while healthy, no backend, no map correction, no `map → odom`) and phases P0–P4 — palindrome loop bag + `slam:=rtabmap` yardstick + TUM ground truth (`traj_record`/`traj_check`/`tum_player`); keyframe graph with always-on PnP-verified loop detection on exact-sync geometry; hand-written SE(3) pose-graph optimiser checked against `g2o`, `map → odom`, `/world/trajectory`; TSDF rebuild from frame memory with the refresh in a worker process; graph persistence. All four gates PASS (own 2.3 cm / 0.85° vs RTAB-Map 0.7–1.4 cm / 0.6–1.6° on the loop bag; fr1/desk ATE 0.163 → 0.089 m; paired-surface gap 7.8 → 5.7 cm; loaded room 16.4 cm / 7.5° → 0.7 cm / 2.4°). Built, gated and closed 2026-08-18/19; `slam:=own` is the session default; kept as the build log |
 | [docs/plans/completed/wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md) | The Pi heals its own Wi-Fi link — `just wifi` visibility, power-save off, an escalation-ladder watchdog (reassociate → driver reload → guarded reboot) via the Ansible `wifi` role, and outages reap camera sessions instead of orphaning them; planned, built and drilled 2026-08-12 after two link-death incidents (kept as the build log) |
 
 When hardware facts change (camera replugged, Pi reflashed, IP moved), update

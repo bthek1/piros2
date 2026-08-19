@@ -20,7 +20,7 @@ them, not until a tutorial does.**
 
 ## 1. Company and product domain
 
-**Researched 2026-08-18 → [emesent-company-domain.md](emesent-company-domain.md)** — every item
+**Researched 2026-08-18 → [01_emesent-company-domain.md](01_emesent-company-domain.md)** — every item
 below has a sourced section there, plus a "could not verify" list and one-liners for the room.
 Boxes stay unticked until the material is *held*, per the honest-claim rule above.
 
@@ -36,10 +36,17 @@ Boxes stay unticked until the material is *held*, per the honest-claim rule abov
 ## 2. SLAM
 
 **The second-priority gap in [goals.md](goals.md), and the one most likely to be tested by a
-robotics employer.** `piros2` is rotation-only and is NOT SLAM; see
+robotics employer.** `piros2` *was* rotation-only and NOT SLAM until
+2026-08-18/19, when its fork grew a real backend — loop-closure
+detection, a hand-written pose-graph optimiser owning `map → odom`, a
+TSDF that follows the graph, a persistent graph — all gated by scripts
+against RTAB-Map and TUM ground truth
+([slam-plan.md](../plans/completed/slam-plan.md)); the honest wording
+now is "monocular RGB-D-style SLAM in one room, hand-written backend";
+see
 [projects.md](projects.md).
 
-**Study file, written 2026-08-18 → [slam.md](slam.md)** — one section per item below (concept,
+**Study file, written 2026-08-18 → [02_SLAM.md](02_SLAM.md)** — one section per item below (concept,
 the sentence an interviewer wants, and an honest `piros2` line), plus a Wildcat section read
 from the paper and the boundary answer to "have you built SLAM?". Boxes stay unticked until held.
 
@@ -62,6 +69,8 @@ from the paper and the boundary answer to "have you built SLAM?". Boxes stay unt
 
 ## 3. State estimation and maths
 
+**Study file → [03_state-estimation-and-maths.md](03_state-estimation-and-maths.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] SE(3), SO(3), rigid transforms
 - [ ] Quaternions vs Euler vs rotation matrices, gimbal lock
 - [ ] Lie groups, Lie algebra, manifold optimisation
@@ -75,6 +84,8 @@ from the paper and the boundary answer to "have you built SLAM?". Boxes stay unt
 - [ ] Pose interpolation and extrapolation (SLERP)
 
 ## 4. Sensors
+
+**Study file → [04_sensors.md](04_sensors.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
 
 - [ ] LiDAR: spinning vs solid state, channels, range, FOV, returns, intensity
 - [ ] Motion distortion and scan deskewing
@@ -94,6 +105,8 @@ from the paper and the boundary answer to "have you built SLAM?". Boxes stay unt
 
 ## 5. Perception and point clouds
 
+**Study file → [05_perception-and-point-clouds.md](05_perception-and-point-clouds.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] Point cloud data structures: PCL, Open3D, PointCloud2
 - [ ] Voxel grids, octrees, OctoMap, KD-trees, nearest-neighbour search
 - [ ] Downsampling, filtering, outlier removal
@@ -110,6 +123,8 @@ from the paper and the boundary answer to "have you built SLAM?". Boxes stay unt
 
 ## 6. Navigation and planning
 
+**Study file → [06_navigation-and-planning.md](06_navigation-and-planning.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] Global vs local planning
 - [ ] A*, Dijkstra, D* Lite, hybrid A*
 - [ ] RRT, RRT*, PRM, sampling-based planning
@@ -125,6 +140,8 @@ from the paper and the boundary answer to "have you built SLAM?". Boxes stay unt
 
 ## 7. Control
 
+**Study file → [07_control.md](07_control.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] PID: tuning, windup, derivative filtering
 - [ ] Cascaded control loops
 - [ ] Feedforward vs feedback
@@ -135,6 +152,8 @@ from the paper and the boundary answer to "have you built SLAM?". Boxes stay unt
 - [ ] Control loop timing and sample rates
 
 ## 8. C++
+
+**Study file → [08_cpp.md](08_cpp.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
 
 **THE FIRST-PRIORITY GAP.** Four processes in one week turned on it (Emesent, Arista, Anduril,
 the defence lane). The standing claim is **embedded firmware C/C++, not large-scale
@@ -167,6 +186,8 @@ application or STL C++**, and that wording does not change until something is bu
 
 ## 9. Real-time and performance
 
+**Study file → [09_real-time-and-performance.md](09_real-time-and-performance.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] Hard vs soft real time
 - [ ] Determinism, worst-case execution time, jitter
 - [ ] Scheduling policies, priorities, priority inversion
@@ -178,6 +199,8 @@ application or STL C++**, and that wording does not change until something is bu
 - [ ] Benchmarking methodology
 
 ## 10. ROS and ROS 2
+
+**Study file → [10_ros-and-ros2.md](10_ros-and-ros2.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
 
 **The strongest section, and the one `piros2` already covers in Python.** The untickeds worth
 attention are rclcpp, composition and lifecycle nodes.
@@ -200,6 +223,8 @@ attention are rclcpp, composition and lifecycle nodes.
 
 ## 11. Simulation
 
+**Study file → [11_simulation.md](11_simulation.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] Gazebo / Ignition / gz-sim
 - [ ] Isaac Sim, Isaac ROS
 - [ ] Physics engines: ODE, Bullet, PhysX
@@ -211,6 +236,8 @@ attention are rclcpp, composition and lifecycle nodes.
 - [ ] Record and replay as an alternative to simulation
 
 ## 12. Testing
+
+**Study file → [12_testing.md](12_testing.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
 
 - [ ] Unit, integration, system and regression levels
 - [ ] Test doubles: mocks, fakes, stubs
@@ -226,6 +253,8 @@ attention are rclcpp, composition and lifecycle nodes.
 
 ## 13. CI/CD, deployment, infrastructure
 
+**Study file → [13_ci-cd-deployment-infrastructure.md](13_ci-cd-deployment-infrastructure.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] GitHub Actions, runners, matrix builds
 - [ ] Build caching for C++
 - [ ] Docker, multi-stage builds, image size
@@ -240,6 +269,8 @@ attention are rclcpp, composition and lifecycle nodes.
 
 ## 14. Embedded and edge
 
+**Study file → [14_embedded-and-edge.md](14_embedded-and-edge.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] ARM targets, Jetson platforms, single-board computers
 - [ ] Compute and power budgets
 - [ ] GPU acceleration on edge, CUDA basics
@@ -252,6 +283,8 @@ attention are rclcpp, composition and lifecycle nodes.
 
 ## 15. Linux
 
+**Study file → [15_linux.md](15_linux.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
+
 - [ ] Processes, threads, scheduling
 - [ ] Memory management, page cache, OOM
 - [ ] Filesystems and I/O
@@ -262,6 +295,8 @@ attention are rclcpp, composition and lifecycle nodes.
 - [ ] Shell scripting
 
 ## 16. Agentic engineering
+
+**Study file → [16_agentic-engineering.md](16_agentic-engineering.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
 
 **Listed as a nice-to-have on the Emesent JD and largely already held** via the Stock Market
 Analyser's ten agent workflow patterns ([projects.md](projects.md)).
@@ -276,6 +311,8 @@ Analyser's ten agent workflow patterns ([projects.md](projects.md)).
 - [ ] AI coding agents in the development workflow, and where they fail
 
 ## 17. Software engineering practice
+
+**Study file → [17_software-engineering-practice.md](17_software-engineering-practice.md)** — one section per item below: the concept, the sentence an interviewer wants, and an honest `piros2` line.
 
 **Section 17's diagram items are the named Andromeda feedback and are already promoted to
 short-term in [goals.md](goals.md).**

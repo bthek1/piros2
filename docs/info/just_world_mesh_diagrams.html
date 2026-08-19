@@ -146,6 +146,21 @@
     where, what crosses the Wi-Fi link, how the TF tree is owned, and how the recipe
     starts and stops it all. Reference tables with the measured numbers — every topic,
     service, and per-node cost — close the page.</p>
+    <p><strong>Addendum, 2026-08-19 — the session is SLAM now, and these diagrams predate it.</strong>
+    Since the <a href="../plans/completed/slam-plan.md">SLAM plan</a> closed,
+    <code>slam:=own</code> is the default: <code>keypoint_detector</code> keeps a keyframe pose
+    graph, closes loops against its store (RANSAC PnP on stored landmarks, on exact-sync
+    frame/depth/TF triples), optimises the graph (<code>pose_graph.py</code>) and <em>owns
+    <code>map → odom</code></em> — so the TF tree gained a <code>map</code> root above
+    <code>odom</code>; new latched topics <code>/world/trajectory</code> (optimised keyframe
+    poses, in <code>map</code>), <code>/world/trajectory_odom</code> (the same nodes' odom poses),
+    <code>/world/keyframe_graph</code> (edges: grey odometry, magenta loops); <code>tsdf_mesher</code>
+    integrates in <code>map</code>, keeps a frame memory and rebuilds the volume when the graph
+    moves (240–327 frames in 5–7 s), and its refresh's decimate + complete runs in a separate
+    process (<code>mesh_worker.py</code>, 22–32 s at 1.4–2.6 M triangles); <code>slam:=rtabmap</code>
+    swaps in RTAB-Map's SLAM node as the yardstick, <code>slam:=off</code> is odometry only.
+    The full redraw is on the todo list; until then read the diagrams as the <code>slam:=off</code>
+    shape plus this paragraph.</p>
   </header>
 
   <figure>

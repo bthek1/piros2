@@ -1,24 +1,28 @@
-# SLAM plan — what `world_mesh` is missing before it can call itself SLAM
+# SLAM plan — what `world_mesh` was missing before it could call itself SLAM
 
-**Status (2026-08-18, late night): P0–P2 done and gated, P3 built with a
-provisional gate, P4 built and unit-tested with its gate written but
-unrun.** Written the evening the question "what's needed to make
-world_mesh a SLAM project?" was asked; most of it built the same night.
-The answer, in one line, was: **the fork had a front-end and a map, but
-no backend** — nothing detected a revisit while tracking was healthy,
-nothing optimised the trajectory when one was found, and the map could
-not be corrected afterwards because the TSDF integrates poses
-destructively. As of tonight the fork *has* a backend: always-on
-loop-closure detection from its keyframe store (P1), a hand-written
-SE(3) pose-graph optimiser publishing `map → odom` (P2, checked
-against the installed `g2o`), and a TSDF that rebuilds from its frame
-memory when the graph moves (P3). Measured against RTAB-Map on the same
+**Status (2026-08-18/19, closing): done — all five phases built, gated
+by scripts, and the claims flipped; moved to `completed/`.** Written
+the evening the question "what's needed to make world_mesh a SLAM
+project?" was asked; built the same night. The answer, in one line,
+was: **the fork had a front-end and a map, but no backend** — nothing
+detected a revisit while tracking was healthy, nothing optimised the
+trajectory when one was found, and the map could not be corrected
+afterwards because the TSDF integrates poses destructively. Now the
+fork *has* a backend: always-on loop-closure detection from its
+keyframe store (P1), a hand-written SE(3) pose-graph optimiser owning
+`map → odom` (P2, checked against the installed `g2o`), a TSDF that
+rebuilds from its frame memory when the graph moves (P3), and a graph
+that survives a session (P4). Measured against RTAB-Map on the same
 replays: loop gap 6.1 cm / 1.9° → 2.3 cm / 0.85° (RTAB-Map 0.7–1.4 cm /
-0.6–1.6°), fr1/desk ATE 0.163 → 0.089 m (RTAB-Map 0.212 → 0.096 m).
-**The claims have not flipped yet** — the repo's stated scope, the
-`SLAM` GitHub topic and `docs/to_learn/emescent.md`'s "NOT SLAM" line
-wait for P4's gate (`just gate-map`) to pass and P3's metric to be made
-credible; see the annotations below.
+0.6–1.6°), fr1/desk ATE 0.163 → 0.089 m (RTAB-Map 0.212 → 0.096 m);
+`gate-mesh` paired-surface gap 7.8 → 5.7 cm; `gate-map` loaded a
+19-keyframe room, relocalized cold, closed loops against it and shut
+its loop 16.4 cm / 7.5° → 0.7 cm / 2.4°. `slam:=own` is the session
+default since the flip. Honest limits stay written down: monocular
+depth (scale by tape measure, structured error), one room, no IMU, a
+hand-pan loop bag rather than a walked loop, and a mesher whose refresh
+costs 20–30 s at this scene's 1.5–2.6 M triangles even in its own
+process.
 
 All work lands in `piros2_world_mesh` (and `piros2_perception` /
 `tools/` where a piece belongs there), per the freeze convention —
@@ -302,7 +306,7 @@ optimisation < before, and within a stated factor of RTAB-Map's** on
 print before/after. Suite: graph tests + the g2o oracle test (skips
 cleanly if the `g2o` binary is missing).
 
-### P3 — Map correction: a TSDF that follows the graph — ◐ built 2026-08-18 (night), gate provisional
+### P3 — Map correction: a TSDF that follows the graph — ✓ done 2026-08-19 (small hours)
 
 **What happened.** `tsdf_mesher` grew a frame memory (`rebuild: true`
 under `slam:=own`; aligned depth as uint16 at `rebuild_downsample: 2`,
@@ -330,21 +334,27 @@ takes minutes at that size, so the launch grew `mesh_watertight:=`
 dumps the frame memory beside the PLY (`live_<stamp>_frames.npz`).
 
 **Gate.** `just gate-mesh` (one headless run) → `just mesh-views` and
-two numbers: `tools/verify/mesh_planes.py` (RANSAC planes, thickness)
-and `tools/verify/mesh_split.py` (the OUT and BACK halves of the
-palindrome re-integrated into separate volumes at the odometry poses
-and at the corrected poses; nearest-neighbour gap between the two
-surfaces). Measured 2026-08-18: the plane metric does not discriminate
-on this scene — `sweep3` is a close-range wall + object with no
-dominant plane (4–5 % inliers, p95 thickness = the band) — and the
-split metric **PASSes directionally (median gap 57 → 26 cm, p90 314 →
-225 cm) but its absolute values say the two halves barely overlap**
-(603k vs 140k surface points), so it is not yet evidence that walls
-coincide. Open: make the halves comparable (equal frame counts per
-half, a bounded region of interest, or score the same source frame's
-two integrations directly) — until then P3 is *built*, not *proven*.
+two numbers: `tools/verify/mesh_planes.py` (RANSAC planes, thickness —
+does not discriminate on this scene: `sweep3` is a close-range wall +
+object with no dominant plane, 2–5 % inliers) and
+`tools/verify/mesh_split.py` (every BACK frame paired with its
+mirrored-stamp OUT twin, only the pairs re-integrated into separate
+volumes at the odometry poses and at the corrected poses; the
+nearest-neighbour gap between the two surfaces). Its first version
+scored whole halves and read a 57 cm gap that was coverage, not drift
+— the starved mesher's memory held 90 outbound / 13 return frames.
+**Then the threading turned out not to help either** — Open3D's
+decimation holds the GIL, zero frames integrated for 20 s at a time —
+so the refresh's heavy half moved into its own *process*
+(`mesh_worker.py`, spawn context, arrays over a pipe, polled by a
+0.5 s timer). Measured after that: 327 frames integrated over the 88 s
+bag (188 OUT / 139 BACK, 119 twin pairs) at 41–44 ms/frame, rebuilds of
+240–327 frames in 5–7 s, refresh 22–32 s in the worker at 1.4–2.6 M
+triangles, and **`mesh_split` PASS: paired-surface gap median 7.8 →
+5.7 cm, p90 40 → 36 cm** — magnitudes that match a few degrees of
+residual pose error at the scene's 3–6 m depth range.
 
-### P4 — Persist the graph, localise in it, and say the word — ◐ built 2026-08-18 (night), gate unrun
+### P4 — Persist the graph, localise in it, and say the word — ✓ done 2026-08-19 (small hours)
 
 **What happened.** `~/save_map` (`just map-save`) now writes the pose
 graph beside the keyframes in the same plain-array npz — optimised
@@ -353,15 +363,25 @@ measurement / information / kind, and `map → odom` — and `map_path:=`
 restores it (`load_map`): a session that relocalizes into a loaded room
 extends the *same* graph (loaded nodes count as old for loop queries;
 the next keyframe chains an odometry edge from the last stored node;
-the stored `map → odom` is adopted). Unit-tested round trip. `just
-gate-map` is written: session one saves; session two loads it, must
-relocalize cold, close loops against loaded keyframes, and pass
-`traj_check loop` on its own trajectory — **not yet run**.
+the stored `map → odom` is adopted). Unit-tested round trip.
+**`just gate-map` PASS** (2026-08-19): session one saved
+`maps/room_20260818-232015.npz` (19 keyframes, 13 loops); session two
+loaded it, relocalized cold against keyframe 13 (snapping its odometry
+0.09 m / 16.8° into the map's frame), closed 2 loops against loaded
+keyframes (486 and 327 inliers) and shut its loop 16.4 cm / 7.5° →
+**0.7 cm / 2.4°** on the optimised path. (Its *live* `map → odom`
+track reads worse — 13 cm — because the palindrome's outbound half was
+recorded under the loaded correction and the return half under the
+new one; a scoring artefact of composing a changing correction, not a
+pose error: the lifted path applies each node's correction
+consistently.)
 
-**Docs.** Nothing has flipped: README / project-overview still state
-the pre-SLAM scope with a pointer to this plan; the `SLAM` GitHub topic
-is not set (an outward change for the owner to make once P4 passes);
-`docs/to_learn/emescent.md`'s "NOT SLAM" line stands until then.
+**The flip.** `slam:=own` is `world_mesh.launch.py`'s default (`just
+run` is a SLAM session); README, project-overview and CLAUDE.md say so;
+the `SLAM` GitHub topic is added; `docs/to_learn/emescent.md`'s "NOT
+SLAM" line and `slam.md`'s honest-claim paragraph now point at this
+plan's evidence. The diagrams page carries a dated addendum (its full
+redraw is a todo).
 
 Without this the surface still lies after every closure.
 
@@ -407,14 +427,12 @@ mesher's own frame memory in P3.)
 
 ## What still needs a person
 
-Nothing so far needed one: the palindrome bag stood in for the loop
-recording (P0) and TUM fr1/desk supplied real ground truth. A recorded
-loop with real translation (`just record 60 loop1`, ending on the start
-view) would still be worth having — the palindrome's drift is a hand
-pan's few centimetres, and a walked loop tests the translation axis the
-monocular depth is weakest on. What still needs *Claude* (next
-session): run `just gate-map`; make P3's split metric credible; then
-flip the claims (P4).
+Nothing did: the palindrome bag stood in for the loop recording (P0)
+and TUM fr1/desk supplied real ground truth. A recorded loop with real
+translation (`just record 60 loop1`, ending on the start view) is still
+worth having — the palindrome's drift is a hand pan's few centimetres,
+and a walked loop tests the translation axis the monocular depth is
+weakest on (todo.md).
 
 ## Session log
 
@@ -425,8 +443,11 @@ flip the claims (P4).
   oracle, `map → odom`, `/world/trajectory`); P3 (frame memory,
   rebuild, threaded refresh, `gate-mesh`, `mesh_planes.py`,
   `mesh_split.py`); P4 (graph persistence, `gate-map` recipe). Fork
-  suite 122 tests. Not run: `gate-map`. Not credible yet: `mesh_split`'s
-  absolute numbers.
+  suite 122 tests.
+- 2026-08-19 small hours: `gate-map` PASS; `mesh_split` paired scoring;
+  the mesher's refresh into a worker process (`mesh_worker.py`, +1
+  test → 123); `gate-mesh` PASS with credible numbers; `slam:=own`
+  default; claims flipped; plan closed.
 
 ## Traps to carry forward (already known, still apply)
 

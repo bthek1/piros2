@@ -38,7 +38,7 @@ the workspace.
 | `piros2_vision` | Canny edge detector (`cv_bridge`), the first processing node; its QoS and timestamp findings shaped everything after it |
 | `piros2_perception` | `depth_estimator` (Depth Anything V2 Small, ONNX on the dev box GPU, 72–79 ms/frame) and `cloud_projector` (`/depth` + image → `PointCloud2` through K); plus `mapping.launch.py` for the RTAB-Map route |
 | `piros2_world` | `keypoint_detector` (ORB + descriptor matching → rotation-only camera orientation via Kabsch on bearing rays, published as TF), `cloud_mapper` (voxel map with weighted-average fusion → `/world/map_points`), `dashboard` (live stats panel on `/world/stats/compressed`; its 2×2 mosaic retired 2026-08-12), and `se3.py` (shared SE(3) pure functions) |
-| `piros2_world_mesh` | **The active world stack** (mesh-first fork of `piros2_world`; plan closed 2026-08-15): `odom:=rgbd` and quality-biased TSDF values by default, `~/save` writing the live surface to `meshes/*.ply`, and since the 2026-08-16 transport rework `camera_relay` (the session's single Wi-Fi reader, fanned out locally) with a paced depth pipeline and odom-frame clouds — run as `just world_mesh` / `just dev` / `just run` |
+| `piros2_world_mesh` | **The active world stack** (mesh-first fork of `piros2_world`; plan closed 2026-08-15): `odom:=rgbd` and quality-biased TSDF values by default, `~/save` writing the live surface to `meshes/*.ply`, since the 2026-08-16 transport rework `camera_relay` (the session's single Wi-Fi reader, fanned out locally) with a paced depth pipeline and odom-frame clouds, and since 2026-08-18/19 a SLAM backend (`slam:=own` default): `keypoint_detector` keeps a keyframe pose graph, closes loops (RANSAC PnP on stored landmarks) and optimises it with `pose_graph.py`, owning `map → odom` and `/world/trajectory`; `tsdf_mesher` lives in `map`, rebuilds from its frame memory when the graph moves, and finishes its refresh in a worker process (`mesh_worker.py`); `~/save_map` persists keyframes + graph — run as `just world_mesh` / `just dev` / `just run` |
 
 Outside `src/`: `tools/recon/` is an offline reconstruction pipeline under
 the perception venv (open3d) — bag → TUM-layout capture export → TSDF
@@ -96,7 +96,8 @@ Three plans in three days built and then unified `piros2_world`:
   (the essential matrix is degenerate under pure rotation, hence Kabsch on
   bearing rays) publishing `odom → base_link` TF, and the depth clouds
   accumulated into a voxel panorama. Honest scope: orientation without
-  position — a panorama, not a walkable map.
+  position — a panorama, not a walkable map (the SLAM build of
+  2026-08-18/19, below, changed that).
 - **[world-combined-plan.md](../plans/completed/world-combined-plan.md)**
   (done 2026-08-05) — everything merged into `world.launch.py`: `just world`
   opens one RViz window with the live cloud, the map panorama and TF axes in
@@ -228,17 +229,22 @@ bug), and `just mesh-views` renders a saved mesh from fixed viewpoints.
 
 - **Working end to end:** `just dev` (= `just run` since 2026-08-15 —
   the mesh-first `piros2_world_mesh` session, 6-DoF odometry, one
-  Wi-Fi copy of the camera stream since 2026-08-16) runs the
+  Wi-Fi copy of the camera stream since 2026-08-16, and a SLAM
+  backend since 2026-08-19: loop closure, pose-graph optimisation,
+  `map → odom`, a TSDF that follows the graph) runs the
   dev-box stack against the live camera, with `just world` as the
   frozen classic baseline; the offline pipeline goes bag → mesh →
-  room layer without hardware; the Pi repairs its own Wi-Fi link.
+  room layer without hardware; the Pi repairs its own Wi-Fi link;
+  every SLAM claim above is a headless gate (`just gate-loop`,
+  `gate-tum`, `gate-mesh`, `gate-map`).
 - **Committed:** the entire fusion-plan day — `se3.py`, the fusing
   `cloud_mapper`, `tools/recon/`, the pinned `depth_scale`, doc updates —
   landed as `bbe8c73` on 2026-08-11. The GitHub repo carries a one-line
   description and topics (`ros2`, `robotics`, `computer-vision`,
-  `point-cloud`, `raspberry-pi`, `onnx`) as of the same day; "SLAM" is
-  deliberately not among them — the honest scope was rotation-only
-  orientation, and the SLAM plan (above) says when that changes.
+  `point-cloud`, `raspberry-pi`, `onnx`) as of the same day; "SLAM"
+  was deliberately not among them while the honest scope was
+  rotation-only orientation — added 2026-08-19 when the SLAM plan's
+  gates passed.
 - **Open items** (plus [todo.md](../../todo.md)'s standing ambition, a
   C/C++ rewrite):
   - The provisional TSDF values (1.5 cm / 120k triangles / 15 s) are
@@ -251,15 +257,14 @@ bug), and `just mesh-views` renders a saved mesh from fixed viewpoints.
     recover-by-recognition pose snap; its gates run as `just gate flick`
     / `just gate occlude`. Store hygiene deferred until live evidence
     asks for it.
-  - The [SLAM plan](../plans/in-progress/slam-plan.md) (started
-    2026-08-18, P0–P2 done and gated, P3/P4 built): loop-closure
-    detection while tracking is healthy, a hand-written pose-graph
-    backend owning `map → odom` (`slam:=own`; RTAB-Map's SLAM node as
-    the yardstick under `slam:=rtabmap`), and a TSDF that rebuilds from
-    frame memory. Gates `just gate-loop`, `gate-tum`, `gate-mesh`,
-    `gate-map`. Open: run `gate-map`, make the P3 surface metric
-    credible, then flip the scope claim, the diagrams page and the
-    GitHub topics.
+  - The [SLAM plan](../plans/completed/slam-plan.md) (built and
+    closed 2026-08-18/19): loop-closure detection while tracking is
+    healthy, a hand-written pose-graph backend owning `map → odom`
+    (`slam:=own`, the default; RTAB-Map's SLAM node as the yardstick
+    under `slam:=rtabmap`), a TSDF that rebuilds from frame memory, and
+    a graph that persists. Gates `just gate-loop`, `gate-tum`,
+    `gate-mesh`, `gate-map` — all PASS. Left: a walked loop recording,
+    the diagrams-page redraw.
   - Affine depth-to-TSDF alignment — the next depth-quality lever now
     that the live high-pass scale aligner landed (placement spread
     4.0% → 2.9%; the residual is spatially structured model error a

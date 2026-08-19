@@ -332,7 +332,12 @@ world *args:
 # quality-biased values in world_mesh.yaml, and world_mesh.rviz opens
 # with LiveMesh front and centre (no cloud_mapper in this fork since
 # 2026-08-15 — the TSDF is the accumulator; `just world` keeps the
-# mapper). Never run alongside `just world`:
+# mapper). Since 2026-08-18 it is a SLAM session (slam:=own default):
+# the detector closes loops against its keyframe store, optimises the
+# pose graph and owns map → odom; the mesher lives in map and rebuilds
+# from its frame memory when the graph moves; `slam:=rtabmap` swaps in
+# RTAB-Map's SLAM node as the yardstick, `slam:=off` is odometry only
+# (docs/plans/completed/slam-plan.md). Never run alongside `just world`:
 # same node names, same topics, same camera. Args reach both launches —
 # each ignores what it doesn't declare — so `just dev image_width:=640`
 # and `just dev odom:=kp` both work.
@@ -583,7 +588,7 @@ gate which='flick' bag='':
 # than the odometry. Report + poses.png in captures/verify/gate_loop_<stamp>/.
 # Run the loop-closure gate headless: exit 0 = correction beat odometry
 [group('verify')]
-gate-loop slam='rtabmap' bag='bags/gate_loop' *args:
+gate-loop slam='own' bag='bags/gate_loop' *args:
     #!/usr/bin/env bash
     cd "{{ justfile_directory() }}"
     [ -f "{{ bag }}/gate.json" ] || { echo "no {{ bag }}/gate.json — run 'just gate-bags' first (it builds bags/gate_loop too)" >&2; exit 1; }
@@ -625,7 +630,7 @@ gate-loop slam='rtabmap' bag='bags/gate_loop' *args:
 # captures/verify/gate_tum_<stamp>/. `just gate-tum` ; `just gate-tum off`.
 # Run the ATE gate on a TUM sequence headless: exit 0 = PASS
 [group('verify')]
-gate-tum slam='rtabmap' sequence='datasets/rgbd_dataset_freiburg1_desk' *args:
+gate-tum slam='own' sequence='datasets/rgbd_dataset_freiburg1_desk' *args:
     #!/usr/bin/env bash
     cd "{{ justfile_directory() }}"
     [ -f "{{ sequence }}/groundtruth.txt" ] || { echo "no {{ sequence }}/groundtruth.txt — 'just fetch-tum' downloads fr1/desk" >&2; exit 1; }

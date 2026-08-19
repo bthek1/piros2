@@ -26,8 +26,8 @@ render.
 | `just mesh-views [mesh]` | Renders a saved PLY from three fixed viewpoints with Open3D's offscreen renderer — from the camera's start pose, straight down (walls as lines: doubling and drift show here), oblique | `captures/verify/mesh_<name>/{origin,top,oblique,sheet}.png` |
 | `just gate-loop [own\|rtabmap\|off] [bag]` | The SLAM loop gate (SLAM plan P0/P2): the session headless in rgbd mode with the chosen backend on `bags/gate_loop` (a *palindrome* — `sweep3` out and back — so every return frame's reference is its own outbound pose); `traj_record.py` writes odom → base_link, map → odom and the optimised path to files, `traj_check.py loop` scores the BACK-vs-OUT drift of raw and corrected trajectories. PASS = the correction closes the loop tighter than odometry | `captures/verify/gate_loop_<stamp>/` — `report.json`, `poses.png`, `odom.txt`, `path_world_trajectory.txt` (or `graph_rtabmap_slam.txt` from RTAB-Map's DB), `launch.log` |
 | `just gate-tum [own\|rtabmap\|off] [sequence]` | Ground truth: `tum_player.py` plays a TUM RGB-D sequence (fr1/desk by default) as camera + real depth + static TF with `depth_source:=external`; `traj_check.py ate` scores stamp-associated, Umeyama-aligned ATE against `groundtruth.txt` for the odometry and the corrected trajectory | `captures/verify/gate_tum_<stamp>/` — `ate_*.json`, `ate_*.png`, `odom.txt` |
-| `just gate-mesh [bag]` | Map correction (P3): one headless run under the fork's backend with the mesher remembering frames; `~/save` → PLY + `frames.npz`; `mesh-views`, `mesh_planes.py` (RANSAC plane thickness) and `mesh_split.py` (OUT and BACK halves re-integrated at odom vs corrected poses; surface-to-surface gap). Provisional — see the plan | `captures/verify/gate_mesh_<stamp>/` — `mesh.ply`, `frames.npz`, `views/sheet.png`, `mesh_split.json` |
-| `just gate-map [bag]` | Persistence (P4): session one saves keyframes + graph (`~/save_map`), session two loads it, must relocalize cold, close loops against loaded keyframes and pass the loop check on its own trajectory. Written 2026-08-18, not yet run | `captures/verify/gate_map_<stamp>/` |
+| `just gate-mesh [bag]` | Map correction (P3): one headless run under the fork's backend with the mesher remembering frames; `~/save` → PLY + `frames.npz`; `mesh-views`, `mesh_planes.py` (RANSAC plane thickness — printed, not decisive on this scene) and `mesh_split.py` (every BACK frame paired with its mirrored-stamp OUT twin, the pairs re-integrated at odom vs corrected poses; surface-to-surface gap). PASS = corrected halves coincide better | `captures/verify/gate_mesh_<stamp>/` — `mesh.ply`, `frames.npz`, `views/sheet.png`, `mesh_split.json` |
+| `just gate-map [bag]` | Persistence (P4): session one saves keyframes + graph (`~/save_map`), session two loads it, must relocalize cold, close loops against loaded keyframes and pass the loop check on its own trajectory | `captures/verify/gate_map_<stamp>/` — `launch_1.log`, `launch_2.log`, `room.npz`, `report.json`, `poses.png` |
 | `just mesh-planes [mesh] [--compare other.ply]` | Wall-flatness numbers for a saved mesh: RANSAC dominant planes, inlier fraction, thickness (rms / p95 of vertex distance within a band) | printed table + `<mesh>_planes.json` |
 
 `captures/` is git-ignored; the tools live in `tools/verify/` and run
@@ -114,9 +114,14 @@ the first night:
 | `gate-loop` — loop gap over the palindrome's last 5 s (translation / angle) | 6.1 cm / 1.9° (run-to-run 3.8–14.6 cm / 1.4–19° — the pipeline is not deterministic under load) | **2.3 cm / 0.85°** PASS | 0.7–1.4 cm / 0.6–1.6° PASS |
 | `gate-tum` — fr1/desk ATE RMSE (SE(3)-aligned) | 0.163 m (0.212 m on RTAB-Map's run) | **0.089 m** PASS | 0.096 m PASS |
 | `gate-loop off` | — | — | FAIL ("no loop closed") — the control |
-| `gate-mesh` — OUT-vs-BACK surface gap, odom vs corrected | median 57 cm | 26 cm — PASS *directionally*, absolute values not credible yet (the halves barely overlap) | — |
+| `gate-mesh` — paired OUT/BACK surface gap (119 twin pairs), odom vs corrected | median 7.8 cm, p90 40 cm | **5.7 cm, p90 36 cm** PASS (a few degrees of residual pose at 3–6 m range) | — |
+| `gate-map` — a loaded 19-keyframe room, session two's loop gap | 16.4 cm / 7.5° (its odometry was snapped into the map's frame at relocalization) | **0.7 cm / 2.4°** PASS; 1 cold relocalization, 2 loops against loaded keyframes | — |
 
-Two things the gates taught that a window would not have: RTAB-Map's
+Three things the gates taught that a window would not have: the
+mesher had been starving itself (a 12–21 s refresh inline, then a
+thread that still blocked under Open3D's GIL — the frame memory of a
+whole loop bag came out 90 outbound / 13 return frames until the
+finishing moved into its own process); RTAB-Map's
 `/mapPath` poses carry no per-pose stamps (its optimised graph is read
 from `~/.ros/rtabmap.db` after the node is stopped), and its DB's
 per-node *odometry* is re-based on every odometry auto-reset — a

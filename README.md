@@ -75,8 +75,9 @@ one command — `just world`, the `just run` target until 2026-08-15 — opens o
 window: axes, live cloud and the accumulating map panorama in one 3D
 scene, with raw camera, keypoints, depth and stats image panels docked
 alongside;
-reset/clear services stand in for loop closure, and the honest scope is
-a panorama from one viewpoint, not a walkable map.
+reset/clear services stand in for loop closure, and the honest scope was
+a panorama from one viewpoint, not a walkable map (until the SLAM build
+below, 2026-08-18/19).
 
 The [world fusion plan](docs/plans/completed/world-fusion-plan.md)
 (**done 2026-08-10**) turned that map into real fusion — per-voxel
@@ -111,19 +112,22 @@ estimator paces the pipeline and feeds the odometry a stamp-identical
 raw twin; the point cloud arrives in RViz already posed in the world)
 while the frozen classic session was never touched.
 
-**Towards SLAM** ([slam-plan.md](docs/plans/in-progress/slam-plan.md),
-**in progress, most of it built 2026-08-18**): the fork gained the
-backend the honest scope line always said it lacked — always-on loop
-detection from its own keyframe store (PnP-verified, on exact-sync
+**SLAM** ([slam-plan.md](docs/plans/completed/slam-plan.md), **built
+and gated 2026-08-18/19, in one night**): the fork gained the backend
+its honest scope line always said it lacked — always-on loop detection
+from its own keyframe store (RANSAC-PnP-verified, on exact-sync
 geometry), a hand-written SE(3) pose-graph optimiser (checked against
 the installed `g2o`) publishing `map → odom` and the optimised
-trajectory, and a TSDF that rebuilds from its frame memory when the
-graph moves. Measured on replays against RTAB-Map as the yardstick:
-loop gap 6.1 cm / 1.9° → 2.3 cm / 0.85° (RTAB-Map 0.7–1.4 cm /
-0.6–1.6°), TUM fr1/desk ATE 0.163 → 0.089 m (RTAB-Map 0.096 m). The
-scope line below has *not* been rewritten yet: the persistence gate
-and a credible map-correction metric are still open, and the claim
-flips when they close.
+trajectory, a TSDF that rebuilds from its frame memory when the graph
+moves, and a graph that survives a session (`just map-save` /
+`map_path:=`). `just run` is a SLAM session now (`slam:=own` default;
+`slam:=rtabmap` swaps in RTAB-Map's SLAM node as the yardstick). All
+of it measured on replays, no hand needed: loop gap 6.1 cm / 1.9° →
+2.3 cm / 0.85° (RTAB-Map 0.7–1.4 cm / 0.6–1.6°), TUM fr1/desk ATE
+0.163 → 0.089 m (RTAB-Map 0.096 m), paired-surface gap 7.8 → 5.7 cm,
+and a loaded room relocalized cold and closed 16.4 cm / 7.5° → 0.7 cm /
+2.4°. The limits are written down in the plan: monocular depth, one
+room, no IMU, a hand-pan loop bag rather than a walked loop.
 
 Reliability groundwork
 ([wifi-watchdog-plan.md](docs/plans/completed/wifi-watchdog-plan.md),

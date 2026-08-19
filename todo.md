@@ -14,17 +14,26 @@
       inlier fraction and thickness; measured useless on `sweep3` (a
       close-range wall + object, no dominant plane) — the loop-bag
       surface metric is `mesh_split.py` instead (see below)
-- [ ] SLAM plan follow-ups ([docs/plans/in-progress/slam-plan.md](docs/plans/in-progress/slam-plan.md)):
-      run `just gate-map` (P4, written, unrun); make `mesh_split.py`'s
-      halves comparable so P3's PASS is credible (equal frame counts /
-      region of interest / per-source-frame scoring); then flip the
-      claims (README, project-overview, diagrams page, the `SLAM`
-      GitHub topic, `docs/to_learn/emescent.md`); record a walked loop
-      (`just record 60 loop1`) to test the translation axis
-- [ ] the mesher's refresh cost: 0.7–1.6 M triangles at 1.5 cm on a
-      close scene → 12–21 s per refresh even off-thread, ~160 ms/frame
-      integration under contention — the provisional TSDF values above
-      now have a measured cost against them
+- [ ] SLAM follow-ups ([docs/plans/completed/slam-plan.md](docs/plans/completed/slam-plan.md),
+      done 2026-08-19): record a walked loop (`just record 60 loop1`,
+      ending on the start view) to test the translation axis the
+      palindrome bag can't; redraw the diagrams page for the SLAM
+      session (new node internals, `/world/trajectory[_odom]`,
+      `/world/keyframe_graph`, the `map` frame, the mesher's worker
+      process — it carries a dated addendum for now); a Sim(3) graph if
+      the residual ever proves to be scale; store hygiene for the
+      keyframe cap now that loop keyframes are forced in
+- [ ] `just gate occlude` variance under the SLAM default: one run
+      2026-08-19 FAILED at 6.8° tail (snap against the only keyframe A's
+      14 s stores — a slow pan barely crosses the 18° novelty), the rerun
+      PASSED at 0.59°; store more than one keyframe in A (novelty 12°?
+      or a time-based keyframe) so the snap has choices, then re-measure
+      a few runs
+- [ ] the mesher's refresh cost: 1.4–2.6 M triangles at 1.5 cm on a
+      close scene → 22–32 s per refresh in the worker process (the
+      marker updates every ~30 s) — the provisional TSDF values above
+      now have a measured cost against them; a coarser live voxel or a
+      cheaper decimation is the lever
 - [ ] diagrams page
       ([just_world_mesh_diagrams.html](docs/info/just_world_mesh_diagrams.html),
       redrawn 2026-08-16 for the transport rework —

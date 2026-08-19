@@ -79,6 +79,9 @@ def main():
     p.add_argument('--split', type=float, default=0.5,
                    help='fraction of the stamp span that ends OUT (0.5 = '
                         'a palindrome bag)')
+    p.add_argument('--pair-tolerance', type=float, default=0.15,
+                   help='max stamp gap (s) between a BACK frame and its '
+                        'mirrored OUT twin')
     p.add_argument('--voxel', type=float, default=0.02)
     p.add_argument('--depth-max', type=float, default=6.0)
     p.add_argument('--out', help='directory for the json')
@@ -94,15 +97,38 @@ def main():
         print(f'=== mesh split: NO DATA ({n} frames)')
         return 2
     cut = stamps[0] + args.split * (stamps[-1] - stamps[0])
-    out_idx = np.where(stamps <= cut)[0]
-    back_idx = np.where(stamps > cut)[0]
+    out_all = np.where(stamps <= cut)[0]
+    back_all = np.where(stamps > cut)[0]
+    # Pair every BACK frame with the OUT frame that saw the same source
+    # image: on a palindrome the twin's stamp is the mirror about the
+    # span's midpoint. Only paired frames are integrated on either side,
+    # so the two surfaces are the same views by construction — the
+    # first version scored whole halves and read a 57 cm gap that was
+    # coverage, not drift (the mesher's memory had thinned the halves
+    # unevenly).
+    tol = int(args.pair_tolerance * 1e9)
+    mirror = stamps[0] + stamps[-1] - stamps[back_all]
+    out_idx, back_idx = [], []
+    for b, want in zip(back_all, mirror):
+        k = out_all[np.argmin(np.abs(stamps[out_all] - want))]
+        if abs(int(stamps[k]) - int(want)) <= tol and k not in out_idx:
+            out_idx.append(k)
+            back_idx.append(b)
+    out_idx, back_idx = np.array(out_idx, dtype=int), np.array(back_idx, dtype=int)
+    if len(out_idx) < 3:
+        print(f'=== mesh split: NO DATA ({len(out_all)} OUT / {len(back_all)} '
+              f'BACK frames, only {len(out_idx)} pairs within '
+              f'{args.pair_tolerance} s)')
+        return 2
     factor = int(data['factor'][0])
     depth = data['depth_u16']
     odom = data['t_odom_optical']
     corrected = np.array([a @ t for a, t in
                           zip(data['applied'], data['t_odom_optical'])])
-    results = {'frames': int(n), 'out_frames': int(len(out_idx)),
-               'back_frames': int(len(back_idx))}
+    results = {'frames': int(n), 'out_frames': int(len(out_all)),
+               'back_frames': int(len(back_all)), 'pairs': int(len(out_idx))}
+    print(f'{n} frames: {len(out_all)} OUT / {len(back_all)} BACK, '
+          f'{len(out_idx)} twin pairs scored')
     for label, poses in (('odom', odom), ('corrected', corrected)):
         surf_out = integrate(o3d, depth[out_idx], poses[out_idx],
                              data['k_matrix'], factor, args.voxel,

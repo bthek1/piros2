@@ -811,11 +811,18 @@ triangles; the completion pass (~6.5 s) plus quadric decimation to the
 every 15 s, and the synced depth pairs (KEEP_LAST 1) were dropped
 while it ran.
 
-**Fix (2026-08-18).** Extraction stays on the executor thread; the
+**Fix (2026-08-18/19).** Extraction stays on the executor thread; the
 rest (decimate first, then complete the budgeted mesh — ~1 s instead of
-6.5 — then build and publish the Marker) runs on a worker thread, and a
-refresh is skipped while the previous one is finishing. Integration
-keeps its cadence at ~160 ms/frame under contention. The saved PLY
-still completes at full detail; its Poisson-closed companion is minutes
-at that size — `mesh_watertight:=false` for headless runs.
+6.5 — then build the Marker) runs in a **separate process**
+(`mesh_worker.py`, spawn context, arrays over a pipe, polled by a
+0.5 s timer). A worker *thread* was tried first and did not help:
+Open3D's `simplify_quadric_decimation` holds the GIL, so the executor
+still sat blocked and zero frames integrated for 20 s at a time —
+measured as a loop bag's frame memory of 90 outbound / 13 return
+frames. With the process: 327 frames over the same 88 s bag at 41–44
+ms/frame, the refresh 22–32 s in the worker at 1.4–2.6 M triangles (so
+the marker updates every ~30 s at this density — a refresh is skipped
+while the previous one is finishing). The saved PLY still completes at
+full detail; its Poisson-closed companion is minutes at that size —
+`mesh_watertight:=false` for headless runs.
 

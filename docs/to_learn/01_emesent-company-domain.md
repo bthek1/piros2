@@ -441,5 +441,10 @@ Sources: [NavVis Series D](https://www.navvis.com/blog/navvis-raises-usd-85m-ser
   — the JD's Cortex is becoming a platform."
 - "Exyn is the nearest competitor and just IPO'd at ~US$5M/yr revenue; NavVis raised
   US$85M two weeks ago but for indoor twins, not autonomy."
-- Honest boundary (per emescent.md's rule): `piros2` is rotation-only orientation + TSDF
-  meshing, not SLAM; the syllabus's Section 2 is where the ramp is.
+- Honest boundary (per emescent.md's rule), **updated 2026-08-19**: `piros2`'s fork now *is*
+  SLAM — always-on loop detection, a hand-written SE(3) pose-graph backend owning `map → odom`
+  checked against `g2o`, a TSDF that rebuilds when the graph moves, a persistent graph — gated
+  against RTAB-Map and TUM ground truth ([02_SLAM.md](02_SLAM.md) has the numbers). Say it as
+  "monocular RGB-D-style SLAM in one room, hand-written backend", and say the limits in the same
+  breath: mono depth scaled by tape measure, no IMU, no LiDAR, a palindrome bag rather than a
+  walked loop.
