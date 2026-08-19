@@ -1,12 +1,11 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 70
+    Help Height: 138
     Name: Displays
     Property Tree Widget:
-      Expanded:
-        - /TF1
+      Expanded: ~
       Splitter Ratio: 0.5
-    Tree Height: 500
+    Tree Height: 373
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -21,7 +20,7 @@ Visualization Manager:
       Color: 160; 160; 164
       Enabled: true
       Line Style:
-        Line Width: 0.03
+        Line Width: 0.029999999329447746
         Value: Lines
       Name: Grid
       Normal Cell Count: 0
@@ -35,112 +34,190 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/TF
       Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
       Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        base_link:
+          Value: true
+        camera_link:
+          Value: true
+        camera_optical_frame:
+          Value: true
+        map:
+          Value: true
+        odom:
+          Value: true
       Marker Scale: 1
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
+      Tree:
+        map:
+          odom:
+            base_link:
+              camera_link:
+                camera_optical_frame:
+                  {}
+      Update Interval: 0
       Value: true
-    - Class: rviz_default_plugins/PointCloud2
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
       Name: Depth3D
-      Enabled: true
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Flat Squares
       Topic:
-        Value: /points
         Depth: 10
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-      Color Transformer: RGB8
-      Position Transformer: XYZ
-      Size (m): 0.01
-      Style: Flat Squares
-      Value: true
+        Value: /points
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: false
     - Class: rviz_default_plugins/Marker
+      Enabled: true
       Name: LiveMesh
-      Enabled: true
+      Namespaces:
+        live_mesh: true
       Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /world/mesh_live
-        Depth: 1
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
       Value: true
     - Class: rviz_default_plugins/Marker
+      Enabled: true
       Name: Keyframes
-      Enabled: false
+      Namespaces:
+        keyframes: true
       Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /world/keyframes
-        Depth: 1
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
       Value: true
-    - Class: rviz_default_plugins/Path
-      Name: Trajectory
-      Enabled: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
       Color: 255; 170; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
       Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Trajectory
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
       Topic:
-        Value: /world/trajectory
         Depth: 1
         Durability Policy: Transient Local
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
+        Value: /world/trajectory
       Value: true
     - Class: rviz_default_plugins/Marker
-      Name: KeyframeGraph
       Enabled: true
+      Name: KeyframeGraph
+      Namespaces:
+        keyframe_graph: true
       Topic:
-        Value: /world/keyframe_graph
         Depth: 1
         Durability Policy: Transient Local
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
+        Value: /world/keyframe_graph
       Value: true
     - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Camera
-      Enabled: true
+      Normalize Range: true
       Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /camera_relay/compressed
-        Depth: 1
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Normalize Range: true
       Value: true
     - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Keypoints
-      Enabled: true
+      Normalize Range: true
       Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /keypoints/compressed
-        Depth: 1
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Normalize Range: true
       Value: true
     - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: DepthPreview
-      Enabled: true
+      Normalize Range: true
       Topic:
-        Value: /depth/preview/compressed
         Depth: 1
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-      Normalize Range: true
+        Value: /depth/preview/compressed
       Value: true
     - Class: rviz_default_plugins/Image
-      Name: Stats
       Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Stats
+      Normalize Range: true
       Topic:
-        Value: /world/stats/compressed
         Depth: 1
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-      Normalize Range: true
+        Value: /world/stats/compressed
       Value: true
   Enabled: true
   Global Options:
@@ -155,21 +232,33 @@ Visualization Manager:
     - Class: rviz_default_plugins/Select
     - Class: rviz_default_plugins/FocusCamera
     - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
   Value: true
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3
+      Distance: 1.1808545589447021
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
       Focal Point:
         X: 0
         Y: 0
         Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Near Clip Distance: 0.01
-      Pitch: 0.45
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.17479757964611053
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.4
+      Yaw: 3.4300220012664795
     Saved: ~
 Window Geometry:
   Camera:
@@ -178,15 +267,16 @@ Window Geometry:
     collapsed: false
   Displays:
     collapsed: false
-  Height: 900
+  Height: 2086
   Hide Left Dock: false
   Hide Right Dock: false
   Keypoints:
     collapsed: false
+  QMainWindow State: 000000ff00000000fd00000002000000000000030f00000555fc0200000005fb0000000c00430061006d00650072006101000002a1000000400000002800fffffffb00000012004b006500790070006f0069006e0074007301000002ed000000410000002800fffffffb0000000a00530074006100740073010000033a0000003f0000002800fffffffb000000100044006900730070006c0061007900730100000385000002710000018600fffffffb0000000a005600690065007700730100000602000001f40000013800ffffff0000000200000f0000000225fc0100000001fb00000018004400650070007400680050007200650076006900650077010000000000000f00000000fa00ffffff00000be50000055500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Stats:
     collapsed: false
   Views:
     collapsed: false
-  Width: 1400
-  X: 60
-  Y: 60
+  Width: 3840
+  X: 0
+  Y: 0

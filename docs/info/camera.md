@@ -108,8 +108,7 @@ frame rate and device are launch arguments. The equivalent bare `ros2 run`,
 for understanding what the launch file abstracts:
 
 ```bash
-# on the Pi
-source /opt/ros/jazzy/setup.bash
+# on the Pi (an interactive or login shell already has ROS sourced)
 ros2 run usb_cam usb_cam_node_exe --ros-args \
   -p video_device:=$(readlink -f /dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_5461327F-video-index0) \
   -p pixel_format:=mjpeg2rgb \
@@ -223,6 +222,32 @@ one from the dev box:
 ```bash
 ros2 run rqt_image_view rqt_image_view /image_raw/compressed
 ```
+
+### Only the transports that are used
+
+Five transport plugins are installed (`ros2 run image_transport list_transports`),
+and by default a publisher advertises **all** of them: a live session showed
+`/image_raw/theora`, `/image_raw/zstd` and `/image_raw/compressedDepth` beside the
+two that are actually read, each with zero subscribers. `camera.yaml` now pins the
+whitelist:
+
+```yaml
+image_raw.enable_pub_plugins:
+  - image_transport/raw
+  - image_transport/compressed
+```
+
+Measured on the Pi (2026-08-19, same run shape with a local
+`/image_raw/compressed` subscriber attached): the topic list drops from 5 to 2,
+while usb_cam's CPU goes 61.9% → 62.6% and the rate 29.86 → 29.90 fps. **The dead
+plugins were costing nothing** — image_transport only encodes for a transport that
+has a subscriber. What they cost was a reader's attention: an advertised topic
+reads as an offer, and three of these five were never on the menu.
+
+`raw` stays for local debugging **on the Pi** (`ros2 topic hz /image_raw` there).
+Nothing on the dev box may subscribe it — that is the 2.7 MB-per-frame Wi-Fi
+collapse of 2026-08-16
+([troubleshooting](troubleshooting.md#a-live-session-crawls-at-2-fps-while-the-pis-wi-fi-is-saturated)).
 
 In RViz, set the Image display's **Transport Hint** to `compressed` rather than
 `raw`. Forgetting this is the usual reason RViz shows a frozen or stuttering image

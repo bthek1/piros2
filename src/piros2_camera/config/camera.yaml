@@ -32,3 +32,20 @@ usb_cam:
     # size — if the Wi-Fi viewer starts stuttering, this is the knob to lower
     # (live: ros2 param set /usb_cam .image_raw.compressed.jpeg_quality 80).
     image_raw.compressed.jpeg_quality: 90
+    # Which image_transport publisher plugins usb_cam advertises. Five
+    # are installed (`ros2 run image_transport list_transports`), and
+    # without this whitelist every one of them advertises: a live
+    # session listed /image_raw/theora, /image_raw/zstd and
+    # /image_raw/compressedDepth alongside the two that are used, all
+    # with zero subscribers (2026-08-19). Measured on the Pi that day,
+    # same run shape with a local /image_raw/compressed subscriber
+    # attached: 5 topics -> 2, usb_cam 61.9% -> 62.6% CPU, 29.86 ->
+    # 29.90 fps. So image_transport really does publish lazily — the
+    # dead plugins cost no CPU, they cost a reader's attention, and an
+    # advertised topic reads as an offer. raw stays for local debugging
+    # on the Pi (`ros2 topic hz /image_raw` there); nothing on the dev
+    # box may subscribe it — that is the Wi-Fi collapse of 2026-08-16
+    # (docs/info/troubleshooting.md).
+    image_raw.enable_pub_plugins:
+      - image_transport/raw
+      - image_transport/compressed

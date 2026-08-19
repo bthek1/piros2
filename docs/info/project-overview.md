@@ -21,6 +21,9 @@ stage ended with something runnable and verified before moving on.
 Both machines run Jazzy natively from apt on Ubuntu 24.04, provisioned by
 the Ansible tree in `ansible/` (six roles, idempotent on both hosts),
 talking over CycloneDDS on domain 42 with interfaces pinned per host.
+Since 2026-08-19 the `ros2_env` role also sources ROS for every shell —
+bash on both hosts, fish on the dev box — from a cached environment delta
+rather than the 0.4 s setup scripts.
 Day-to-day commands are `just` recipes; `just world_mesh` is the current
 `just run` target (retargeted 2026-08-15) and `piros2_world_mesh` is
 where all new work lands — `just world` remains the frozen known-good

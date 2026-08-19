@@ -328,10 +328,26 @@ root's home where your builds will not find it. Same trap in the role —
 
 ### On sourcing ROS
 
-The `ros2_env` role deliberately does **not** source ROS unconditionally in
-`.bashrc`. Doing so leaks ROS's Python and library paths into every shell and will
-eventually confuse an unrelated project. It writes the environment variables into
-`.profile` and an alias into `.bashrc`:
+Every shell gets ROS — bash and fish, login and interactive. Until **2026-08-19**
+the role wrote only the four variables plus a `rosjazzy` alias and left sourcing
+manual, the worry being that ROS's Python and library paths leak into unrelated
+projects on the same machine. That cost is real but small; typing `ros2` and
+getting `command not found` was the larger one.
+
+Sourcing ROS's own setup scripts costs **0.40 s** of Python per shell, which is
+too much to pay for every terminal tab, so no shell sources them.
+`~/.config/ros2/env-delta` runs them once, diffs `env` across the source, and
+prints the *delta* as shell code; both shells read the cached output instead:
+
+```
+~/.config/ros2/env-delta           # the generator: source for real, print the delta
+~/.config/ros2/setup.sh            # bash: refresh the cache if stale, then source it
+~/.config/fish/conf.d/ros2.fish    # fish: the same, autoloaded
+~/.cache/ros2/jazzy-env.sh         # the cache — one per shell syntax
+~/.cache/ros2/jazzy-env.fish
+```
+
+The dotfiles only point at the snippet:
 
 ```bash
 # ~/.profile — read by all login shells, interactive or not
@@ -339,21 +355,69 @@ export ROS_DOMAIN_ID=42
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=file:///home/bthek1/.config/cyclonedds/cyclonedds.xml
+[ -r "$HOME/.config/ros2/setup.sh" ] && . "$HOME/.config/ros2/setup.sh"
 
-# ~/.bashrc — aliases only mean anything interactively
+# ~/.bashrc — interactive shells, which may not be login shells
 alias rosjazzy='source /opt/ros/jazzy/setup.bash'
+[ -r "$HOME/.config/ros2/setup.sh" ] && . "$HOME/.config/ros2/setup.sh"
 ```
 
-The split matters: Ubuntu's `.bashrc` returns immediately in non-interactive
-shells, so exports appended there are invisible to `bash -lc` over SSH — which is
-exactly how the environment gets verified. The four values **must match on both
-machines** — [networking.md](networking.md) explains each. They are defined once
-in `group_vars/all.yml`, so change them there, not in a dotfile.
+Both dotfiles because they cover different shells: a new terminal tab is
+interactive but *not* a login shell, while `ssh host "bash -lc '...'"` — how this
+project verifies over SSH — is a login shell but not interactive. The snippet
+guards on `ROS_DISTRO`, so the shell that reads both files still sources once,
+and on `BASH_VERSION`, because `/bin/sh` reads `.profile` at graphical login and
+cannot run a bash setup script. The exports stay in `.profile` and not `.bashrc`
+because Ubuntu's `.bashrc` returns immediately in non-interactive shells. The
+four values **must match on both machines** — [networking.md](networking.md)
+explains each. They are defined once in `group_vars/all.yml`, so change them
+there, not in a dotfile; the overlay path comes from `workspace_path` the same
+way.
+
+**The delta, never a copy of the caller's environment.** Six variables ending in
+`PATH` (`AMENT_PREFIX_PATH`, `CMAKE_PREFIX_PATH`, `COLCON_PREFIX_PATH`,
+`PYTHONPATH`, `LD_LIBRARY_PATH`, `PATH`) get ROS's entries *prepended* to
+whatever the shell already had — `set -gx --prepend` in fish, which stores them
+as real lists rather than colon-joined strings, and
+`export VAR=added"${VAR:+:${VAR}}"` in sh. Three scalars (`ROS_DISTRO`,
+`ROS_VERSION`, `ROS_PYTHON_VERSION`) are set outright. Writing bash's `PATH`
+into fish wholesale would flatten fish's own path list; prepending the delta
+leaves it intact.
+
+**What an environment cache cannot carry** is `complete` registrations and shell
+functions. The only ones that matter here are ros2/rosidl tab completion, so
+interactive bash sources `ros2-argcomplete.bash` itself — that is the whole of
+its ~40 ms over a login shell.
+
+**Staleness** is a timestamp check: the cache is regenerated when
+`/opt/ros/jazzy/setup.bash` or the workspace's `install/local_setup.bash` is
+newer. colcon rewrites the latter on every build, so a newly built package
+invalidates the cache by itself — there is no stale overlay to debug. If the
+generator fails, bash falls back to sourcing the real scripts, slowly; fish has
+no fallback available — it cannot source them at all — so a broken generator
+costs fish its ROS environment while bash keeps working.
+
+Measured on the dev box, best of three:
+
+| | sourcing off | warm cache | cache regenerated |
+| --- | --- | --- | --- |
+| `bash -lc true` | 0.10 s | 0.12 s | 0.55 s |
+| `bash -ic true` | 0.18 s | 0.22 s | — |
+| `fish -c true` | 0.14 s | 0.15 s | 0.59 s |
+
+**Opting out:** `ROS_AUTO_SOURCE=0` skips the sourcing (not the variables) — put
+it in another project's `.envrc` if ROS's `PYTHONPATH` gets in the way.
+
+**fish is dev-box-only**: the Pi runs bash and has no reason for more, so the
+role's fish tasks are guarded on `/usr/bin/fish` existing rather than on the
+inventory group.
 
 ## 6. Verify
 
+Open a *fresh* shell first — the role sources ROS for new shells, not for the
+one that ran the playbook:
+
 ```bash
-source /opt/ros/jazzy/setup.bash
 ros2 doctor --report | head -30
 ```
 
@@ -362,16 +426,15 @@ works, the install is sound. Then across the LAN:
 
 ```bash
 # on the Pi
-ssh pi -t 'bash -lc "source /opt/ros/jazzy/setup.bash && ros2 run demo_nodes_cpp talker"'
+ssh pi -t 'bash -lc "ros2 run demo_nodes_cpp talker"'
 
 # on the dev box
-source /opt/ros/jazzy/setup.bash
 ros2 topic echo /chatter
 ```
 
-Note the login shell (`bash -lc`) — a plain `ssh pi '...'` does not read the
-interactive part of `.bashrc`, so the ROS environment comes out empty and the node
-lands on domain 0. That trips people up constantly; see
+Note the login shell (`bash -lc`) — a plain `ssh pi '...'` reads no dotfile at
+all, so it finds neither the `ros2` command nor the ROS environment, and would
+land on domain 0 if it did. That trips people up constantly; see
 [troubleshooting.md](troubleshooting.md).
 
 If nothing arrives, the problem is almost certainly DDS discovery rather than the
@@ -396,15 +459,16 @@ Build and source with:
 
 ```bash
 cd ~/Documents/piros2    # on the Pi: cd ~/piros2
-source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
-source install/setup.bash
+source install/setup.bash    # only for *this* shell; new ones pick it up themselves
 ```
 
 `--symlink-install` means edits to Python nodes and launch files take effect
-without rebuilding — worth having on from the start. Source
-`install/setup.bash` *after* `/opt/ros/jazzy/setup.bash`; overlay last.
+without rebuilding — worth having on from the start. The shell that ran the
+build still needs `source install/setup.bash` to see a newly created package;
+shells opened afterwards get it from the refreshed cache. If you ever source by
+hand, the overlay goes *after* `/opt/ros/jazzy/setup.bash` — overlay last.
 
 ## Keeping the Pi in sync
 

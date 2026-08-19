@@ -25,11 +25,41 @@
     mode: "0644"
   notify: Remind about the ROS daemon
 
+# One sourcing snippet, referenced from both dotfiles below, so the underlay +
+# overlay pair is defined once. See docs/info/setup.md#on-sourcing-ros for what
+# sourcing ROS in every shell costs and how to opt out (ROS_AUTO_SOURCE=0).
+- name: Directory for the shell-integration files
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.config/ros2"
+    state: directory
+    mode: "0755"
+
+# Both shells read a cached copy of what sourcing ROS produces rather than
+# paying ~0.4 s of Python per shell; this script is what generates it.
+- name: Shell-environment generator
+  ansible.builtin.copy:
+    src: env-delta
+    dest: "{{ ansible_env.HOME }}/.config/ros2/env-delta"
+    mode: "0755"
+
+- name: Sourcing snippet for bash
+  ansible.builtin.template:
+    src: ros2-setup.sh.j2
+    dest: "{{ ansible_env.HOME }}/.config/ros2/setup.sh"
+    mode: "0644"
+
+# Superseded by env-delta (2026-08-19); it was only ever deployed on ml5.
+- name: Remove the old fish-only generator
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.config/ros2/env-to-fish"
+    state: absent
+
 # The exports go in .profile, NOT .bashrc: Ubuntu's .bashrc opens with an
 # interactivity guard (case $- in ... return), so anything appended to it is
-# invisible to every non-interactive shell — including the `bash -lc` login
-# shells used to verify over SSH. .profile is read by all login shells, and it
-# sources .bashrc, so interactive sessions get both halves.
+# invisible to every non-interactive shell. .profile is read by all login
+# shells, which is why `ssh host "bash -lc 'ros2 topic list'"` — how this
+# project verifies over SSH — now finds the ros2 command too, not just the
+# four variables.
 - name: ROS environment variables in .profile
   ansible.builtin.blockinfile:
     path: "{{ ansible_env.HOME }}/.profile"
@@ -39,14 +69,37 @@
       export ROS_LOCALHOST_ONLY={{ ros_localhost_only }}
       export RMW_IMPLEMENTATION={{ rmw_implementation }}
       export CYCLONEDDS_URI=file://{{ cyclonedds_config_path }}
+      [ -r "$HOME/.config/ros2/setup.sh" ] && . "$HOME/.config/ros2/setup.sh"
   notify: Remind about the ROS daemon
 
-# ROS is deliberately NOT sourced globally (docs/info/setup.md#on-sourcing-ros) —
-# the alias makes sourcing a one-word habit instead. It lives in .bashrc
-# because aliases only mean anything in an interactive shell.
-- name: ROS sourcing alias in .bashrc
+# .bashrc catches the interactive shells .profile misses (a new terminal tab is
+# non-login). The alias stays useful for re-sourcing after a colcon build.
+- name: ROS sourcing in .bashrc
   ansible.builtin.blockinfile:
     path: "{{ ansible_env.HOME }}/.bashrc"
     marker: "# {mark} ANSIBLE MANAGED — ROS 2 {{ ros_distro }}"
     block: |
       alias ros{{ ros_distro }}='source /opt/ros/{{ ros_distro }}/setup.bash'
+      [ -r "$HOME/.config/ros2/setup.sh" ] && . "$HOME/.config/ros2/setup.sh"
+
+# fish, where present (ml5 only — the Pi has bash and no reason for more).
+# It reads neither .profile nor a bash setup script, so it gets its own file.
+- name: Look for fish
+  ansible.builtin.stat:
+    path: /usr/bin/fish
+  register: fish_shell
+
+- name: Directory for fish's autoloaded config
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.config/fish/conf.d"
+    state: directory
+    mode: "0755"
+  when: fish_shell.stat.exists
+
+- name: ROS environment for fish
+  ansible.builtin.template:
+    src: ros2.fish.j2
+    dest: "{{ ansible_env.HOME }}/.config/fish/conf.d/ros2.fish"
+    mode: "0644"
+  when: fish_shell.stat.exists
+  notify: Remind about the ROS daemon

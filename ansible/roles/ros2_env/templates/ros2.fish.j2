@@ -1,0 +1,42 @@
+# {{ ansible_managed }} — ROS 2 {{ ros_distro }} for fish
+#
+# fish never reads ~/.profile and cannot source ROS's bash setup script, so this
+# file does both jobs.  The four DDS variables keep their single definition
+# (ansible/group_vars/all.yml); everything else is imported from bash by
+# ~/.config/ros2/env-delta and cached, because generating it costs ~0.4 s and
+# a shell prompt should not.  Set ROS_AUTO_SOURCE=0 to opt a shell out.
+
+set -gx ROS_DOMAIN_ID {{ ros_domain_id }}
+set -gx ROS_LOCALHOST_ONLY {{ ros_localhost_only }}
+set -gx RMW_IMPLEMENTATION {{ rmw_implementation }}
+set -gx CYCLONEDDS_URI file://{{ cyclonedds_config_path }}
+
+set -l __ros_underlay /opt/ros/{{ ros_distro }}/setup.bash
+set -l __ros_overlay {{ workspace_path }}/install/setup.bash
+set -l __ros_stamp {{ workspace_path }}/install/local_setup.bash
+set -l __ros_cache $HOME/.cache/ros2/{{ ros_distro }}-env.fish
+set -l __ros_gen $HOME/.config/ros2/env-delta
+
+if test "$ROS_AUTO_SOURCE" != 0; and test -z "$ROS_DISTRO"; and test -r $__ros_underlay
+    # colcon rewrites install/local_setup.bash on every build, so a newly built
+    # package invalidates the cache by itself — no stale overlay to debug.
+    set -l __ros_stale 0
+    if not test -r $__ros_cache
+        set __ros_stale 1
+    else if test $__ros_underlay -nt $__ros_cache
+        set __ros_stale 1
+    else if test -r $__ros_stamp; and test $__ros_stamp -nt $__ros_cache
+        set __ros_stale 1
+    end
+
+    if test $__ros_stale -eq 1
+        mkdir -p (dirname $__ros_cache)
+        if bash $__ros_gen --format fish $__ros_underlay $__ros_overlay >$__ros_cache.tmp
+            mv -f $__ros_cache.tmp $__ros_cache
+        else
+            rm -f $__ros_cache.tmp
+        end
+    end
+
+    test -r $__ros_cache; and source $__ros_cache
+end

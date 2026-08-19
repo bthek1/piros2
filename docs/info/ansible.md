@@ -79,7 +79,7 @@ ansible/
 └── roles/
     ├── ros2_apt/         # ros2-apt-source .deb, keyring
     ├── ros2_install/     # metapackage + colcon/rosdep/vcstool
-    ├── ros2_env/         # .bashrc block, cyclonedds.xml template
+    ├── ros2_env/         # shell integration (bash + fish), cyclonedds.xml template
     ├── camera/           # v4l-utils, video group  (robot only)
     ├── workspace/        # repo sync, rosdep install, colcon build
     └── wifi/             # power-save off, link watchdog, sshd ClientAlive  (robot only)
@@ -167,9 +167,13 @@ These are the ones that will actually bite:
   `rosdep update` is the opposite — it runs as the *login user*, not root, and
   running it under `become: true` puts the cache in the wrong home directory.
 
-- **Do not source ROS globally.** [setup.md](setup.md#on-sourcing-ros) explains
-  why. Use `blockinfile` with a marker so the block is editable and removable —
-  but split it across two files, because Ubuntu's `.bashrc` opens with an
+- **Sourcing ROS is one snippet, referenced from two dotfiles.** Since
+  2026-08-19 the role does source ROS for every shell — what that costs and how
+  to opt out is in [setup.md](setup.md#on-sourcing-ros) — but the logic lives in
+  a templated `~/.config/ros2/setup.sh` and the dotfiles only point at it, so
+  there is one definition of "source ROS" rather than one per shell. Use
+  `blockinfile` with a marker so each block stays editable and removable, and
+  split it across two files, because Ubuntu's `.bashrc` opens with an
   interactivity guard (`case $- in ... return`) that makes anything appended to
   it invisible to every non-interactive shell, including the `bash -lc` login
   shells used to verify over SSH:
@@ -184,18 +188,34 @@ These are the ones that will actually bite:
         export ROS_LOCALHOST_ONLY={{ ros_localhost_only }}
         export RMW_IMPLEMENTATION={{ rmw_implementation }}
         export CYCLONEDDS_URI=file://{{ cyclonedds_config_path }}
+        [ -r "$HOME/.config/ros2/setup.sh" ] && . "$HOME/.config/ros2/setup.sh"
 
-  - name: ROS sourcing alias in .bashrc           # aliases are interactive-only anyway
+  - name: ROS sourcing in .bashrc                 # interactive, often non-login
     blockinfile:
       path: "{{ ansible_env.HOME }}/.bashrc"
       marker: "# {mark} ANSIBLE MANAGED — ROS 2 {{ ros_distro }}"
       block: |
         alias ros{{ ros_distro }}='source /opt/ros/{{ ros_distro }}/setup.bash'
+        [ -r "$HOME/.config/ros2/setup.sh" ] && . "$HOME/.config/ros2/setup.sh"
   ```
 
-  Interactive sessions get both halves (`.profile` sources `.bashrc`); a plain
-  non-login `ssh pi 'cmd'` still gets neither, so verification over SSH must
-  use `bash -lc`.
+  An interactive login session reads both files and still sources once — the
+  snippet returns early when `ROS_DISTRO` is already set. A plain non-login
+  `ssh pi 'cmd'` reads neither, so verification over SSH must still use
+  `bash -lc`.
+
+- **Optional shells are detected, not assumed.** fish is on the dev box and not
+  on the Pi, so its tasks are gated on a `stat` of `/usr/bin/fish` rather than
+  on the inventory group: the role stays one file, and a host that grows fish
+  later gets the config on the next run without an edit.
+
+- **A generated file that a shell reads at startup needs a fallback.** The
+  role ships `env-delta`, whose output both shells cache and source. If it is
+  missing or fails, the bash snippet sources ROS's real scripts instead —
+  slower, but a shell that opens without a working `PATH` is a much worse
+  failure than a slow one. fish gets no such fallback, because sourcing a bash
+  script is the one thing it cannot do; there the failure is visible
+  (`ros2: command not found`) rather than silent.
 
 - **Restart the ROS daemon on change.** Any task touching the environment or the
   Cyclone DDS config should notify a handler running

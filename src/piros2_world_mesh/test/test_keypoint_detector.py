@@ -398,12 +398,15 @@ def test_orientation_is_also_broadcast_as_tf(node):
     assert tf.transform.rotation == node.pub_pose.messages[1].pose.orientation
 
 
-def test_publish_tf_false_yields_the_frame_but_keeps_the_pose(node):
+def test_publish_tf_false_yields_the_frame(node):
     """
-    publish_tf: false silences TF but not the orientation topic.
+    publish_tf: false silences TF.
 
     REP-105: with rgbd odometry owning odom → base_link, the compass
-    must stop broadcasting — one parent per frame.
+    must stop broadcasting — one parent per frame. The fixture built
+    this node in kp mode, so its pose publisher exists and still
+    fires; whether the topic is advertised at all is decided once, at
+    construction — test_rgbd_mode_advertises_no_orientation_topic.
     """
     node.set_parameters([rclpy.parameter.Parameter('publish_tf',
                                                    value=False)])
@@ -415,6 +418,34 @@ def test_publish_tf_false_yields_the_frame_but_keeps_the_pose(node):
 
     assert node.tf_broadcaster.transforms == []
     assert len(node.pub_pose.messages) == 2
+
+
+def test_rgbd_mode_advertises_no_orientation_topic():
+    """
+    No /camera/orientation topic is advertised in rgbd mode.
+
+    Nothing in the session subscribed it, and a second "orientation in
+    odom" published while RTAB-Map owns that frame would contradict its
+    real owner. No publisher means no topic in the graph — a node built
+    for rgbd mode has none. (Constructed through global CLI overrides:
+    the parameter is read once, so it must be set before __init__.)
+    """
+    rclpy.init(args=['--ros-args', '-p', 'publish_tf:=false'])
+    try:
+        node = KeypointDetector()
+        assert node.rgbd_mode
+        assert node.pub_pose is None
+        # The frame still estimates — it just keeps the answer to
+        # itself and to the graph.
+        node.on_camera_info(make_camera_info())
+        scene = make_scene()
+        node.on_frame(encode(scene))
+        warp = cv2.getRotationMatrix2D((320.0, 240.0), 4.0, 1.0)
+        node.on_frame(encode(cv2.warpAffine(scene, warp, (640, 480))))
+        assert not np.allclose(node.orientation, np.eye(3))
+        node.destroy_node()
+    finally:
+        rclpy.shutdown()
 
 
 def test_reset_service_rezeros_orientation(node):

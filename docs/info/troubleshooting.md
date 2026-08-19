@@ -61,6 +61,28 @@ ssh pi 'sudo blkid | grep -E "writable|system-boot"'   # duplicates = this bug
 Give one a unique disk identifier and pin `cmdline.txt` and `/etc/fstab` to
 PARTUUIDs — [setup.md](setup.md#the-duplicate-label-trap).
 
+## `ros2: command not found`
+
+The shell has not sourced ROS. Since 2026-08-19 the `ros2_env` role sources it
+for you in interactive bash, login bash and fish, so this now means one of:
+
+- **The dotfiles predate the change** on this machine — rerun the playbook
+  (`ansible-playbook site.yml --ask-become-pass`, or `--limit robot` for the Pi)
+  and open a *fresh* shell; a shell already running kept the old environment.
+- **The shell is neither interactive nor a login shell** — `ssh pi 'ros2 ...'`
+  reads no dotfile at all. Use `ssh pi "bash -lc 'ros2 ...'"`.
+- **Something set `ROS_AUTO_SOURCE=0`** (a project `.envrc`, say). `echo` it.
+- **A non-bash, non-fish shell** — only those two are wired up. `source
+  /opt/ros/jazzy/setup.bash` by hand, or use the `rosjazzy` alias in bash.
+
+If `ros2` works but `ros2 pkg list | grep piros2` is empty, the *underlay* is
+sourced and the *overlay* is not: the workspace has never been built here, or
+`workspace_path` in `group_vars` points elsewhere. Run `just build`, then open a
+new shell — both shells cache the ROS environment in `~/.cache/ros2/` and
+refresh it when `install/local_setup.bash` is newer, which a build makes it. If
+a cache ever does go stale, `rm -rf ~/.cache/ros2` and open a new shell; the
+next one regenerates it (~0.6 s).
+
 ## The dev box cannot see topics published on the Pi
 
 The most common failure in this setup. Work through in order:

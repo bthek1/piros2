@@ -227,7 +227,6 @@ flowchart LR
 
     KP -- "/keypoints/compressed&lt;br/&gt;/keypoints/count · /keypoints/matched" --> DASH
     KP -- "/keypoints/compressed" --> RVIZ
-    KP -- "/camera/orientation" --> RVIZ
 
     RGBD --> TTF
 
@@ -341,7 +340,9 @@ flowchart TB
     <figcaption><strong>What to notice</strong> — the two edges into <code>base_link</code> never
     coexist: swapping odometry sources means swapping the <em>publisher</em> of that one edge,
     which is why the default <code>odom:=rgbd</code> sets the detector's <code>publish_tf</code>
-    false while its <code>/camera/orientation</code> topic keeps publishing. The fork defaults
+    false — and, since 2026-08-19, drops its <code>/camera/orientation</code> topic with it: a
+    second orientation-in-<code>odom</code> published while RTAB-Map owns that frame contradicts
+    its real owner, and nothing subscribed it. The compass is a <code>kp</code>-mode topic now. The fork defaults
     the solid edge because the mesh is the point of this session: rotation-only poses smear it
     the moment a hand-pan carries real translation (RTAB-Map measured 0.9&nbsp;m of arm-arc in
     a "rotation-only" sweep). The bottom two edges are static, latched, and owned by the Pi.
@@ -476,10 +477,10 @@ sequenceDiagram
             <td>raw counts on the wire; the matched % is computed at display time</td>
           </tr>
           <tr>
-            <td>/camera/orientation</td><td>PoseStamped</td><td>keypoint_detector</td>
-            <td>RViz</td>
+            <td>/camera/orientation</td><td>PoseStamped</td><td>keypoint_detector <em>(kp mode only)</em></td>
+            <td>—</td>
             <td>≈ camera</td><td>RELIABLE · KEEP_LAST 1</td>
-            <td>rotation-only; keeps publishing even in the default rgbd mode (only the TF slot is handed over)</td>
+            <td>rotation-only compass; not advertised at all under the default <code>odom:=rgbd</code> since 2026-08-19 — RTAB-Map owns <code>odom</code> there and nothing consumed this</td>
           </tr>
           <tr>
             <td>/tf</td><td>TFMessage</td><td>rgbd_odometry (default) <em>or</em> keypoint_detector (kp mode)</td>

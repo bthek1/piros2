@@ -52,6 +52,16 @@ roles — `ros2_apt`, `ros2_install`, `ros2_env`, `camera`, `workspace`, and
 `wifi` (added 2026-08-12) — and the playbook is idempotent (a clean rerun
 reports `changed=0` on the Pi).
 
+`ros2_env` grew **shell integration on 2026-08-19**: ROS is now sourced for
+every bash shell on both machines and every fish shell on the dev box, so
+`ros2` and the `piros2_*` overlay are simply *there* — including in
+`ssh pi "bash -lc '...'"`. One snippet (`~/.config/ros2/setup.sh`) referenced
+from `.profile` and `.bashrc`, fish's own `conf.d/ros2.fish`, and a shared
+`env-delta` generator whose cached output both shells source instead of paying
+0.4 s of Python per terminal (see the SSH bullet under *Constraints* and
+[docs/info/setup.md](docs/info/setup.md#on-sourcing-ros)). The recipes' explicit
+`source …/setup.bash` lines are now redundant but harmless — ament dedupes.
+
 Machine state:
 
 - **Pi: fully provisioned and verified.** `ros-base` + `demo_nodes_cpp`, the
@@ -336,7 +346,21 @@ and free to drift — same node names, topics and services, so it is an
 divergence beyond defaults landed 2026-08-15: **`cloud_mapper` was
 removed from the fork** (node, test, config, CloudMap display, trap
 pattern) — the TSDF is this session's fusion accumulator and the
-voxel panorama duplicated it; `piros2_world` keeps its mapper. First built
+voxel panorama duplicated it; `piros2_world` keeps its mapper. The
+second landed 2026-08-19 with an unconsumed-topic sweep of the live
+graph: the fork's `keypoint_detector` advertises
+**`/camera/orientation` in kp mode only** — in rgbd mode RTAB-Map owns
+`odom`, so a second orientation-in-`odom` contradicted the frame's
+real owner and nothing subscribed it; and `camera.yaml` (shared, both
+sessions) whitelists the two image transports that are read
+(`image_raw.enable_pub_plugins`), dropping the never-subscribed
+`/image_raw/{theora,zstd,compressedDepth}` — measured on the Pi as
+free, image_transport encodes only for a transport with a subscriber
+(61.9% → 62.6% CPU, 29.86 → 29.90 fps). RTAB-Map's ten `/odom_*`
+debug topics and the ~7 parameter services every node carries are
+*not* removable by configuration — they are advertised unconditionally
+by rclcpp/rclpy, and disabling the parameter services would break
+`ros2 param` and RViz. First built
 that day as a session wrapper inside `piros2_world` (include +
 `extra_params` overlay); rebuilt as its own package by decision the
 same day, the wrapper bits reverted. `just world_mesh` — aliased
@@ -586,6 +610,18 @@ this convention and [docs/info/roadmap.md](docs/info/roadmap.md) tracks status.
   `ssh pi 'ros2 topic list'` silently runs on domain 0 with the default RMW. Use
   a login shell — `ssh pi "bash -lc '...'"` — when verifying over SSH, and don't
   report such a result as evidence of anything without checking this first.
+  Since 2026-08-19 that login shell also *sources* ROS (`~/.config/ros2/setup.sh`,
+  underlay + workspace overlay, written by the same role), so `bash -lc` gets the
+  `ros2` command and the `piros2_*` packages, not just the four variables — the
+  older habit of sourcing `setup.bash` by hand in the command still works and is
+  a no-op the second time (the snippet guards on `ROS_DISTRO`, and ament dedupes
+  the paths anyway). Interactive bash and fish on the dev box are sourced too;
+  `ROS_AUTO_SOURCE=0` opts a shell out. Neither shell sources the real scripts:
+  `~/.config/ros2/env-delta` prints the environment delta and both shells read a
+  cached copy (`~/.cache/ros2/jazzy-env.{sh,fish}`, invalidated by
+  `install/local_setup.bash`'s mtime, so a colcon build refreshes it), which is
+  what keeps a terminal at 0.23 s instead of 0.60 s —
+  [docs/info/setup.md](docs/info/setup.md#on-sourcing-ros).
 - **The Pi's user is in `video`** — set via cloud-init at reflash time, and
   `/dev/video0` is readable without `sudo`. But **`gpio`, `i2c`, and `spi` no
   longer exist** as groups; they were a Raspberry Pi OS vendor addition. Milestone

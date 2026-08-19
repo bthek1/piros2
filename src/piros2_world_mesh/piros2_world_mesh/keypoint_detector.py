@@ -26,6 +26,8 @@ a rotation-only visual odometer. The concepts, in the order they arrived:
   Per-frame rotations compose into a running orientation on
   /camera/orientation — a compass built from pixels; it drifts, so a
   ~/reset service re-zeros it (docs/plans/completed/world-3d-plan.md).
+  That topic exists in kp mode only: in rgbd mode the odometry owns
+  odom → base_link and the compass would just contradict it.
 - One frame can fan out into different *kinds* of topics: an image for
   humans, scalars for stats, a pose for TF-to-be. The counts ride plain
   std_msgs/Int32 — a custom message would need its own rosidl ament_cmake
@@ -513,7 +515,13 @@ class KeypointDetector(Node):
             Int32, 'keypoints/matched', BIG_FRAME_QOS)
         self.pub_keyframes = self.create_publisher(
             Int32, 'keypoints/keyframes', BIG_FRAME_QOS)
-        self.pub_pose = self.create_publisher(
+        # The compass, as a topic — kp mode only. In rgbd mode RTAB-Map
+        # owns odom → base_link, so a second "orientation in odom" from
+        # this node contradicts the frame's real owner, and nothing in
+        # the session subscribed it (2026-08-19 unconsumed-topic sweep).
+        # No publisher means no topic in the graph at all, which is the
+        # point: an advertised topic reads as an offer.
+        self.pub_pose = None if self.rgbd_mode else self.create_publisher(
             PoseStamped, 'camera/orientation', BIG_FRAME_QOS)
         # A TransformBroadcaster is just a publisher on /tf; tf2 consumers
         # (RViz included) assemble the tree from everyone's contributions.
@@ -832,7 +840,8 @@ class KeypointDetector(Node):
         pose.pose.orientation.y = float(y)
         pose.pose.orientation.z = float(z)
         pose.pose.orientation.w = float(w)
-        self.pub_pose.publish(pose)
+        if self.pub_pose is not None:
+            self.pub_pose.publish(pose)
 
         # The same rotation again as TF (translation stays zero — this
         # odometer measures orientation only). One estimate, two
